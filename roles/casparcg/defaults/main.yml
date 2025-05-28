@@ -1,0 +1,8 @@
+# Default URLs for CasparCG .deb packages
+casparcg_cef_url: "https://github.com/CasparCG/server/releases/download/v2.4.3-stable/casparcg-cef-117_117.2.5.gda4c36a+2-noble1.2_amd64.deb"
+casparcg_server_url: "https://github.com/CasparCG/server/releases/download/v2.4.3-stable/casparcg-server-2.4_2.4.3.stable-noble1_amd64.deb"
+casparcg_exec: "/usr/bin/casparcg-server-2.4"
+# System user
+casparcg_user: "casparcg"
+# nodm settings
+nodm_enabled: true
