@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+
+########################################
+# Interface & binding
+########################################
+interface=enp1s0f0.3
+bind-interfaces
+
+########################################
+# Network options
+########################################
+# Default gateway
+dhcp-option=3,192.168.3.1
+# DNS server + domain
+dhcp-option=6,129.240.2.3
+dhcp-option=15,frikanalen.no
+
+########################################
+# Static leases & tagging
+########################################
+{% for name, host in machines.items() %}
+# {{ name }}
+dhcp-host={{ host.primary_mac }},{{ host.ip }},set:KNOWN
+{% endfor %}
+
+# Ignore DHCPDISCOVER from any untagged client
+dhcp-ignore=tag:!KNOWN
+
+########################################
+# TFTP / BIOS-only PXE boot
+########################################
+enable-tftp
+tftp-root={{ tftp_root }}
+
+# For KNOWN clients, hand out the BIOS PXE loader directly
+dhcp-boot=tag:KNOWN,pxelinux.0
+
