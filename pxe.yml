@@ -1,0 +1,10 @@
+- name: Configure PXE master(s)
+  hosts: pxe_servers
+  become: yes
+
+  vars_files:
+    - host_machines.yml
+
+  roles:
+    - role: pxe_boot_master
+
