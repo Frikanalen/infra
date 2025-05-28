@@ -1,0 +1,28 @@
+- name: Create cloud-init seed ISO in temp dir
+  tempfile:
+    state: directory
+    suffix: cloudinit-{{ vm.name }}
+  register: tmpdir
+
+- name: Write user-data
+  template:
+    src: user-data.j2
+    dest: "{{ tmpdir.path }}/user-data"
+
+- name: Write meta-data
+  template:
+    src: meta-data.j2
+    dest: "{{ tmpdir.path }}/meta-data"
+
+- name: Create seed ISO
+  command: >
+    cloud-localds /var/lib/libvirt/images/{{ vm.name }}-seed.iso
+    {{ tmpdir.path }}/user-data
+    {{ tmpdir.path }}/meta-data
+  args:
+    creates: "/var/lib/libvirt/images/{{ vm.name }}-seed.iso"
+
+- name: Clean up temp cloud-init files
+  file:
+    path: "{{ tmpdir.path }}"
+    state: absent

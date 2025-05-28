@@ -1,0 +1,32 @@
+<domain type='kvm'>
+  <name>{{ vm.name }}</name>
+  <memory unit='MiB'>{{ vm.memory | default(default_memory) }}</memory>
+  <vcpu>{{ vm.vcpus | default(default_vcpus) }}</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='cdrom'/>
+    <boot dev='hd'/>
+  </os>
+  <devices>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/var/lib/libvirt/images/{{ vm.name }}.qcow2'/>
+      <backingStore type='file'>
+        <format type='qcow2'/>
+        <source file='/var/lib/libvirt/images/{{ ubuntu_release }}-base.qcow2'/>
+      </backingStore>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='/var/lib/libvirt/images/{{ vm.name }}-seed.iso'/>
+      <target dev='hdc' bus='ide'/>
+      <readonly/>
+    </disk>
+    <interface type='bridge'>
+      <source bridge='br0'/>
+      <model type='virtio'/>
+    </interface>
+    <console type='pty'/>
+  </devices>
+</domain>

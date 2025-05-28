@@ -1,0 +1,10 @@
+ubuntu_release: plucky
+
+default_memory: 2048
+default_vcpus: 2
+default_disk_size: 10
+
+kvm_vms:
+  - name: k8s-node-1
+  #  - name: k8s-node-2
+  #  - name: k8s-node-3

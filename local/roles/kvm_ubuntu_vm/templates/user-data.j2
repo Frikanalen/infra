@@ -1,0 +1,15 @@
+#cloud-config
+hostname: {{ vm.name }}
+users:
+  - name: ubuntu
+    plain_text_passwd: ubuntu
+    lock_passwd: false
+    shell: /bin/bash
+  - name: ubuntu2
+    plain_text_passwd: ubuntu
+    lock_passwd: false
+    shell: /bin/bash
+chpasswd:
+  expire: false
+ssh_pwauth: true
+disable_root: true
