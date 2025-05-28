@@ -1,0 +1,6 @@
+# /etc/default/nodm
+NODM_ENABLED={{ nodm_enabled | ternary('true','false') }}
+NODM_USER={{ casparcg_user }}
+NODM_XSESSION="/usr/bin/systemd-cat -t casparcg -- {{ casparcg_exec }} /etc/casparcg.config"
+# You can set a timeout in seconds; uncomment and adjust if needed
+# NODM_USER_TIMEOUT=30

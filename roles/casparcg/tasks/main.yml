@@ -1,0 +1,56 @@
+---
+- name: Ensure casparcg user exists
+  user:
+    name: "{{ casparcg_user }}"
+    shell: /usr/sbin/nologin
+    system: yes
+  become: true
+
+- name: Install nodm package
+  apt:
+    name: nodm
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Install CasparCG CEF package from URL
+  apt:
+    deb: "{{ casparcg_cef_url }}"
+    state: present
+    update_cache: no
+    install_recommends: no
+  become: true
+
+- name: Install CasparCG Server package from URL
+  apt:
+    deb: "{{ casparcg_server_url }}"
+    state: present
+    update_cache: no
+    install_recommends: no
+  become: true
+
+- name: Configure nodm
+  template:
+    src: nodm.conf.j2
+    dest: "/etc/default/nodm"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+
+- name: Copy casparcg.config to /etc
+  copy:
+    src: "casparcg.config"
+    dest: "/etc/casparcg.config"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+
+
+- name: Ensure nodm service is started and enabled
+  service:
+    name: nodm
+    state: started
+    enabled: yes
+  become: true
