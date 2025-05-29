@@ -1,0 +1,23 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    daemon
+    maxconn 2048
+
+defaults
+    log     global
+    mode    tcp
+    option  tcplog
+    timeout connect 10s
+    timeout client 1m
+    timeout server 1m
+
+{% for port in haproxy_frontend_ports %}
+frontend frontend_{{ port }}
+    bind {{ haproxy_listen_ip }}:{{ port }}
+    default_backend backend_{{ port }}
+
+backend backend_{{ port }}
+    server backend1 {{ haproxy_backend_ip }}:{{ haproxy_backend_ports[loop.index0] }} check
+{% endfor %}
+
