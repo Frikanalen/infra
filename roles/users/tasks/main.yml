@@ -1,0 +1,13 @@
+---
+- include_vars: users.yml
+- name: "Create user accounts"
+  user:
+    name: "{{ item.username }}"
+    groups: "sudo"
+    shell: "/bin/bash"
+  with_items: "{{ users }}"
+- name: "Add authorized keys"
+  authorized_key:
+    user: "{{ item.username }}"
+    key: "{{ item.ssh_keys }}"
+  with_items: "{{ users }}"
