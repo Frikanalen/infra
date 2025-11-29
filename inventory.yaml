@@ -1,0 +1,42 @@
+all:
+  children:
+    tx:
+      hosts:
+        tx1:
+        tx2:
+        tx3:
+        tx4:
+
+    proxmox:
+      hosts:
+        vm1:
+          ansible_host: 192.168.3.70
+        vm2:
+          ansible_host: 192.168.3.71
+        vm3:
+          ansible_host: 192.168.3.72
+        vm4:
+          ansible_host: 192.168.3.73
+
+    kubeprod:
+      hosts:
+        prod-kube-1:
+          ansible_host: 192.168.3.74
+        prod-kube-2:
+          ansible_host: 192.168.3.75
+        prod-kube-3:
+          ansible_host: 192.168.3.76
+        prod-kube-4:
+          ansible_host: 192.168.3.77
+
+    kubedev:
+      hosts:
+        dev-kube-1:
+          ansible_host: 192.168.3.40
+        dev-kube-2:
+          ansible_host: 192.168.3.41
+        dev-kube-3:
+          ansible_host: 192.168.3.42
+        dev-kube-4:
+          ansible_host: 192.168.3.43
+
