@@ -6,6 +6,13 @@
   roles:
     - users
   tags: common
+- name: Do common setup
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - common
+  tags: common
 - name: Install VM guest packages
   hosts: qemu_guest
   become: true
