@@ -1,0 +1,75 @@
+#
+# This playbook initializes templates used by our Terraform automation.
+#
+# We initialize one on each machine, and the machines are then cloned,
+# referencing templates by `template_name` rather than numeric `VMID`,
+# meaning templates are available on local disk (at time of writing,
+# there's no shared storage, something I'd like to adress...).
+#
+# When we do get performant shared storage in place, we can simply use one
+# single template across each cluster.
+#
+---
+- name: Create Ubuntu cloud-init templates on Proxmox
+  hosts: proxmox_nodes
+  gather_facts: false
+  become: true
+
+  vars:
+    # Note: assumes hosts are single-digit in the format vm1..vm9.
+    template_vmid: 900{{ inventory_hostname[-1] }}
+    ssh_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQNn2dIm6s2ybuJXphkIRYxlubNrohoMlhW9XSNpvSw frikanalen ansible init"
+
+    template_name: "ubuntu-24.04-cloud"
+    storage_name: "local-lvm"
+    bridge_name: "vmbr0"
+    image_url: "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    image_path: "/var/lib/vz/template/iso/noble-server-cloudimg-amd64.img"
+
+  tasks:
+    - name: Ensure cloud image directory exists
+      ansible.builtin.file:
+        path: "{{ image_path | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Download Ubuntu cloud image if missing
+      ansible.builtin.get_url:
+        url: "{{ image_url }}"
+        dest: "{{ image_path }}"
+        mode: "0644"
+        force: false
+
+    - name: Check if template VM already exists
+      ansible.builtin.command: "qm status {{ template_vmid }}"
+      register: qm_status
+      failed_when: false
+      changed_when: false
+
+    - block:
+        - name: Create base VM
+          ansible.builtin.command: >
+            qm create {{ template_vmid }}
+            --name {{ template_name }}
+            --memory 2048
+            --cores 2
+            --net0 virtio,bridge={{ bridge_name }}
+            --serial0 socket
+            --ostype l26
+
+        - name: Import disk from cloud image
+          ansible.builtin.command: >
+            qm importdisk {{ template_vmid }} {{ image_path }} {{ storage_name }}
+
+        - name: Attach imported disk and set boot options
+          ansible.builtin.command: >
+            qm set {{ template_vmid }}
+            --scsihw virtio-scsi-pci
+            --scsi0 {{ storage_name }}:vm-{{ template_vmid }}-disk-0
+            --boot c
+            --bootdisk scsi0
+
+        - name: Convert VM to template
+          ansible.builtin.command: "qm template {{ template_vmid }}"
+      when: qm_status.rc != 0
+
