@@ -22,6 +22,7 @@ resource "proxmox_vm_qemu" "kube" {
 
   name        = each.key # "prod-kube-1" .. "prod-kube-4"
   vmid        = each.value.vmid
+  tags        = "ubuntu"
   target_node = each.value.node # "vm1" .. "vm4"
 
   clone = "ubuntu-24.04-cloud"
