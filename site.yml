@@ -2,7 +2,7 @@
 - name: Add users to system
   hosts: all
   become: true
-  gather_facts: false
+  gather_facts: true
   roles:
     - users
   tags: common

@@ -24,3 +24,25 @@
   loop_control:
     label: "{{ item.0.username }}"
   become: true
+
+- name: Set sudoers.d path per OS
+  ansible.builtin.set_fact:
+    sudoers_d_path: >-
+      {{ '/usr/local/etc/sudoers.d' if ansible_facts.os_family == 'FreeBSD' else '/etc/sudoers.d' }}
+
+- name: Ensure sudoers.d directory exists
+  ansible.builtin.file:
+    path: "{{ sudoers_d_path }}"
+    state: directory
+    owner: root
+    mode: '0750'
+
+- name: Enable passwordless sudo for group sudo
+  ansible.builtin.copy:
+    dest: "{{ sudoers_d_path }}/sudo-nopasswd"
+    content: |
+      %sudo ALL=(ALL) NOPASSWD: ALL
+    owner: root
+    mode: '0440'
+    validate: "visudo -cf %s"
+  become: true
