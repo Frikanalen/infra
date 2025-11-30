@@ -1,13 +1,26 @@
 ---
-- include_vars: users.yml
-- name: "Create user accounts"
-  user:
+- name: Load user variables
+  ansible.builtin.include_vars:
+    file: users.yml
+
+- name: Ensure user accounts exist
+  ansible.builtin.user:
     name: "{{ item.username }}"
-    groups: "sudo"
-    shell: "/bin/bash"
-  with_items: "{{ users }}"
-- name: "Add authorized keys"
-  authorized_key:
-    user: "{{ item.username }}"
-    key: "{{ item.ssh_keys }}"
-  with_items: "{{ users }}"
+    groups: sudo
+    shell: /bin/bash
+    state: present
+    create_home: true
+  loop: "{{ users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  become: true
+
+- name: Add authorized keys for users
+  ansible.builtin.authorized_key:
+    user: "{{ item.0.username }}"
+    key: "{{ item.1 }}"
+    state: present
+  loop: "{{ users | subelements('ssh_keys') }}"
+  loop_control:
+    label: "{{ item.0.username }}"
+  become: true

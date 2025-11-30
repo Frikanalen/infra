@@ -2,9 +2,9 @@
 users:
     - username: toresbe
       realname: "Tore Sinding Bekkedal"
-      ssh_keys: |
-        ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHxuTVYGn/cJtTZGComq/Gg0BQREWOEFy5682snA61og Tore Frikanalen 2025
+      ssh_keys:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHxuTVYGn/cJtTZGComq/Gg0BQREWOEFy5682snA61og Tore Frikanalen 2025"
     - username: bfg
       realname: "Tom Fredrik Blenning"
-      ssh_keys: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGUaj1mNujvy0BGbLa8w8WHYiZmcVqVlebqUdezlJgth bfg@Air3
-        
+      ssh_keys:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGUaj1mNujvy0BGbLa8w8WHYiZmcVqVlebqUdezlJgth bfg@Air3"
