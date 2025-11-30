@@ -1,0 +1,65 @@
+---
+
+- name: Install BIND
+  become: yes
+  ansible.builtin.pkgng:
+    name: "{{ dns_bind_package }}"
+    state: present
+
+- name: Ensure zone directory exists
+  become: yes
+  ansible.builtin.file:
+    path: "{{ dns_zone_dir }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: Load host definitions
+  ansible.builtin.include_vars:
+    file: "data/hosts.yml"
+    name: dc1_hosts
+
+- name: Render named.conf
+  become: yes
+  ansible.builtin.template:
+    src: "named.conf.j2"
+    dest: "{{ dns_named_conf }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  notify: restart named
+
+- name: Render forward zone for {{ dns_zone_name }}
+  become: yes
+  ansible.builtin.template:
+    src: "db.dc1.frikanalen.no.j2"
+    dest: "{{ dns_zone_dir }}/db.{{ dns_zone_name }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  vars:
+    hosts: "{{ dc1_hosts.hosts }}"
+  notify: reload named
+
+- name: Render reverse zones
+  become: yes
+  ansible.builtin.template:
+    src: "db.{{ item }}.j2"
+    dest: "{{ dns_zone_dir }}/db.{{ item }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  loop: "{{ dns_reverse_prefixes }}"
+  vars:
+    hosts: "{{ dc1_hosts.hosts }}"
+  notify: reload named
+
+- name: Enable and start named service
+  become: yes
+  ansible.builtin.service:
+    name: named
+    state: started
+    enabled: yes
+
+

@@ -1,0 +1,31 @@
+// Managed by Ansible
+
+options {
+    directory "{{ dns_zone_dir }}";
+    listen-on { any; };
+    allow-query { any; };
+    recursion yes;
+
+    forwarders {
+    {% for fwd in dns_forwarders %}
+        {{ fwd }};
+    {% endfor %}
+    };
+    forward only;
+
+    pid-file "/var/run/named/pid";
+    dump-file "/var/dump/named_dump.db";
+    statistics-file "/var/stats/named.stats";
+};
+
+zone "{{ dns_zone_name }}" IN {
+    type master;
+    file "db.{{ dns_zone_name }}";
+};
+
+{% for prefix in dns_reverse_prefixes %}
+zone "{{ prefix.split('.') | reverse | join('.') }}.in-addr.arpa" IN {
+    type master;
+    file "db.{{ prefix }}";
+};
+{% endfor %}

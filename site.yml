@@ -13,3 +13,8 @@
   roles:
     - qemu_guest
   tags: common
+- name: Configure DNS server
+  hosts: util
+  roles:
+    - freebsd
+    - dns_server
