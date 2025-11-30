@@ -1,23 +1,26 @@
 locals {
-  ansible_inventory_hosts = {
-    for name, cfg in var.kube_nodes :
-    name => {
-      ansible_host = split("/", cfg.ip_cidr)[0]
-    }
-  }
-
   kube_ci_user = "ubuntu"
 
-  kube_nodes_merged = {
-    for name, cfg in var.kube_nodes : name => cfg
+  # Load the hosts from the infra repo's host database
+  hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).hosts
+
+  # Hosts without a vm stanza are ignored; those with are flattened
+  hosts = {
+    for name, h in local.hosts_all :
+    name => merge(
+      {
+        ip_cidr = h.ip_cidr
+      },
+      h.vm
+    )
+    if try(h.vm, null) != null
   }
 }
 
 resource "proxmox_vm_qemu" "kube" {
-  for_each = local.kube_nodes_merged
+  for_each = local.hosts
 
   name        = each.key # "prod-kube-1" .. "prod-kube-4"
-  tags        = ""
   vmid        = each.value.vmid
   target_node = each.value.node # "vm1" .. "vm4"
 

@@ -19,12 +19,3 @@ variable "template" {
   description = "Name of the Ubuntu cloud-init template"
   default     = "ubuntu-24.04-cloud"
 }
-
-
-variable "kube_nodes" {
-  type = map(object({
-    vmid    = number
-    node    = string
-    ip_cidr = string
-  }))
-}
