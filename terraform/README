@@ -1,0 +1,11 @@
+To provision Frikanalen's virtual machines:
+
+    Rename kube_nodes.tfvars.template to kube_nodes.tfvars,
+    insert an API key obtained from Proxmox, eg. through its
+    web dashboard.
+
+    Then, issue the following commands:
+
+    $ terraform init
+    $ terraform plan -var-file=kube_nodes.tfvars
+    $ terraform apply -var-file=kube_nodes.tfvars
