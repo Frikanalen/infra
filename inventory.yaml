@@ -40,3 +40,7 @@ all:
         dev-kube-4:
           ansible_host: 192.168.3.43
 
+qemu_guest:
+  children:
+    kubeprod:
+    kubedev:
