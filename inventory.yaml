@@ -42,6 +42,11 @@ all:
         dev-kube-4:
           ansible_user: ubuntu
 
+microk8s:
+  children:
+    kubeprod:
+    kubedev:
+
 qemu_guest:
   children:
     kubeprod:

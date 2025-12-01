@@ -1,0 +1,22 @@
+- name: Ensure MicroK8s is ready on seed
+  command: microk8s status --wait-ready
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  changed_when: false
+
+- name: Obtain cluster join token from seed
+  command: microk8s add-node --token-ttl 3600 --format json
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  register: microk8s_add_node
+  changed_when: false
+
+- name: Parse add-node JSON
+  set_fact:
+    microk8s_add_node_json: "{{ microk8s_add_node.stdout | from_json }}"
+
+- name: Store join command as host fact
+  set_fact:
+    microk8s_join_command: "microk8s join {{ microk8s_add_node_json.urls[0] }}"

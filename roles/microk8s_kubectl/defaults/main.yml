@@ -1,0 +1,2 @@
+microk8s_kubectl_users: "{{ users | default([]) }}"
+microk8s_kubeconfig_filename: "config"

@@ -1,0 +1,64 @@
+# roles/microk8s_install/tasks/main.yml
+- name: Ensure snapd is installed
+  apt:
+    name: snapd
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Install MicroK8s
+  community.general.snap:
+    name: kubectl
+    state: present
+    classic: true
+  become: true
+
+- name: Install MicroK8s
+  community.general.snap:
+    name: microk8s
+    state: present
+    classic: true
+    channel: "{{ microk8s_channel }}"
+  become: true
+
+- name: Add CLI user to microk8s group
+  user:
+    name: "{{ microk8s_cli_user }}"
+    groups: microk8s
+    append: true
+  become: true
+
+- name: Wait for MicroK8s to be ready
+  command: microk8s status --wait-ready
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  changed_when: false
+
+- name: Get MicroK8s status as YAML
+  command: microk8s status --format yaml
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  register: microk8s_status_yaml
+  changed_when: false
+  when: microk8s_addons | length > 0
+
+- name: Build list of enabled addons
+  set_fact:
+    microk8s_enabled_addons: >-
+      {{
+        (microk8s_status_yaml.stdout | from_yaml).addons
+        | selectattr('status', 'equalto', 'enabled')
+        | map(attribute='name')
+        | list
+      }}
+  when: microk8s_addons | length > 0
+
+- name: Enable requested MicroK8s addons
+  command: "microk8s enable {{ item }}"
+  loop: "{{ microk8s_addons }}"
+  when: item not in microk8s_enabled_addons
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true

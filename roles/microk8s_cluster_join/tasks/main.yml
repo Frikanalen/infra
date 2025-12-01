@@ -1,0 +1,19 @@
+- name: Join MicroK8s cluster (control-plane node)
+  command: "{{ hostvars[microk8s_seed_host]['microk8s_join_command'] }}"
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  register: microk8s_join
+  # Treat "already part of this cluster" as success/idempotent.
+  failed_when: >
+    microk8s_join.rc != 0 and
+    'already' not in (microk8s_join.stdout | default('')) and
+    'already' not in (microk8s_join.stderr | default(''))
+  changed_when: microk8s_join.rc == 0
+
+- name: Wait for MicroK8s to be ready after join
+  command: microk8s status --wait-ready
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  changed_when: false
