@@ -1,0 +1,71 @@
+---
+- name: Alias microk8s.helm → helm
+  ansible.builtin.command:
+    cmd: snap alias microk8s.helm helm
+  become: yes
+  # Avoid marking "already aliased" as changed every run:
+  changed_when: false
+
+- name: Alias microk8s.kubectl → kubectl
+  ansible.builtin.command:
+    cmd: snap alias microk8s.kubectl kubectl
+  become: yes
+  # Avoid marking "already aliased" as changed every run:
+  changed_when: false
+
+
+- name: Ensure Python k8s client libraries are installed (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+      - python3-jsonpatch
+    state: present
+  become: yes
+
+- name: Ensure Argo CD namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Add Argo CD Helm repo
+  kubernetes.core.helm_repository:
+    repo_name: "{{ argocd_chart_repo_name }}"
+    repo_url: "{{ argocd_chart_repo_url }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Install or upgrade Argo CD via Helm
+  kubernetes.core.helm:
+    release_name: argocd
+    chart_ref: "{{ argocd_chart_name }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: false
+    chart_version: "{{ argocd_chart_version | default(omit) }}"
+    values: "{{ argocd_chart_values }}"
+    update_repo_cache: true
+    wait: true
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    state: present
+
+- name: Wait for Argo CD Server to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ argocd_namespace }}"
+    name: argocd-server
+    kubeconfig: "{{ argocd_kubeconfig }}"
+  register: acd_deploy
+  until: acd_deploy.resources[0].status.availableReplicas | int >= 1
+  retries: 20
+  delay: 15
+
+- name: Bootstrap Argo CD with App-of-Apps
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'app-of-apps.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
