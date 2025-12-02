@@ -24,6 +24,9 @@ dns_reverse_prefixes:
   - "192.168.3"
   - "192.168.4"
 
+# Public IP address for externally-facing zones (staging.frikanalen.no)
+dns_ns1_public_address: "158.36.191.229"
+
 # Paths are for BIND installed from pkg/ports on FreeBSD.
 dns_zone_dir: "/usr/local/etc/namedb/master"
 dns_named_conf_d: "/usr/local/etc/namedb/named.conf.d"
