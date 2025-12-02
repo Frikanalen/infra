@@ -26,36 +26,9 @@
     - freebsd
     - dns_server_install
     - dns_server_zones
-
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true
   roles:
     - microk8s_install
     - microk8s_kubectl
-# Form HA cluster for kubeprod
-- hosts: prod-kube-1
-  become: true
-  roles:
-    - microk8s_cluster_seed
-
-- hosts: kubeprod:!prod-kube-1
-  become: true
-  vars:
-    microk8s_seed_host: prod-kube-1
-  roles:
-    - microk8s_cluster_join
-
-# Form HA cluster for kubedev
-- hosts: dev-kube-1
-  become: true
-  roles:
-    - microk8s_cluster_seed
-
-- hosts: kubedev:!dev-kube-1
-  become: true
-  vars:
-    microk8s_seed_host: dev-kube-1
-  roles:
-    - microk8s_cluster_join
-
