@@ -1,8 +1,0 @@
-- name: Provision Ubuntu VMs for HA k8s
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Run provisioning in role
-      include_role:
-        name: kvm_ubuntu_vm
-        tasks_from: provision.yml

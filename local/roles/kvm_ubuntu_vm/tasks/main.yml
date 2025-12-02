@@ -1,3 +1,0 @@
-- name: noop
-  debug:
-    msg: "noop"
