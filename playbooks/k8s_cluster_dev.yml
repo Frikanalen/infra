@@ -1,0 +1,13 @@
+# Form HA cluster for kubedev
+- hosts: dev-kube-1
+  become: true
+  roles:
+    - microk8s_cluster_seed
+
+- hosts: kubedev:!dev-kube-1
+  become: true
+  vars:
+    microk8s_seed_host: dev-kube-1
+  roles:
+    - microk8s_cluster_join
+
