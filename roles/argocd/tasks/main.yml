@@ -6,14 +6,6 @@
   # Avoid marking "already aliased" as changed every run:
   changed_when: false
 
-- name: Alias microk8s.kubectl → kubectl
-  ansible.builtin.command:
-    cmd: snap alias microk8s.kubectl kubectl
-  become: yes
-  # Avoid marking "already aliased" as changed every run:
-  changed_when: false
-
-
 - name: Ensure Python k8s client libraries are installed (Debian/Ubuntu)
   ansible.builtin.apt:
     name:
