@@ -18,14 +18,5 @@ options {
     statistics-file "/var/stats/named.stats";
 };
 
-zone "{{ dns_zone_name }}" IN {
-    type master;
-    file "db.{{ dns_zone_name }}";
-};
-
-{% for prefix in dns_reverse_prefixes %}
-zone "{{ prefix.split('.') | reverse | join('.') }}.in-addr.arpa" IN {
-    type master;
-    file "db.{{ prefix }}";
-};
-{% endfor %}
+// Zone configuration is in named.conf.d
+include "/usr/local/etc/namedb/named.conf.d/*";

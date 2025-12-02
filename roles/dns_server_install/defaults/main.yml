@@ -1,0 +1,15 @@
+---
+
+# Package name may differ slightly per FreeBSD version;
+# override dns_bind_package in inventory if needed.
+dns_bind_package: "bind920"
+
+# Paths are for BIND installed from pkg/ports on FreeBSD.
+dns_named_conf: "/usr/local/etc/namedb/named.conf"
+dns_named_conf_d: "/usr/local/etc/namedb/named.conf.d"
+dns_zone_dir: "/usr/local/etc/namedb/master"
+
+# Upstream DNS
+dns_forwarders:
+  - "129.240.2.3"
+  - "129.240.2.27"

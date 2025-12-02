@@ -1,0 +1,42 @@
+---
+
+- name: Install BIND
+  become: yes
+  ansible.builtin.pkgng:
+    name: "{{ dns_bind_package }}"
+    state: present
+
+- name: Ensure zone directory exists
+  become: yes
+  ansible.builtin.file:
+    path: "{{ dns_zone_dir }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: Ensure named.conf.d directory exists
+  become: yes
+  ansible.builtin.file:
+    path: "{{ dns_named_conf_d }}"
+    state: directory
+    owner: root
+    group: wheel
+    mode: "0755"
+
+- name: Render named.conf
+  become: yes
+  ansible.builtin.template:
+    src: "named.conf.j2"
+    dest: "{{ dns_named_conf }}"
+    owner: root
+    group: wheel
+    mode: "0644"
+  notify: restart named
+
+- name: Enable and start named service
+  become: yes
+  ansible.builtin.service:
+    name: named
+    state: started
+    enabled: yes

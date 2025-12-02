@@ -24,7 +24,9 @@
   hosts: util
   roles:
     - freebsd
-    - dns_server
+    - dns_server_install
+    - dns_server_zones
+
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true
