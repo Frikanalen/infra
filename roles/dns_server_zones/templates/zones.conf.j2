@@ -5,6 +5,13 @@ zone "{{ dns_zone_name }}" IN {
     file "db.{{ dns_zone_name }}";
 };
 
+zone "staging.frikanalen.no" IN {
+    type master;
+    file "db.staging.frikanalen.no";
+    dnssec-policy default;
+    inline-signing yes;
+};
+
 {% for prefix in dns_reverse_prefixes %}
 zone "{{ prefix.split('.') | reverse | join('.') }}.in-addr.arpa" IN {
     type master;
