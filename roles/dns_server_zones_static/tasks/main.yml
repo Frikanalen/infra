@@ -18,7 +18,7 @@
   become: yes
   ansible.builtin.template:
     src: "zones.conf.j2"
-    dest: "{{ dns_named_conf_d }}/zones.conf"
+    dest: "{{ dns_named_conf_d }}/zones-static.conf"
     owner: bind
     group: bind
     mode: "0644"
@@ -34,16 +34,6 @@
     mode: "0644"
   vars:
     hosts: "{{ dc1_hosts.hosts }}"
-  notify: reload named
-
-- name: Render forward zone for staging.frikanalen.no
-  become: yes
-  ansible.builtin.template:
-    src: "db.staging.frikanalen.no.j2"
-    dest: "{{ dns_zone_dir }}/db.staging.frikanalen.no"
-    owner: bind
-    group: bind
-    mode: "0644"
   notify: reload named
 
 - name: Render reverse zones
