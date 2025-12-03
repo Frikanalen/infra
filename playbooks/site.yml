@@ -25,6 +25,10 @@
   roles:
     - dns_server_install
     - dns_server_zones
+- name: Point .229 public IP to util
+  hosts: util
+  roles:
+    - util_wan
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true

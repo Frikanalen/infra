@@ -1,0 +1,7 @@
+- name: Restart vtnet1
+  become: yes
+  ansible.builtin.command: service netif restart vtnet1
+
+- name: Restart routing
+  become: yes
+  ansible.builtin.command: service routing restart
