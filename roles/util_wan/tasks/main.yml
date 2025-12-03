@@ -1,0 +1,15 @@
+- name: Configure vtnet1 WAN interface in rc.conf
+  become: yes
+  ansible.builtin.lineinfile:
+    path: /etc/rc.conf
+    regexp: '^ifconfig_vtnet1='
+    line: 'ifconfig_vtnet1="inet 158.36.191.229 netmask 255.255.255.128"'
+  notify: Restart vtnet1
+
+- name: Configure default gateway in rc.conf
+  become: yes
+  ansible.builtin.lineinfile:
+    path: /etc/rc.conf
+    regexp: '^defaultrouter='
+    line: 'defaultrouter="158.36.191.129"'
+  notify: Restart routing
