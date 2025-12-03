@@ -23,7 +23,6 @@
 - name: Configure DNS server
   hosts: util
   roles:
-    - freebsd
     - dns_server_install
     - dns_server_zones
 - name: Install microk8s on kube nodes
