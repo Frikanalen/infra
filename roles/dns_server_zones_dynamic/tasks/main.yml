@@ -9,15 +9,15 @@
     group: bind
     mode: "0755"
 
-- name: Render TSIG key configuration
-  become: yes
-  ansible.builtin.template:
-    src: "tsig-key.conf.j2"
-    dest: "{{ dns_named_conf_d }}/tsig-key-{{ dns_dynamic_zone_name }}.conf"
-    owner: bind
-    group: bind
-    mode: "0640"
-  notify: reload named
+#- name: Render TSIG key configuration
+#  become: yes
+#  ansible.builtin.template:
+#    src: "tsig-key.conf.j2"
+#    dest: "{{ dns_named_conf_d }}/tsig-key-{{ dns_dynamic_zone_name }}.conf"
+#    owner: bind
+#    group: bind
+#    mode: "0640"
+#  notify: reload named
 
 - name: Render zone configuration
   become: yes
