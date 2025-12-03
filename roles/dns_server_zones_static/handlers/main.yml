@@ -1,0 +1,7 @@
+---
+
+- name: reload named
+  become: yes
+  ansible.builtin.service:
+    name: named
+    state: reloaded

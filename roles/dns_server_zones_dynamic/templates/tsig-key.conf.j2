@@ -1,0 +1,6 @@
+// TSIG key for RFC2136 dynamic updates - Managed by Ansible
+
+key "{{ dns_dynamic_tsig_key_name }}" {
+    algorithm {{ dns_dynamic_tsig_algorithm }};
+    secret "{{ dns_dynamic_tsig_secret }}";
+};

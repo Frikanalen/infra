@@ -1,5 +1,5 @@
 $TTL {{ dns_soa_minimum }}
-@   IN SOA  ns1.staging.frikanalen.no. hostmaster.staging.frikanalen.no. (
+@   IN SOA  ns1.{{ dns_dynamic_zone_name }}. hostmaster.{{ dns_dynamic_zone_name }}. (
         {{ dns_soa_serial }} ; serial
         {{ dns_soa_refresh }} ; refresh
         {{ dns_soa_retry }}   ; retry
@@ -7,9 +7,9 @@ $TTL {{ dns_soa_minimum }}
         {{ dns_soa_minimum }} ; minimum
 )
 
-    IN NS   ns1.staging.frikanalen.no.
+    IN NS   ns1.{{ dns_dynamic_zone_name }}.
 
 ; Name server A record
 ns1 IN A {{ dns_ns1_public_address }}
 
-; Add your records below
+; Records below can be managed via RFC2136 dynamic updates

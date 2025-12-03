@@ -24,7 +24,8 @@
   hosts: util
   roles:
     - dns_server_install
-    - dns_server_zones
+    - dns_server_zones_static
+    - dns_server_zones_dynamic
 - name: Point .229 public IP to util
   hosts: util
   roles:

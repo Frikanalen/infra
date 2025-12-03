@@ -1,0 +1,9 @@
+// Managed by Ansible - dynamic zones (RFC2136)
+
+zone "{{ dns_dynamic_zone_name }}" IN {
+    type master;
+    file "db.{{ dns_dynamic_zone_name }}";
+    dnssec-policy default;
+    inline-signing yes;
+    allow-update { key {{ dns_dynamic_tsig_key_name }}; };
+};

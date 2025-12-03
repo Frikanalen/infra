@@ -1,0 +1,22 @@
+---
+
+# Zone we are managing
+dns_dynamic_zone_name: "staging.frikanalen.no"
+
+# SOA defaults
+dns_soa_serial: "{{ '%Y%m%d%H' | strftime }}"
+dns_soa_refresh: 3600
+dns_soa_retry: 900
+dns_soa_expire: 604800
+dns_soa_minimum: 86400
+
+# Public IP address for externally-facing zones
+dns_ns1_public_address: "158.36.191.229"
+
+# RFC2136 TSIG key configuration
+dns_dynamic_tsig_key_name: "staging-update-key"
+dns_dynamic_tsig_algorithm: "hmac-sha256"
+
+# Paths are for BIND installed from pkg/ports on FreeBSD.
+dns_zone_dir: "/usr/local/etc/namedb/master"
+dns_named_conf_d: "/usr/local/etc/namedb/named.conf.d"
