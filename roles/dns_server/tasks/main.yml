@@ -11,13 +11,13 @@
   ansible.builtin.file:
     path: "{{ dns_zone_dir }}"
     state: directory
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0755"
 
 - name: Load host definitions
   ansible.builtin.include_vars:
-    file: "data/hosts.yml"
+    file: "../data/hosts.yml"
     name: dc1_hosts
 
 - name: Render named.conf
@@ -25,8 +25,8 @@
   ansible.builtin.template:
     src: "named.conf.j2"
     dest: "{{ dns_named_conf }}"
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0644"
   notify: restart named
 
@@ -35,8 +35,8 @@
   ansible.builtin.template:
     src: "db.dc1.frikanalen.no.j2"
     dest: "{{ dns_zone_dir }}/db.{{ dns_zone_name }}"
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0644"
   vars:
     hosts: "{{ dc1_hosts.hosts }}"
@@ -47,8 +47,8 @@
   ansible.builtin.template:
     src: "db.{{ item }}.j2"
     dest: "{{ dns_zone_dir }}/db.{{ item }}"
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0644"
   loop: "{{ dns_reverse_prefixes }}"
   vars:
