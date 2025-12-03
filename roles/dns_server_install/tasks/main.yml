@@ -11,8 +11,8 @@
   ansible.builtin.file:
     path: "{{ dns_zone_dir }}"
     state: directory
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0755"
 
 - name: Ensure named.conf.d directory exists
@@ -20,8 +20,8 @@
   ansible.builtin.file:
     path: "{{ dns_named_conf_d }}"
     state: directory
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0755"
 
 - name: Render named.conf
@@ -29,8 +29,8 @@
   ansible.builtin.template:
     src: "named.conf.j2"
     dest: "{{ dns_named_conf }}"
-    owner: root
-    group: wheel
+    owner: bind
+    group: bind
     mode: "0644"
   notify: restart named
 
