@@ -1,0 +1,6 @@
+---
+- name: Configure firewall on util1
+  hosts: util1
+  become: true
+  roles:
+    - util_fw
