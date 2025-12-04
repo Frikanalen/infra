@@ -1,0 +1,44 @@
+sh {{ ansible_managed }}
+# Main PF configuration for util1
+
+# Interfaces
+ext_if = "vtnet1"
+int_if = "vtnet0"
+
+# Addresses
+ext_ip = "158.36.191.229"
+
+# Networks
+int_net = "192.168.3.0/24"
+
+# Options
+set skip on lo0
+set block-policy drop
+set loginterface $ext_if
+
+# Scrub
+scrub in all
+
+# NAT for internal network
+nat on $ext_if from $int_net to any -> ($ext_if)
+
+# Default block
+block in log all
+block out log all
+
+# Allow outbound
+pass out quick on $ext_if keep state
+pass out quick on $int_if keep state
+
+# Allow inbound on internal interface
+pass in on $int_if from $int_net keep state
+
+# Allow ICMP
+pass in inet proto icmp icmp-type { echoreq, unreach }
+
+pass in on $ext_if inet proto tcp to ($ext_if) port 22 flags S/SA keep state
+pass in on $int_if inet proto tcp to ($int_if) port 22 flags S/SA keep state
+
+# Include drop-in configuration files
+anchor "conf.d/*"
+load anchor "conf.d" from "/etc/pf.conf.d"

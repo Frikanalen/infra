@@ -1,0 +1,47 @@
+---
+- name: Enable IP forwarding
+  ansible.posix.sysctl:
+    name: net.inet.ip.forwarding
+    value: "1"
+    sysctl_set: true
+    state: present
+    reload: true
+
+- name: Enable IP forwarding in rc.conf
+  community.general.sysrc:
+    name: gateway_enable
+    value: "YES"
+
+- name: Enable PF in rc.conf
+  community.general.sysrc:
+    name: pf_enable
+    value: "YES"
+
+- name: Enable pflog in rc.conf
+  community.general.sysrc:
+    name: pflog_enable
+    value: "YES"
+
+- name: Create pf.conf.d directory
+  ansible.builtin.file:
+    path: /etc/pf.conf.d
+    state: directory
+    mode: "0755"
+
+- name: Deploy main pf.conf
+  ansible.builtin.template:
+    src: pf.conf.j2
+    dest: /etc/pf.conf
+    mode: "0600"
+    validate: "pfctl -n -f %s"
+  notify: reload pf
+
+- name: Start PF service
+  ansible.builtin.service:
+    name: pf
+    state: started
+
+- name: Start pflog service
+  ansible.builtin.service:
+    name: pflog
+    state: started
