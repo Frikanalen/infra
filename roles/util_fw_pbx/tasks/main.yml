@@ -1,0 +1,7 @@
+---
+- name: Deploy PBX port forwarding rules
+  ansible.builtin.template:
+    src: pbx.conf.j2
+    dest: /etc/pf.conf.d/pbx.conf
+    mode: "0600"
+  notify: reload pf
