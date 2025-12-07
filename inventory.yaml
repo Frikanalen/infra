@@ -3,7 +3,7 @@ all:
     util:
       hosts:
         util1:
-    simula:
+    simula_group:
       hosts:
         simula:
     tx:

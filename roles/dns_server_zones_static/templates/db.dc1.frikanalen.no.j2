@@ -14,7 +14,7 @@ $TTL {{ dns_soa_minimum }}
 ; Name server A record(s)
 ns1 IN A {{ dns_ns1_address }}
 
-; Host A records generated from dc1_hosts.hosts
+; Host A records generated from dc1_hosts.host_config
 {% for hostname, data in hosts.items() %}
 {% if data.ip_cidr is defined %}
 {{ hostname }}    IN A    {{ data.ip_cidr.split('/')[0] }}
