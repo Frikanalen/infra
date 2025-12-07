@@ -14,5 +14,4 @@
 - hosts: kubedev
   become: true
   roles:
-    - k8s_base
-
+    - k8s_base_helm
