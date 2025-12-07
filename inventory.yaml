@@ -34,13 +34,9 @@ all:
     kubedev:
       hosts:
         dev-kube-1:
-          ansible_user: ubuntu
         dev-kube-2:
-          ansible_user: ubuntu
         dev-kube-3:
-          ansible_user: ubuntu
         dev-kube-4:
-          ansible_user: ubuntu
 
 microk8s:
   children:
