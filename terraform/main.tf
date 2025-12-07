@@ -1,6 +1,4 @@
 locals {
-  kube_ci_user = "ubuntu"
-
   # Load the hosts from the infra repo's host database
   hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).hosts
 
@@ -69,7 +67,7 @@ resource "proxmox_vm_qemu" "kube" {
 
   # Cloud-init
   os_type   = "cloud-init"
-  ciuser    = "ubuntu"
+  ciuser    = "ansible"
   sshkeys   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQNn2dIm6s2ybuJXphkIRYxlubNrohoMlhW9XSNpvSw frikanalen ansible init"
   ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.1"
 
