@@ -52,7 +52,7 @@ resource "proxmox_vm_qemu" "kube" {
         disk {
           size    = "40G"
           storage = "local-lvm"
-cache   = each.value.disk_cache
+          cache   = each.value.disk_cache
         }
       }
     }
@@ -77,10 +77,9 @@ cache   = each.value.disk_cache
   os_type   = "cloud-init"
   ciuser    = "ansible"
   sshkeys   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQNn2dIm6s2ybuJXphkIRYxlubNrohoMlhW9XSNpvSw frikanalen ansible init"
-  ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.1"
+  ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.2"
 
-  # FIXME: Placeholder!
-  nameserver   = "8.8.8.8"
+  nameserver   = "192.168.3.2"
   searchdomain = "dc1.frikanalen.no frikanalen.no"
 
   agent  = 1
