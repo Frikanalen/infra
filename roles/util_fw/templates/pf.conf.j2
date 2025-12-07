@@ -6,7 +6,7 @@ ext_if = "vtnet1"
 int_if = "vtnet0"
 
 # Addresses
-ext_ip = "158.36.191.229"
+dev_ingress_ext_ip = "{{ dev_ingress_ext_ip }}"
 
 # Networks
 int_net = "192.168.3.0/24"
@@ -21,6 +21,8 @@ scrub in all
 
 # NAT for internal network
 nat on $ext_if from $int_net to any -> ($ext_if)
+
+# Drop-in configuration files go here (anchors added by their respective roles)
 
 # Default block
 block in log all
@@ -39,6 +41,4 @@ pass in inet proto icmp icmp-type { echoreq, unreach }
 pass in on $ext_if inet proto tcp to ($ext_if) port 22 flags S/SA keep state
 pass in on $int_if inet proto tcp to ($int_if) port 22 flags S/SA keep state
 
-# Include drop-in configuration files
-anchor "conf.d/*"
-load anchor "conf.d" from "/etc/pf.conf.d"
+

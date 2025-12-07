@@ -4,4 +4,13 @@
     src: pbx.conf.j2
     dest: /etc/pf.conf.d/pbx.conf
     mode: "0600"
+
+- name: Add pbx anchor to pf.conf
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - pbx"
+    insertafter: "^# Drop-in configuration files"
+    block: |
+      anchor "pbx"
+      load anchor "pbx" from "/etc/pf.conf.d/pbx.conf"
   notify: reload pf

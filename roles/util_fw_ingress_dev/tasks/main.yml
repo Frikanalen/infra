@@ -4,4 +4,20 @@
     src: ingress_dev.conf.j2
     dest: /etc/pf.conf.d/ingress_dev.conf
     mode: "0600"
+
+- name: Add ingress_dev rdr-anchor to pf.conf (NAT section)
+  ansible.builtin.lineinfile:
+    path: /etc/pf.conf
+    insertafter: "^nat on"
+    line: 'rdr-anchor "ingress_dev"'
+  notify: reload pf
+
+- name: Add ingress_dev anchor to pf.conf (filter section)
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - ingress_dev"
+    insertafter: "^# Drop-in configuration files"
+    block: |
+      anchor "ingress_dev"
+      load anchor "ingress_dev" from "/etc/pf.conf.d/ingress_dev.conf"
   notify: reload pf

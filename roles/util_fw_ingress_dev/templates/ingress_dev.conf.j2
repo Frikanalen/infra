@@ -1,8 +1,9 @@
 # {{ ansible_managed }}
 # Kubernetes dev cluster ingress port forwarding rules
 
-ingress_dev_ip = "192.168.3.90"
+dev_ingress_ext_ip = "{{ dev_ingress_ext_ip }}"
+dev_ingress_int_ip = "{{ dev_ingress_int_ip }}"
 
 # HTTP/HTTPS
-rdr pass on vtnet1 proto tcp from any to $ext_ip port 80 -> $ingress_dev_ip port 80
-rdr pass on vtnet1 proto tcp from any to $ext_ip port 443 -> $ingress_dev_ip port 443
+rdr on vtnet1 proto tcp from any to $dev_ingress_ext_ip port { 80, 443 } -> $dev_ingress_int_ip
+pass in quick on vtnet1 proto tcp from any to $dev_ingress_int_ip port { 80, 443 }
