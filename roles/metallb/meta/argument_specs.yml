@@ -1,0 +1,18 @@
+argument_specs:
+  main:
+    short_description: Install MetalLB via Helm with L2 advertisement
+    options:
+      metallb_ingress_ip:
+        type: str
+        required: true
+        description: IP address range for the ingress pool (e.g., '192.168.3.90/32')
+      metallb_namespace:
+        type: str
+        required: false
+        default: metallb-system
+        description: Kubernetes namespace for MetalLB
+      metallb_chart_version:
+        type: str
+        required: false
+        default: ""
+        description: Helm chart version (empty for latest)

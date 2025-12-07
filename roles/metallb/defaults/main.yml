@@ -1,0 +1,2 @@
+metallb_namespace: metallb-system
+metallb_chart_version: ""

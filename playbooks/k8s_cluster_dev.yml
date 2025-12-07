@@ -14,4 +14,11 @@
 - hosts: kubedev
   become: true
   roles:
+    - microk8s_kubectl
     - k8s_base_helm
+
+- hosts: dev-kube-1
+  vars:
+    metallb_ingress_ip: "192.168.3.90/32"
+  roles:
+    - metallb
