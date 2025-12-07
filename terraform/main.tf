@@ -1,6 +1,6 @@
 locals {
   # Load the hosts from the infra repo's host database
-  hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).hosts
+  hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).host_config
 
   # Hosts without a vm stanza are ignored; those with are flattened
   hosts = {
