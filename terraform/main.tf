@@ -14,6 +14,7 @@ locals {
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
         disk_cache = try(h.vm.disk_cache, "none")
         cores      = try(h.vm.cores, 8)
+        memory     = try(h.vm.memory, 16384)
       },
       h.vm
     )
@@ -33,14 +34,14 @@ resource "proxmox_vm_qemu" "kube" {
 
   cpu {
     sockets = 1
-    cores   = 30
+    cores   = each.value.cores
   }
 
   serial {
     id = 0
   }
 
-  memory = 32768
+  memory = each.value.memory
 
   # Disks
   scsihw = "virtio-scsi-pci"
