@@ -8,6 +8,12 @@ locals {
     name => merge(
       {
         ip_cidr = h.ip_cidr
+        # The correct value is almost always "none". Use "unsafe" *only* for ephemeral hosts on HDDs.
+        # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
+        # It speeds disk I/O at the cost of almost certain data loss on host power failure.
+        # We should probably remove this option as soon as vm1..vm4 are on SSDs.
+        disk_cache = try(h.vm.disk_cache, "none")
+        cores      = try(h.vm.cores, 8)
       },
       h.vm
     )
@@ -45,6 +51,7 @@ resource "proxmox_vm_qemu" "kube" {
         disk {
           size    = "40G"
           storage = "local-lvm"
+cache   = each.value.disk_cache
         }
       }
     }
