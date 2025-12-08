@@ -16,6 +16,7 @@ dns_ns1_public_address: "158.36.191.229"
 # RFC2136 TSIG key configuration
 dns_dynamic_tsig_key_name: "staging-update-key"
 dns_dynamic_tsig_algorithm: "hmac-sha256"
+dns_dynamic_tsig_secret: "{{ vault_dns_tsig_secret }}"
 
 # Paths are for BIND installed from pkg/ports on FreeBSD.
 dns_zone_dir: "/usr/local/etc/namedb/master"
