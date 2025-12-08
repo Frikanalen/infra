@@ -12,4 +12,8 @@ $TTL {{ dns_soa_minimum }}
 ; Name server A record
 ns1 IN A {{ dns_ns1_public_address }}
 
+; Root A record
+@   IN A {{ dns_ingress_public_address }}
+
+
 ; Records below can be managed via RFC2136 dynamic updates
