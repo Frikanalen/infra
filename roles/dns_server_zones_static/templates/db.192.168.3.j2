@@ -12,7 +12,7 @@ $TTL {{ dns_soa_minimum }}
 {% endfor %}
 
 ; PTR records for 192.168.3.0/24
-{% for hostname, data in hosts.items() if data.ip_cidr is defined %}
+{% for hostname, data in host_entries.items() if data.ip_cidr is defined %}
 {% set ip = data.ip_cidr.split('/')[0] %}
 {% if ip.startswith('192.168.3.') %}
 {% set last = ip.split('.')[3] %}

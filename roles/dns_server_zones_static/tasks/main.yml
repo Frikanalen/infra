@@ -33,7 +33,7 @@
     group: bind
     mode: "0644"
   vars:
-    hosts: "{{ dc1_hosts.host_config }}"
+    host_entries: "{{ dc1_hosts.host_config }}"
   notify: reload named
 
 - name: Render reverse zones
@@ -46,5 +46,5 @@
     mode: "0644"
   loop: "{{ dns_reverse_prefixes }}"
   vars:
-    hosts: "{{ dc1_hosts.host_config }}"
+    host_entries: "{{ dc1_hosts.host_config }}"
   notify: reload named
