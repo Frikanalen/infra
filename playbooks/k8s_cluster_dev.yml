@@ -1,11 +1,13 @@
 # Form HA cluster for kubedev
 - hosts: dev-kube-1
   become: true
+  tags: [cluster, seed]
   roles:
     - microk8s_cluster_seed
 
 - hosts: kubedev:!dev-kube-1
   become: true
+  tags: [cluster, join]
   vars:
     microk8s_seed_host: dev-kube-1
   roles:
@@ -13,16 +15,18 @@
 
 - hosts: kubedev
   become: true
+  tags: [cluster, kubectl]
   roles:
     - microk8s_kubectl
     - k8s_base_helm
 
 - hosts: dev-kube-1
+  tags: [ingress]
   vars:
     metallb_ingress_ip: "192.168.3.90/32"
     traefik_loadbalancer_ip: "192.168.3.90"
     external_dns_default_target: "158.36.191.229"
   roles:
     - metallb
-    - external_dns
     - traefik
+    - external_dns
