@@ -16,21 +16,19 @@ set skip on lo0
 set block-policy drop
 set loginterface $ext_if
 
-# Scrub
-scrub in all
+# Scrub - normalize packets
+scrub on $ext_if all no-df fragment reassemble
 
 # NAT for internal network
 nat on $ext_if from $int_net to any -> ($ext_if)
 
 # Drop-in configuration files go here (anchors added by their respective roles)
 
-# Default block
+# Default block inbound
 block in log all
-block out log all
 
-# Allow outbound
-pass out quick on $ext_if keep state
-pass out quick on $int_if keep state
+# Allow all outbound
+pass out all keep state
 
 # Allow inbound on internal interface
 pass in on $int_if from $int_net keep state
@@ -40,5 +38,9 @@ pass in inet proto icmp icmp-type { echoreq, unreach }
 
 pass in on $ext_if inet proto tcp to ($ext_if) port 22 flags S/SA keep state
 pass in on $int_if inet proto tcp to ($int_if) port 22 flags S/SA keep state
+
+# DNS
+pass in on $ext_if inet proto tcp to ($ext_if) port 53 flags S/SA keep state
+pass in on $ext_if inet proto udp to ($ext_if) port 53 keep state
 
 
