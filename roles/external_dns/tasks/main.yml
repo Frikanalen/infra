@@ -33,6 +33,7 @@
       extraArgs:
         - --ingress-class={{ external_dns_ingress_class }}
         - --default-targets={{ external_dns_default_target }}
+        - --force-default-targets
         - --rfc2136-host={{ external_dns_rfc2136_host }}
         - --rfc2136-port={{ external_dns_rfc2136_port }}
         - --rfc2136-zone={{ external_dns_rfc2136_zone }}
