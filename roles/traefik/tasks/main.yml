@@ -1,0 +1,70 @@
+---
+- name: Install kubernetes Python library
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  become: true
+
+- name: Add Traefik Helm repository
+  kubernetes.core.helm_repository:
+    name: traefik
+    repo_url: https://traefik.github.io/charts
+  become: false
+  run_once: true
+
+- name: Install Traefik via Helm
+  kubernetes.core.helm:
+    name: traefik
+    chart_ref: traefik/traefik
+    chart_version: "{{ traefik_chart_version | default(omit, true) }}"
+    release_namespace: "{{ traefik_namespace }}"
+    create_namespace: true
+    wait: true
+    values:
+      persistence:
+        enabled: true
+
+      securityContext:
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+
+      podSecurityContext:
+        fsGroup: 65532
+
+      certificatesResolvers:
+        letsencrypt:
+          acme:
+            email: "{{ traefik_acme_email }}"
+            storage: "{{ traefik_acme_storage }}"
+            httpChallenge:
+              entryPoint: web
+
+      service:
+        type: "{{ traefik_service_type }}"
+        spec:
+          loadBalancerIP: "{{ traefik_loadbalancer_ip | default(omit) }}"
+
+      dashboard:
+        enabled: "{{ traefik_dashboard_enabled }}"
+
+      ingressClass:
+        enabled: true
+        isDefaultClass: true
+        name: "{{ traefik_ingress_class }}"
+  become: false
+  run_once: true
+
+- name: Wait for Traefik to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ traefik_namespace }}"
+    name: traefik
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  become: false
+  run_once: true

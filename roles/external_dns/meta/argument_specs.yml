@@ -28,8 +28,7 @@ argument_specs:
         description: Ingress class to watch for DNS records
       external_dns_default_target:
         type: str
-        required: false
-        default: "158.36.191.229"
+        required: true
         description: Default target IP for DNS records (public/external IP)
       external_dns_rfc2136_host:
         type: str
