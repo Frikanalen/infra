@@ -13,6 +13,9 @@ dns_soa_minimum: 86400
 # Public IP address for externally-facing zones
 dns_ns1_public_address: "158.36.191.229"
 
+# Public IP address for root A record
+dns_ingress_public_address: "158.36.191.229"
+
 # RFC2136 TSIG key configuration
 dns_dynamic_tsig_key_name: "staging-update-key"
 dns_dynamic_tsig_algorithm: "hmac-sha256"
