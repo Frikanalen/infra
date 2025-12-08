@@ -1,0 +1,18 @@
+---
+traefik_namespace: traefik
+traefik_chart_version: "37.4.0"
+
+# ACME/Let's Encrypt configuration
+traefik_acme_email: toresbe@protonmail.com
+traefik_acme_storage: /data/acme.json
+
+# Service configuration
+traefik_service_type: LoadBalancer
+
+# Dashboard
+traefik_dashboard_enabled: true
+
+# Ingress class for external-dns integration
+traefik_ingress_class: public
+
+

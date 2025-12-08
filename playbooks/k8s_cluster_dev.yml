@@ -20,6 +20,9 @@
 - hosts: dev-kube-1
   vars:
     metallb_ingress_ip: "192.168.3.90/32"
+    traefik_loadbalancer_ip: "192.168.3.90"
+    external_dns_default_target: "158.36.191.229"
   roles:
     - metallb
     - external_dns
+    - traefik

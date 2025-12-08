@@ -11,8 +11,7 @@ external_dns_domain_filter: staging.frikanalen.no
 # Ingress class to watch
 external_dns_ingress_class: public
 
-# Default target IP for DNS records (external/public IP)
-external_dns_default_target: "158.36.191.229"
+
 
 # RFC2136 configuration
 external_dns_rfc2136_host: "192.168.3.2"  # util1 (DNS server)
