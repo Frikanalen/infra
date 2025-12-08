@@ -25,6 +25,8 @@
   vars:
     metallb_ingress_ip: "192.168.3.90/32"
     traefik_loadbalancer_ip: "192.168.3.90"
+    traefik_public_ip: "158.36.191.229"
+    traefik_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
     external_dns_default_target: "158.36.191.229"
   roles:
     - metallb
