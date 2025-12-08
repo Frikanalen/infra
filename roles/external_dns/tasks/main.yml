@@ -1,0 +1,58 @@
+---
+- name: Install kubernetes Python library
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  become: true
+
+- name: Add external-dns Helm repository
+  kubernetes.core.helm_repository:
+    name: external-dns
+    repo_url: https://kubernetes-sigs.github.io/external-dns/
+  become: false
+  run_once: true
+
+- name: Install external-dns via Helm
+  kubernetes.core.helm:
+    name: external-dns
+    chart_ref: external-dns/external-dns
+    chart_version: "{{ external_dns_chart_version | default(omit, true) }}"
+    release_namespace: "{{ external_dns_namespace }}"
+    create_namespace: true
+    wait: true
+    values:
+      provider:
+        name: rfc2136
+      sources:
+        - ingress
+      policy: "{{ external_dns_policy }}"
+      txtOwnerId: "{{ external_dns_txt_owner_id }}"
+      txtPrefix: "{{ external_dns_txt_prefix }}"
+      domainFilters:
+        - "{{ external_dns_domain_filter }}"
+      extraArgs:
+        - --ingress-class={{ external_dns_ingress_class }}
+        - --default-targets={{ external_dns_default_target }}
+        - --rfc2136-host={{ external_dns_rfc2136_host }}
+        - --rfc2136-port={{ external_dns_rfc2136_port }}
+        - --rfc2136-zone={{ external_dns_rfc2136_zone }}
+        - --rfc2136-tsig-keyname={{ external_dns_rfc2136_tsig_keyname }}
+        - --rfc2136-tsig-secret-alg={{ external_dns_rfc2136_tsig_secret_alg }}
+        - --rfc2136-tsig-axfr
+        - --rfc2136-tsig-secret={{ external_dns_rfc2136_tsig_secret }}
+  become: false
+  run_once: true
+  no_log: true
+
+- name: Wait for external-dns to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ external_dns_namespace }}"
+    name: external-dns
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  become: false
+  run_once: true

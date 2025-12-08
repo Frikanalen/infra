@@ -22,3 +22,4 @@
     metallb_ingress_ip: "192.168.3.90/32"
   roles:
     - metallb
+    - external_dns
