@@ -15,4 +15,9 @@ traefik_dashboard_enabled: true
 # Ingress class for external-dns integration
 traefik_ingress_class: public
 
+# RFC2136 DNS challenge defaults (same as external_dns)
+traefik_rfc2136_host: "192.168.3.2"
+traefik_rfc2136_port: "53"
+traefik_rfc2136_tsig_keyname: "staging-update-key"
+traefik_rfc2136_tsig_algorithm: "hmac-sha256"
 

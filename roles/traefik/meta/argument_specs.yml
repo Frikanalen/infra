@@ -40,4 +40,32 @@ argument_specs:
       traefik_loadbalancer_ip:
         type: str
         required: true
-        description: IP address to request from MetalLB (should match metallb_ingress_ip and external_dns_default_target)
+        description: Internal IP address to request from MetalLB (should match metallb_ingress_ip)
+      traefik_public_ip:
+        type: str
+        required: true
+        description: Public IP to publish in ingress status (should match external_dns_default_target)
+      traefik_rfc2136_host:
+        type: str
+        required: false
+        default: "192.168.3.2"
+        description: DNS server for RFC2136 ACME challenge
+      traefik_rfc2136_port:
+        type: str
+        required: false
+        default: "53"
+        description: DNS server port
+      traefik_rfc2136_tsig_keyname:
+        type: str
+        required: false
+        default: staging-update-key
+        description: TSIG key name for RFC2136
+      traefik_rfc2136_tsig_algorithm:
+        type: str
+        required: false
+        default: hmac-sha256
+        description: TSIG algorithm
+      traefik_rfc2136_tsig_secret:
+        type: str
+        required: true
+        description: TSIG secret for RFC2136 (base64 encoded)
