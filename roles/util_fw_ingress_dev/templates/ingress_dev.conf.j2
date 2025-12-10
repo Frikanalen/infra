@@ -2,8 +2,13 @@
 # Kubernetes dev cluster ingress port forwarding rules
 
 dev_ingress_ext_ip = "{{ dev_ingress_ext_ip }}"
-dev_ingress_int_ip = "{{ dev_ingress_int_ip }}"
+dev_ingress_web_int_ip = "{{ dev_ingress_web_int_ip }}"
+dev_ingress_live_int_ip = "{{ dev_ingress_live_int_ip }}"
 
-# HTTP/HTTPS
-rdr on vtnet1 proto tcp from any to $dev_ingress_ext_ip port { 80, 443 } -> $dev_ingress_int_ip
-pass in quick on vtnet1 proto tcp from any to $dev_ingress_int_ip port { 80, 443 }
+# HTTP/HTTPS and UDP (aux3 video)
+
+rdr on vtnet1 proto tcp from any to $dev_ingress_ext_ip port { 80, 443 } -> $dev_ingress_web_int_ip
+rdr on vtnet1 proto udp from any to $dev_ingress_ext_ip port 5004 -> $dev_ingress_live_int_ip
+
+pass in quick on vtnet1 proto tcp from any to $dev_ingress_web_int_ip port { 80, 443 }
+pass in quick on vtnet1 proto udp from any to $dev_ingress_live_int_ip port 5004

@@ -23,7 +23,7 @@
 - hosts: dev-kube-1
   tags: [ingress]
   vars:
-    metallb_ingress_ip: "192.168.3.90/32"
+    metallb_ingress_ip: "192.168.3.90/30"
     traefik_loadbalancer_ip: "192.168.3.90"
     traefik_public_ip: "158.36.191.229"
     traefik_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
