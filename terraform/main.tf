@@ -26,6 +26,7 @@ locals {
 resource "proxmox_vm_qemu" "kube" {
   for_each = local.hosts
 
+  machine     = "q35"
   name        = each.key # "prod-kube-1" .. "prod-kube-4"
   vmid        = each.value.vmid
   tags        = "ubuntu"
