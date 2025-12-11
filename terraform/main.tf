@@ -14,7 +14,8 @@ locals {
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
         disk_cache = try(h.vm.disk_cache, "none")
         cores      = try(h.vm.cores, 8)
-        memory     = try(h.vm.memory, 16384)
+        memory_max = try(h.vm.memory_max, 16384)
+        memory_min = try(h.vm.memory_min, 8192)
       },
       h.vm
     )
@@ -33,33 +34,39 @@ resource "proxmox_vm_qemu" "kube" {
   clone = "ubuntu-24.04-cloud"
 
   cpu {
+    # note this creates portability problems if CPU cores in cluster have different features
+    type    = "host"
     sockets = 1
     cores   = each.value.cores
+    numa    = true
   }
 
   serial {
     id = 0
   }
 
-  memory = each.value.memory
+  memory  = each.value.memory_max
+  balloon = each.value.memory_min
 
   # Disks
-  scsihw = "virtio-scsi-pci"
+  scsihw = "virtio-scsi-single"
 
   disks {
     scsi {
       scsi0 {
         disk {
-          size    = "40G"
-          storage = "local-lvm"
-          cache   = each.value.disk_cache
+          size     = "40G"
+          storage  = "localssd-lvm"
+          cache    = each.value.disk_cache
+          iothread = true
+          discard  = true
         }
       }
     }
     ide {
       ide2 {
         cloudinit {
-          storage = "local-lvm"
+          storage = "localssd-lvm"
         }
       }
     }
@@ -71,6 +78,7 @@ resource "proxmox_vm_qemu" "kube" {
     id     = 0
     model  = "virtio"
     bridge = "vmbr0"
+    queues = 4 # consider 8 in production
   }
 
   # Cloud-init
