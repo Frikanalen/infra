@@ -1,0 +1,26 @@
+---
+- name: Install kubernetes Python library
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  become: true
+
+- name: Install Kubegres operator
+  kubernetes.core.k8s:
+    state: present
+    src: "{{ kubegres_manifest_url }}"
+  become: false
+  run_once: true
+
+- name: Wait for Kubegres controller to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: kubegres-system
+    name: kubegres-controller-manager
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  become: false
+  run_once: true
