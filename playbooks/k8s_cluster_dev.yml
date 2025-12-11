@@ -32,3 +32,4 @@
     - metallb
     - traefik
     - external_dns
+    - kubegres

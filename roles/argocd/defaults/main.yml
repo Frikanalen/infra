@@ -10,8 +10,3 @@ argocd_chart_version: ""            # empty = latest
 argocd_chart_values: {}             # override in playbook if needed
 argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
-# GitOps repo settings
-argocd_gitops_repo_url: https://github.com/Frikanalen/gitops.git
-argocd_gitops_repo_revision: main
-argocd_gitops_repo_path: apps      # directory in the repo containing your App CR lists
-
