@@ -1,0 +1,22 @@
+---
+# defaults for argocd_frontend role
+argocd_namespace: argocd
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Frontend app settings
+argocd_frontend_app_name: frontend
+argocd_frontend_namespace: default
+argocd_frontend_repo_url: https://github.com/Frikanalen/frontend.git
+argocd_frontend_repo_revision: staging
+argocd_frontend_repo_path: chart
+
+# Helm values - only overrides from chart defaults
+argocd_frontend_values:
+  djangoUrl: https://staging.frikanalen.no/
+
+  ingress:
+    className: public
+    hostname: staging.frikanalen.no
+  
+  image:
+    tag: staging

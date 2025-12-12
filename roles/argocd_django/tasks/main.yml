@@ -1,0 +1,23 @@
+---
+- name: Ensure Django namespace exists
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_django_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Create Postgres passwords secret
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'postgres-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy Django API via ArgoCD Application
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'application.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

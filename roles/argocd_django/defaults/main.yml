@@ -1,0 +1,36 @@
+---
+# defaults for argocd_django role
+argocd_namespace: argocd
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Django app settings
+argocd_django_app_name: django-api
+argocd_django_namespace: default
+argocd_django_repo_url: https://github.com/Frikanalen/django-api.git
+argocd_django_repo_revision: main
+argocd_django_repo_path: chart
+
+# Database settings (for secret generation)
+argocd_django_db_user: fkweb
+argocd_django_db_secret_name: django-postgres-passwords
+argocd_django_db_host: django-postgres
+argocd_django_db_port: "5432"
+argocd_django_db_name: fkweb
+
+# Helm values - only overrides from chart defaults
+argocd_django_values:
+  env:
+    ALLOWED_HOSTS: staging.frikanalen.no,localhost,django.default.svc.cluster.local
+    CSRF_TRUSTED_ORIGINS: https://staging.frikanalen.no
+
+  ingress:
+    className: public
+    hosts:
+      - host: staging.frikanalen.no
+        paths:
+          - path: /api
+            serviceName: django-api
+            servicePort: 8080
+          - path: /static
+            serviceName: django-api
+            servicePort: 80

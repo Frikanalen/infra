@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ argocd_django_app_name }}
+  namespace: {{ argocd_namespace }}
+spec:
+  project: default
+  source:
+    repoURL: "{{ argocd_django_repo_url }}"
+    targetRevision: "{{ argocd_django_repo_revision }}"
+    path: "{{ argocd_django_repo_path }}"
+    helm:
+      values: |
+{{ argocd_django_values | to_nice_yaml(indent=2) | indent(8, first=True) }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ argocd_django_namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
