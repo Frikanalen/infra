@@ -23,20 +23,14 @@ all:
     kubeprod:
       hosts:
         prod-kube-1:
-          ansible_user: ubuntu
         prod-kube-2:
-          ansible_user: ubuntu
         prod-kube-3:
-          ansible_user: ubuntu
-        prod-kube-4:
-          ansible_user: ubuntu
 
     kubedev:
       hosts:
         dev-kube-1:
         dev-kube-2:
         dev-kube-3:
-        dev-kube-4:
 
 microk8s:
   children:
