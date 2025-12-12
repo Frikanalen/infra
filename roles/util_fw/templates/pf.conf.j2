@@ -19,8 +19,8 @@ set loginterface $ext_if
 # Scrub - normalize packets
 scrub on $ext_if all no-df fragment reassemble
 
-# NAT for internal network
-nat on $ext_if from $int_net to any -> ($ext_if)
+# NAT for internal network (exclude hairpin NAT destinations handled by anchors)
+nat on $ext_if from $int_net to ! $dev_ingress_ext_ip -> ($ext_if)
 
 # Drop-in configuration files go here (anchors added by their respective roles)
 
