@@ -1,0 +1,22 @@
+---
+# defaults for argocd_graphics role
+argocd_namespace: argocd
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Graphics app settings
+argocd_graphics_app_name: graphics
+argocd_graphics_namespace: default
+argocd_graphics_repo_url: https://github.com/Frikanalen/on-air-graphics.git
+argocd_graphics_repo_revision: staging
+argocd_graphics_repo_path: chart
+
+# Helm values - only overrides from chart defaults
+argocd_graphics_values:
+  ingress:
+    className: public
+    hostname: staging.frikanalen.no
+    path: /graphics
+    certResolver: letsencrypt
+  
+  image:
+    tag: staging
