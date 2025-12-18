@@ -1,0 +1,11 @@
+---
+# Deploy ArgoCD applications
+- hosts: dev-kube-1
+  tags: [argocd, apps]
+  vars:
+    argocd_frontend_repo_revision: staging
+  roles:
+    - argocd_django
+    - argocd_frontend
+    - argocd_graphics
+    - argocd_schedule
