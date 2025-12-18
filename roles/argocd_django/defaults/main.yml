@@ -7,7 +7,7 @@ argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 argocd_django_app_name: django-api
 argocd_django_namespace: default
 argocd_django_repo_url: https://github.com/Frikanalen/django-api.git
-argocd_django_repo_revision: main
+argocd_django_repo_revision: staging
 argocd_django_repo_path: chart
 
 # Database settings (for secret generation)
@@ -19,6 +19,9 @@ argocd_django_db_name: fkweb
 
 # Helm values - only overrides from chart defaults
 argocd_django_values:
+  image:
+    tag: staging
+    
   env:
     ALLOWED_HOSTS: staging.frikanalen.no,localhost,django.default.svc.cluster.local
     CSRF_TRUSTED_ORIGINS: https://staging.frikanalen.no
@@ -28,6 +31,9 @@ argocd_django_values:
     hosts:
       - host: staging.frikanalen.no
         paths:
+          - path: /admin
+            serviceName: django-api
+            servicePort: 8080
           - path: /api
             serviceName: django-api
             servicePort: 8080
