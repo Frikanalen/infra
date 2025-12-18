@@ -32,6 +32,14 @@ all:
         dev-kube-2:
         dev-kube-3:
 
+    staging:
+      hosts:
+        dev-kube-1:
+
+    prod:
+      hosts:
+        prod-kube-1:
+
 microk8s:
   children:
     kubeprod:
