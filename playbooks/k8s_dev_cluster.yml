@@ -1,4 +1,4 @@
-# Form HA cluster for kubedev
+ Form HA cluster for kubedev
 - hosts: dev-kube-1
   become: true
   tags: [cluster, seed]
@@ -33,3 +33,4 @@
     - traefik
     - external_dns
     - kubegres
+    - argocd
