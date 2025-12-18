@@ -9,3 +9,4 @@
     - argocd_frontend
     - argocd_graphics
     - argocd_schedule
+    - argocd_playout
