@@ -1,13 +1,18 @@
 ---
+timezone_region: Europe/Oslo
+frikanalen_app_namespace: default
+frikanalen_public_ingress_class: public
+
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
-frikanalen_base_url: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
 
 caspar_host: "192.168.3.34"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
-  
+
+traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
+
 app_versions:
   graphics: v1.0.0
   playout: v1.0.2

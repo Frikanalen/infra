@@ -3,7 +3,7 @@
 
 # Graphics app settings
 argocd_graphics_app_name: graphics
-argocd_graphics_namespace: "{{ argocd_default_app_namespace }}"
+argocd_graphics_namespace: "{{ frikanalen_app_namespace }}"
 argocd_graphics_repo_url: https://github.com/Frikanalen/on-air-graphics.git
 argocd_graphics_repo_path: chart
 
@@ -13,7 +13,7 @@ argocd_graphics_version: "{{ app_versions.graphics | default('staging') }}"
 # Helm values - only overrides from chart defaults
 argocd_graphics_values:
   ingress:
-    className: "{{ default_ingress_class }}"
+    className: "{{ frikanalen_public_ingress_class }}"
     hostname: "{{ frikanalen_domain }}"
     path: /graphics
     certResolver: letsencrypt

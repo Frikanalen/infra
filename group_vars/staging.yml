@@ -1,12 +1,20 @@
 ---
+timezone_region: Europe/Oslo
+frikanalen_app_namespace: default
+frikanalen_public_ingress_class: public
+frikanalen_dyndns_server: "192.168.3.2"
+frikanalen_dyndns_tsig_keyname: staging-update-key
+frikanalen_dyndns_zone: staging.frikanalen.no
+frikanalen_dyndns_owner_id: staging-external-dns
+
 frikanalen_domain: staging.frikanalen.no
 frikanalen_scheme: https
-frikanalen_base_url: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
 
 caspar_host: "192.168.3.34"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
+
 app_versions:
   graphics: staging
   playout: staging
