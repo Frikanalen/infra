@@ -1,6 +1,0 @@
-haproxy_listen_ip: "158.36.191.228"
-haproxy_frontend_ports:
-  - 80
-  - 443
-haproxy_backend_ip: "192.168.3.80"
-haproxy_backend_ports: "{{ haproxy_frontend_ports }}"

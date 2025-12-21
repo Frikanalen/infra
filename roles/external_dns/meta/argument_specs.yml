@@ -1,0 +1,72 @@
+argument_specs:
+  main:
+    short_description: Install external-dns via Helm with RFC2136 provider for BIND9
+    options:
+      external_dns_rfc2136_tsig_secret:
+        type: str
+        required: true
+        description: TSIG secret for RFC2136 dynamic DNS updates (base64 encoded)
+      external_dns_namespace:
+        type: str
+        required: false
+        default: external-dns
+        description: Kubernetes namespace for external-dns
+      external_dns_chart_version:
+        type: str
+        required: false
+        default: ""
+        description: Helm chart version (empty for latest)
+      external_dns_domain_filter:
+        type: str
+        required: false
+        default: staging.frikanalen.no
+        description: Domain to manage DNS records for
+      external_dns_ingress_class:
+        type: str
+        required: false
+        default: public
+        description: Ingress class to watch for DNS records
+      external_dns_default_target:
+        type: str
+        required: true
+        description: Default target IP for DNS records (public/external IP)
+      external_dns_rfc2136_host:
+        type: str
+        required: false
+        default: "192.168.3.2"
+        description: BIND9 server address
+      external_dns_rfc2136_port:
+        type: int
+        required: false
+        default: 53
+        description: DNS server port
+      external_dns_rfc2136_zone:
+        type: str
+        required: false
+        default: staging.frikanalen.no
+        description: DNS zone to update
+      external_dns_rfc2136_tsig_keyname:
+        type: str
+        required: false
+        default: staging-update-key
+        description: TSIG key name configured in BIND9
+      external_dns_rfc2136_tsig_secret_alg:
+        type: str
+        required: false
+        default: hmac-sha256
+        description: TSIG algorithm
+      external_dns_policy:
+        type: str
+        required: false
+        default: sync
+        description: DNS record management policy (sync or upsert-only)
+      external_dns_txt_owner_id:
+        type: str
+        required: false
+        default: staging-external-dns
+        description: TXT record owner ID for identifying managed records
+      external_dns_txt_prefix:
+        type: str
+        required: false
+        default: "_externaldns."
+        description: Prefix for TXT ownership records

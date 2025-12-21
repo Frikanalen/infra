@@ -1,0 +1,10 @@
+---
+# Deploy ArgoCD applications to production
+- hosts: prod
+  tags: [argocd, apps]
+  roles:
+    - argocd_django
+    - argocd_frontend
+    - argocd_graphics
+    - argocd_schedule
+    - argocd_playout

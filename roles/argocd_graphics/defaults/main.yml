@@ -1,0 +1,22 @@
+---
+# defaults for argocd_graphics role
+
+# Graphics app settings
+argocd_graphics_app_name: graphics
+argocd_graphics_namespace: "{{ argocd_default_app_namespace }}"
+argocd_graphics_repo_url: https://github.com/Frikanalen/on-air-graphics.git
+argocd_graphics_repo_path: chart
+
+# Version - controls both repo revision and image tag
+argocd_graphics_version: "{{ app_versions.graphics | default('staging') }}"
+
+# Helm values - only overrides from chart defaults
+argocd_graphics_values:
+  ingress:
+    className: "{{ default_ingress_class }}"
+    hostname: "{{ frikanalen_domain }}"
+    path: /graphics
+    certResolver: letsencrypt
+  
+  image:
+    tag: "{{ argocd_graphics_version }}"

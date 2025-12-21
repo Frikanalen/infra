@@ -1,0 +1,29 @@
+---
+external_dns_namespace: external-dns
+external_dns_chart_version: ""
+
+# DNS provider configuration (RFC2136 for BIND9)
+external_dns_provider: rfc2136
+
+# Domain to manage
+external_dns_domain_filter: staging.frikanalen.no
+
+# Ingress class to watch
+external_dns_ingress_class: public
+
+
+
+# RFC2136 configuration
+external_dns_rfc2136_host: "192.168.3.2"  # util1 (DNS server)
+external_dns_rfc2136_port: 53
+external_dns_rfc2136_zone: staging.frikanalen.no
+external_dns_rfc2136_tsig_keyname: staging-update-key
+external_dns_rfc2136_tsig_secret_alg: hmac-sha256
+external_dns_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
+
+# TXT record ownership
+external_dns_txt_owner_id: staging-external-dns
+external_dns_txt_prefix: "_externaldns."
+
+# Policy: sync will delete records, upsert-only will only create/update
+external_dns_policy: sync

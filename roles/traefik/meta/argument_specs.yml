@@ -1,0 +1,71 @@
+argument_specs:
+  main:
+    short_description: Install Traefik ingress controller via Helm with Let's Encrypt
+    options:
+      traefik_namespace:
+        type: str
+        required: false
+        default: traefik
+        description: Kubernetes namespace for Traefik
+      traefik_chart_version:
+        type: str
+        required: false
+        default: "v35.4.0"
+        description: Helm chart version
+      traefik_acme_email:
+        type: str
+        required: false
+        default: toresbe@protonmail.com
+        description: Email for Let's Encrypt ACME registration
+      traefik_acme_storage:
+        type: str
+        required: false
+        default: /data/acme.json
+        description: Path for ACME certificate storage
+      traefik_service_type:
+        type: str
+        required: false
+        default: LoadBalancer
+        description: Kubernetes service type (LoadBalancer for MetalLB integration)
+      traefik_dashboard_enabled:
+        type: bool
+        required: false
+        default: true
+        description: Enable Traefik dashboard
+      traefik_ingress_class:
+        type: str
+        required: false
+        default: public
+        description: Ingress class name (should match external_dns_ingress_class)
+      traefik_loadbalancer_ip:
+        type: str
+        required: true
+        description: Internal IP address to request from MetalLB (should match metallb_ingress_ip)
+      traefik_public_ip:
+        type: str
+        required: true
+        description: Public IP to publish in ingress status (should match external_dns_default_target)
+      traefik_rfc2136_host:
+        type: str
+        required: false
+        default: "192.168.3.2"
+        description: DNS server for RFC2136 ACME challenge
+      traefik_rfc2136_port:
+        type: str
+        required: false
+        default: "53"
+        description: DNS server port
+      traefik_rfc2136_tsig_keyname:
+        type: str
+        required: false
+        default: staging-update-key
+        description: TSIG key name for RFC2136
+      traefik_rfc2136_tsig_algorithm:
+        type: str
+        required: false
+        default: hmac-sha256
+        description: TSIG algorithm
+      traefik_rfc2136_tsig_secret:
+        type: str
+        required: true
+        description: TSIG secret for RFC2136 (base64 encoded)

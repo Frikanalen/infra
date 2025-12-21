@@ -3,7 +3,7 @@ all:
     util:
       hosts:
         util1:
-    simula:
+    simula_group:
       hosts:
         simula:
     tx:
@@ -23,24 +23,22 @@ all:
     kubeprod:
       hosts:
         prod-kube-1:
-          ansible_user: ubuntu
         prod-kube-2:
-          ansible_user: ubuntu
         prod-kube-3:
-          ansible_user: ubuntu
-        prod-kube-4:
-          ansible_user: ubuntu
 
     kubedev:
       hosts:
         dev-kube-1:
-          ansible_user: ubuntu
         dev-kube-2:
-          ansible_user: ubuntu
         dev-kube-3:
-          ansible_user: ubuntu
-        dev-kube-4:
-          ansible_user: ubuntu
+
+    staging:
+      hosts:
+        dev-kube-1:
+
+    prod:
+      hosts:
+        prod-kube-1:
 
 microk8s:
   children:

@@ -1,0 +1,7 @@
+---
+- name: Deploy Frontend via ArgoCD Application
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'application.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

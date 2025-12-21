@@ -1,0 +1,19 @@
+$TTL {{ dns_soa_minimum }}
+@   IN SOA  ns1.{{ dns_dynamic_zone_name }}. hostmaster.{{ dns_dynamic_zone_name }}. (
+        {{ dns_soa_serial }} ; serial
+        {{ dns_soa_refresh }} ; refresh
+        {{ dns_soa_retry }}   ; retry
+        {{ dns_soa_expire }}  ; expire
+        {{ dns_soa_minimum }} ; minimum
+)
+
+    IN NS   ns1.{{ dns_dynamic_zone_name }}.
+
+; Name server A record
+ns1 IN A {{ dns_ns1_public_address }}
+
+; Root A record
+@   IN A {{ dns_ingress_public_address }}
+
+
+; Records below can be managed via RFC2136 dynamic updates

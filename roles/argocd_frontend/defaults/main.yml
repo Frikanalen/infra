@@ -1,0 +1,22 @@
+---
+# defaults for argocd_frontend role
+
+# Frontend app settings
+argocd_frontend_app_name: frontend
+argocd_frontend_namespace: "{{ argocd_default_app_namespace }}"
+argocd_frontend_repo_url: https://github.com/Frikanalen/frontend.git
+argocd_frontend_repo_path: chart
+
+# Version - controls both repo revision and image tag
+argocd_frontend_version: "{{ app_versions.frontend | default('staging') }}"
+
+# Helm values - only overrides from chart defaults
+argocd_frontend_values:
+  djangoUrl: "{{ frikanalen_base_url }}/"
+
+  ingress:
+    className: "{{ default_ingress_class }}"
+    hostname: "{{ frikanalen_domain }}"
+  
+  image:
+    tag: "{{ argocd_frontend_version }}"

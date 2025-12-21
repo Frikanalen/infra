@@ -1,0 +1,23 @@
+---
+traefik_namespace: traefik
+traefik_chart_version: "37.4.0"
+
+# ACME/Let's Encrypt configuration
+traefik_acme_email: toresbe@protonmail.com
+traefik_acme_storage: /data/acme.json
+
+# Service configuration
+traefik_service_type: LoadBalancer
+
+# Dashboard
+traefik_dashboard_enabled: true
+
+# Ingress class for external-dns integration
+traefik_ingress_class: public
+
+# RFC2136 DNS challenge defaults (same as external_dns)
+traefik_rfc2136_host: "192.168.3.2"
+traefik_rfc2136_port: "53"
+traefik_rfc2136_tsig_keyname: "staging-update-key"
+traefik_rfc2136_tsig_algorithm: "hmac-sha256"
+

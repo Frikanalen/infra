@@ -1,0 +1,9 @@
+---
+# defaults for argocd_gitops role
+argocd_namespace: argocd
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# GitOps repo settings
+argocd_gitops_repo_url: https://github.com/Frikanalen/gitops.git
+argocd_gitops_repo_revision: main
+argocd_gitops_repo_path: apps

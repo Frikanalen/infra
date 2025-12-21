@@ -1,0 +1,25 @@
+# {{ ansible_managed }}
+# Kubernetes dev cluster ingress port forwarding rules
+
+dev_ingress_ext_ip = "{{ dev_ingress_ext_ip }}"
+dev_ingress_web_int_ip = "{{ dev_ingress_web_int_ip }}"
+dev_ingress_live_int_ip = "{{ dev_ingress_live_int_ip }}"
+int_if = "{{ fw_int_if }}"
+ext_if = "{{ fw_ext_if }}"
+lan_net = "{{ fw_lan_net }}"
+
+# HTTP/HTTPS and UDP (aux3 video)
+
+rdr on $ext_if proto tcp from any to $dev_ingress_ext_ip port { 80, 443 } -> $dev_ingress_web_int_ip
+rdr on $ext_if proto udp from any to $dev_ingress_ext_ip port 5004 -> $dev_ingress_live_int_ip
+
+# Hairpin NAT for internal clients
+rdr on $int_if proto tcp from $lan_net to $dev_ingress_ext_ip port { 80, 443 } -> $dev_ingress_web_int_ip
+rdr on $int_if proto udp from $lan_net to $dev_ingress_ext_ip port 5004 -> $dev_ingress_live_int_ip
+nat on $int_if proto tcp from $lan_net to $dev_ingress_web_int_ip port { 80, 443 } -> ($int_if:0)
+nat on $int_if proto udp from $lan_net to $dev_ingress_live_int_ip port 5004 -> ($int_if:0)
+
+pass in quick on $ext_if proto tcp from any to $dev_ingress_web_int_ip port { 80, 443 }
+pass in quick on $int_if proto tcp from $lan_net to $dev_ingress_web_int_ip port { 80, 443 } scrub (max-mss 1400)
+pass in quick on $ext_if proto udp from any to $dev_ingress_live_int_ip port 5004
+pass in quick on $int_if proto udp from $lan_net to $dev_ingress_live_int_ip port 5004

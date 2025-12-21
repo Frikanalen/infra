@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+# PBX (Asterisk/FreePBX) port forwarding rules
+
+pbx_ext_ip = "{{ pbx_ext_ip }}"
+pbx_int_ip = "{{ pbx_int_ip }}"
+
+# SIP signaling
+rdr pass on vtnet1 proto udp from any to $pbx_ext_ip port 5060 -> $pbx_int_ip port 5060
+
+# RTP media ports
+rdr pass on vtnet1 proto udp from any to $pbx_ext_ip port 10000:11000 -> $pbx_int_ip

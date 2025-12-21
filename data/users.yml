@@ -8,3 +8,7 @@ users:
       realname: "Tom Fredrik Blenning"
       ssh_keys:
         - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGUaj1mNujvy0BGbLa8w8WHYiZmcVqVlebqUdezlJgth bfg@Air3"
+    - username: ansible
+      realname: "Ansible Automation"
+      ssh_keys:
+        - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQNn2dIm6s2ybuJXphkIRYxlubNrohoMlhW9XSNpvSw frikanalen ansible init"

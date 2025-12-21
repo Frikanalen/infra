@@ -1,0 +1,14 @@
+- name: Configure firewall on util1
+  hosts: util1
+  become: true
+  vars:
+    dev_ingress_ext_ip: "158.36.191.229"
+    dev_ingress_web_int_ip: "192.168.3.90"
+    dev_ingress_live_int_ip: "192.168.3.91"
+    pbx_ext_ip: "158.36.191.229"
+    pbx_int_ip: "192.168.3.3"
+  roles:
+    - util_fw
+    - util_fw_ingress_dev
+    - util_fw_pbx
+  

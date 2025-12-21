@@ -1,0 +1,4 @@
+---
+fw_int_if: "vtnet0"
+fw_ext_if: "vtnet1"
+fw_lan_net: "192.168.3.0/24"

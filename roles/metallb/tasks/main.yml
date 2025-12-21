@@ -1,0 +1,64 @@
+- name: Install kubernetes Python library
+  ansible.builtin.apt:
+    name: python3-kubernetes
+    state: present
+  become: true
+
+- name: Add MetalLB Helm repository
+  kubernetes.core.helm_repository:
+    name: metallb
+    repo_url: https://metallb.github.io/metallb
+  become: false
+  run_once: true
+
+- name: Install MetalLB via Helm
+  kubernetes.core.helm:
+    name: metallb
+    chart_ref: metallb/metallb
+    chart_version: "{{ metallb_chart_version | default(omit, true) }}"
+    release_namespace: "{{ metallb_namespace }}"
+    create_namespace: true
+    wait: true
+  become: false
+  run_once: true
+
+- name: Wait for MetalLB controller to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ metallb_namespace }}"
+    name: metallb-controller
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  become: false
+  run_once: true
+
+- name: Configure MetalLB L2 advertisement
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: metallb.io/v1beta1
+      kind: L2Advertisement
+      metadata:
+        name: default
+        namespace: "{{ metallb_namespace }}"
+      spec: {}
+  become: false
+  run_once: true
+
+- name: Configure MetalLB IP address pool
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: metallb.io/v1beta1
+      kind: IPAddressPool
+      metadata:
+        name: ingress-pool
+        namespace: "{{ metallb_namespace }}"
+      spec:
+        addresses:
+          - "{{ metallb_ingress_ip }}"
+  become: false
+  run_once: true

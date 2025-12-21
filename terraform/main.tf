@@ -1,8 +1,6 @@
 locals {
-  kube_ci_user = "ubuntu"
-
   # Load the hosts from the infra repo's host database
-  hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).hosts
+  hosts_all = yamldecode(file("${path.module}/../data/hosts.yml")).host_config
 
   # Hosts without a vm stanza are ignored; those with are flattened
   hosts = {
@@ -10,6 +8,14 @@ locals {
     name => merge(
       {
         ip_cidr = h.ip_cidr
+        # The correct value is almost always "none". Use "unsafe" *only* for ephemeral hosts on HDDs.
+        # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
+        # It speeds disk I/O at the cost of almost certain data loss on host power failure.
+        # We should probably remove this option as soon as vm1..vm4 are on SSDs.
+        disk_cache = try(h.vm.disk_cache, "none")
+        cores      = try(h.vm.cores, 8)
+        memory_max = try(h.vm.memory_max, 16384)
+        memory_min = try(h.vm.memory_min, 8192)
       },
       h.vm
     )
@@ -20,6 +26,7 @@ locals {
 resource "proxmox_vm_qemu" "kube" {
   for_each = local.hosts
 
+  machine     = "q35"
   name        = each.key # "prod-kube-1" .. "prod-kube-4"
   vmid        = each.value.vmid
   tags        = "ubuntu"
@@ -28,32 +35,39 @@ resource "proxmox_vm_qemu" "kube" {
   clone = "ubuntu-24.04-cloud"
 
   cpu {
+    # note this creates portability problems if CPU cores in cluster have different features
+    type    = "host"
     sockets = 1
-    cores   = 30
+    cores   = each.value.cores
+    numa    = true
   }
 
   serial {
     id = 0
   }
 
-  memory = 32768
+  memory  = each.value.memory_max
+  balloon = each.value.memory_min
 
   # Disks
-  scsihw = "virtio-scsi-pci"
+  scsihw = "virtio-scsi-single"
 
   disks {
     scsi {
       scsi0 {
         disk {
-          size    = "40G"
-          storage = "local-lvm"
+          size     = "40G"
+          storage  = "localssd-lvm"
+          cache    = each.value.disk_cache
+          iothread = true
+          discard  = true
         }
       }
     }
     ide {
       ide2 {
         cloudinit {
-          storage = "local-lvm"
+          storage = "localssd-lvm"
         }
       }
     }
@@ -65,16 +79,16 @@ resource "proxmox_vm_qemu" "kube" {
     id     = 0
     model  = "virtio"
     bridge = "vmbr0"
+    queues = 4 # consider 8 in production
   }
 
   # Cloud-init
   os_type   = "cloud-init"
-  ciuser    = "ubuntu"
+  ciuser    = "ansible"
   sshkeys   = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQNn2dIm6s2ybuJXphkIRYxlubNrohoMlhW9XSNpvSw frikanalen ansible init"
-  ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.1"
+  ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.2"
 
-  # FIXME: Placeholder!
-  nameserver   = "8.8.8.8"
+  nameserver   = "192.168.3.2"
   searchdomain = "dc1.frikanalen.no frikanalen.no"
 
   agent  = 1
