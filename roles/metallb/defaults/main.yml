@@ -1,2 +1,2 @@
 metallb_namespace: metallb-system
-metallb_chart_version: ""
+metallb_chart_version: "{{ helm_chart_versions.metallb }}"

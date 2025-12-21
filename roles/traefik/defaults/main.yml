@@ -1,6 +1,6 @@
 ---
 traefik_namespace: traefik
-traefik_chart_version: "37.4.0"
+traefik_chart_version: "{{ helm_chart_versions.traefik }}"
 
 # ACME/Let's Encrypt configuration
 traefik_acme_email: toresbe@protonmail.com

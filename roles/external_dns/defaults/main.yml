@@ -1,6 +1,6 @@
 ---
 external_dns_namespace: external-dns
-external_dns_chart_version: ""
+external_dns_chart_version: "{{ helm_chart_versions.external_dns }}"
 
 # DNS provider configuration (RFC2136 for BIND9)
 external_dns_provider: rfc2136

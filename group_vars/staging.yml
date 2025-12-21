@@ -12,3 +12,10 @@ app_versions:
   playout: staging
   frontend: staging
   django: staging
+
+helm_chart_versions:
+  traefik: "37.4.0"
+  argocd: "9.1.7"
+  external_dns: "1.19.0"
+  metallb: "0.15.3"
+  kubegres: "v1.19"

@@ -6,7 +6,7 @@ argocd_namespace: argocd
 argocd_chart_repo_name: argo
 argocd_chart_repo_url: https://argoproj.github.io/argo-helm
 argocd_chart_name: argo/argo-cd
-argocd_chart_version: ""            # empty = latest
+argocd_chart_version: "{{ helm_chart_versions.argocd }}"
 argocd_chart_values: {}             # override in playbook if needed
 argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
