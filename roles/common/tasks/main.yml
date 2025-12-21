@@ -8,6 +8,12 @@
       nameserver 129.240.2.3
       nameserver 129.240.2.27
 
+# Debian-specific tasks
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
 # FreeBSD-specific tasks
 - name: Ensure sudo group exists
   become: yes
