@@ -1,21 +1,21 @@
 ---
 # defaults for argocd_schedule role
-argocd_namespace: argocd
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # Schedule service app settings
 argocd_schedule_app_name: schedule-service
-argocd_schedule_namespace: default
+argocd_schedule_namespace: "{{ argocd_default_app_namespace }}"
 argocd_schedule_repo_url: https://github.com/Frikanalen/schedule-service.git
-argocd_schedule_repo_revision: staging
 argocd_schedule_repo_path: chart
+
+# Version - controls both repo revision and image tag
+argocd_schedule_version: "{{ app_versions.schedule | default('staging') }}"
 
 # Helm values - only overrides from chart defaults
 argocd_schedule_values:
   image:
-    tag: staging
+    tag: "{{ argocd_schedule_version }}"
   
-  timezone: Europe/Oslo
+  timezone: "{{ timezone_region }}"
   
   database:
-    secret: django-postgres-passwords
+    secret: "{{ django_db_secret_name }}"

@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: "{{ argocd_playout_repo_url }}"
-    targetRevision: "{{ argocd_playout_repo_revision }}"
+    targetRevision: "{{ argocd_playout_version }}"
     path: "{{ argocd_playout_repo_path }}"
     helm:
       values: |
