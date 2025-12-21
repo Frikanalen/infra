@@ -1,5 +1,5 @@
 ---
-frikanalen_domain: staging.frikanalen.no
+frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 frikanalen_base_url: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
 
@@ -7,8 +7,9 @@ caspar_host: "192.168.3.34"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
+  
 app_versions:
-  graphics: staging
-  playout: staging
-  frontend: staging
-  django: staging
+  graphics: v1.0.0
+  playout: v1.0.2
+  frontend: v2.0.4
+  django: v0.1.2
