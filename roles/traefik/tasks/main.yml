@@ -33,23 +33,23 @@
       podSecurityContext:
         fsGroup: 65532
 
-      env:
-        - name: RFC2136_NAMESERVER
-          value: "{{ traefik_rfc2136_host }}:{{ traefik_rfc2136_port }}"
-        - name: RFC2136_TSIG_KEY
-          value: "{{ traefik_rfc2136_tsig_keyname }}"
-        - name: RFC2136_TSIG_ALGORITHM
-          value: "{{ traefik_rfc2136_tsig_algorithm }}"
-        - name: RFC2136_TSIG_SECRET
-          value: "{{ traefik_rfc2136_tsig_secret }}"
+      env: >-
+        {{
+          [
+            {'name': 'RFC2136_NAMESERVER', 'value': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port},
+            {'name': 'RFC2136_TSIG_KEY', 'value': traefik_rfc2136_tsig_keyname},
+            {'name': 'RFC2136_TSIG_ALGORITHM', 'value': traefik_rfc2136_tsig_algorithm},
+            {'name': 'RFC2136_TSIG_SECRET', 'value': traefik_rfc2136_tsig_secret}
+          ] if traefik_acme_challenge == 'dns' else []
+        }}
 
       certificatesResolvers:
         letsencrypt:
           acme:
             email: "{{ traefik_acme_email }}"
             storage: "{{ traefik_acme_storage }}"
-            dnsChallenge:
-              provider: rfc2136
+            dnsChallenge: "{{ {'provider': 'rfc2136'} if traefik_acme_challenge == 'dns' else omit }}"
+            httpChallenge: "{{ {'entryPoint': 'web'} if traefik_acme_challenge == 'http' else omit }}"
 
       service:
         type: "{{ traefik_service_type }}"

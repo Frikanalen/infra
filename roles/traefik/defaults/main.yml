@@ -5,6 +5,7 @@ traefik_chart_version: "37.4.0"
 # ACME/Let's Encrypt configuration
 traefik_acme_email: toresbe@protonmail.com
 traefik_acme_storage: /data/acme.json
+traefik_acme_challenge: dns # 'dns' for RFC2136 or 'http' for HTTP-01
 
 # Service configuration
 traefik_service_type: LoadBalancer
@@ -16,6 +17,7 @@ traefik_dashboard_enabled: true
 traefik_ingress_class: public
 
 # RFC2136 DNS challenge defaults (same as external_dns)
+# Only relevant if traefik_acme_challenge is 'dns'
 traefik_rfc2136_host: "192.168.3.2"
 traefik_rfc2136_port: "53"
 traefik_rfc2136_tsig_keyname: "staging-update-key"
