@@ -23,7 +23,7 @@ argocd_django_values:
     tag: "{{ argocd_django_version }}"
     
   env:
-    ALLOWED_HOSTS: "{{ frikanalen_domain }},localhost,django.default.svc.cluster.local"
+    ALLOWED_HOSTS: "{{ frikanalen_domain }}"
     CSRF_TRUSTED_ORIGINS: "{{ frikanalen_base_url }}"
 
   ingress:
