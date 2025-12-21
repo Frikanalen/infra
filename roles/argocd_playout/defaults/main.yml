@@ -1,29 +1,29 @@
 ---
 # defaults for argocd_playout role
-argocd_namespace: argocd
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # Playout app settings
 argocd_playout_app_name: playout
-argocd_playout_namespace: default
+argocd_playout_namespace: "{{ argocd_default_app_namespace }}"
 argocd_playout_repo_url: https://github.com/Frikanalen/playout.git
-argocd_playout_repo_revision: staging
 argocd_playout_repo_path: chart
+
+# Version - controls both repo revision and image tag
+argocd_playout_version: "{{ app_versions.playout | default('staging') }}"
 
 # Helm values - only overrides from chart defaults
 argocd_playout_values:
   image:
     repository: ghcr.io/frikanalen/playout
-    tag: staging
+    tag: "{{ argocd_playout_version }}"
   
   env:
     - name: USE_ORIGINAL
       value: "true"
     - name: CASPAR_HOST
-      value: "192.168.3.34"
+      value: "{{ caspar_host }}"
     - name: API_URL
-      value: "https://staging.frikanalen.no/"
+      value: "{{ frikanalen_base_url }}/"
   
   timezone:
     enabled: true
-    path: /usr/share/zoneinfo/Europe/Oslo
+    path: "{{ timezone_path }}"
