@@ -6,18 +6,21 @@ frikanalen_public_ingress_class: public
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.34"
+caspar_host: "192.168.3.35"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
+argocd_stream_cubemap_ip: "192.168.3.105"
+
 app_versions:
   graphics: v1.0.0
-  playout: v1.0.2
+  playout: staging
   frontend: v2.0.4
   django: v0.1.2
+  stream: main
 
 helm_chart_versions:
   traefik: "37.4.0"

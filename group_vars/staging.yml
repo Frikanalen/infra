@@ -15,11 +15,14 @@ caspar_host: "192.168.3.34"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+argocd_stream_cubemap_ip: "192.168.3.91"
+
 app_versions:
   graphics: staging
   playout: staging
   frontend: staging
   django: staging
+  stream: main
 
 helm_chart_versions:
   traefik: "37.4.0"

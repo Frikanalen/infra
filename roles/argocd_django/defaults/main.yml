@@ -1,6 +1,9 @@
 ---
 # defaults for argocd_django role
 
+# Kubernetes config
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
 # Django app settings
 argocd_django_app_name: django-api
 argocd_django_namespace: "{{ frikanalen_app_namespace }}"
@@ -16,6 +19,11 @@ argocd_django_db_secret_name: "{{ django_db_secret_name }}"
 argocd_django_db_host: "{{ django_db_host }}"
 argocd_django_db_port: "5432"
 argocd_django_db_name: fkweb
+
+# Database passwords - must be set by caller (e.g., from vault)
+argocd_django_db_super_password: ""
+argocd_django_db_replication_password: ""
+argocd_django_db_django_password: ""
 
 # Helm values - only overrides from chart defaults
 argocd_django_values:
@@ -40,3 +48,6 @@ argocd_django_values:
           - path: /static
             serviceName: django-api
             servicePort: 80
+          - path: /xmltv
+            serviceName: django-api
+            servicePort: 8080

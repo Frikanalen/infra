@@ -22,6 +22,16 @@ argument_specs:
         required: false
         default: /data/acme.json
         description: Path for ACME certificate storage
+      traefik_acme_challenge:
+        type: str
+        required: false
+        default: dns
+        description: "ACME challenge type: 'dns' for RFC2136 or 'http' for HTTP-01"
+      traefik_acme_server:
+        type: str
+        required: false
+        default: https://acme-v02.api.letsencrypt.org/directory
+        description: ACME server URL (use staging for testing)
       traefik_service_type:
         type: str
         required: false
@@ -67,5 +77,5 @@ argument_specs:
         description: TSIG algorithm
       traefik_rfc2136_tsig_secret:
         type: str
-        required: true
-        description: TSIG secret for RFC2136 (base64 encoded)
+        required: false
+        description: TSIG secret for RFC2136 (base64 encoded, required if traefik_acme_challenge is 'dns')

@@ -48,6 +48,7 @@
           acme:
             email: "{{ traefik_acme_email }}"
             storage: "{{ traefik_acme_storage }}"
+            caServer: "{{ traefik_acme_server }}"
             dnsChallenge: "{{ {'provider': 'rfc2136'} if traefik_acme_challenge == 'dns' else omit }}"
             httpChallenge: "{{ {'entryPoint': 'web'} if traefik_acme_challenge == 'http' else omit }}"
 

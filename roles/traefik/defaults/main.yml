@@ -6,6 +6,8 @@ traefik_chart_version: "{{ helm_chart_versions.traefik }}"
 traefik_acme_email: toresbe@protonmail.com
 traefik_acme_storage: /data/acme.json
 traefik_acme_challenge: dns # 'dns' for RFC2136 or 'http' for HTTP-01
+traefik_acme_server: https://acme-v02.api.letsencrypt.org/directory
+# Staging server: https://acme-staging-v02.api.letsencrypt.org/directory
 
 # Service configuration
 traefik_service_type: LoadBalancer
