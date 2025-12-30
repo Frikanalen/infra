@@ -1,9 +1,12 @@
 ---
 # defaults for argocd_django role
 
+# Kubernetes config
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
 # Django app settings
 argocd_django_app_name: django-api
-argocd_django_namespace: "{{ argocd_default_app_namespace }}"
+argocd_django_namespace: "{{ frikanalen_app_namespace }}"
 argocd_django_repo_url: https://github.com/Frikanalen/django-api.git
 argocd_django_repo_path: chart
 
@@ -11,11 +14,16 @@ argocd_django_repo_path: chart
 argocd_django_version: "{{ app_versions.django | default('staging') }}"
 
 # Database settings (for secret generation)
-argocd_django_db_user: "{{ django_db_user }}"
+argocd_django_db_user: fkweb
 argocd_django_db_secret_name: "{{ django_db_secret_name }}"
 argocd_django_db_host: "{{ django_db_host }}"
-argocd_django_db_port: "{{ django_db_port }}"
-argocd_django_db_name: "{{ django_db_name }}"
+argocd_django_db_port: "5432"
+argocd_django_db_name: fkweb
+
+# Database passwords - must be set by caller (e.g., from vault)
+argocd_django_db_super_password: ""
+argocd_django_db_replication_password: ""
+argocd_django_db_django_password: ""
 
 # Helm values - only overrides from chart defaults
 argocd_django_values:
@@ -24,10 +32,10 @@ argocd_django_values:
     
   env:
     ALLOWED_HOSTS: "{{ frikanalen_domain }}"
-    CSRF_TRUSTED_ORIGINS: "{{ frikanalen_base_url }}"
+    CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
 
   ingress:
-    className: "{{ default_ingress_class }}"
+    className: "{{ frikanalen_public_ingress_class }}"
     hosts:
       - host: "{{ frikanalen_domain }}"
         paths:
@@ -40,3 +48,6 @@ argocd_django_values:
           - path: /static
             serviceName: django-api
             servicePort: 80
+          - path: /xmltv
+            serviceName: django-api
+            servicePort: 8080

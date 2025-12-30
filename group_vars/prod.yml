@@ -2,26 +2,24 @@
 timezone_region: Europe/Oslo
 frikanalen_app_namespace: default
 frikanalen_public_ingress_class: public
-frikanalen_dyndns_server: "192.168.3.2"
-frikanalen_dyndns_tsig_keyname: staging-update-key
-frikanalen_dyndns_zone: staging.frikanalen.no
-frikanalen_dyndns_owner_id: staging-external-dns
 
-frikanalen_domain: staging.frikanalen.no
+frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.34"
+caspar_host: "192.168.3.35"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
-argocd_stream_cubemap_ip: "192.168.3.91"
+traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
+
+argocd_stream_cubemap_ip: "192.168.3.105"
 
 app_versions:
-  graphics: staging
+  graphics: v1.0.0
   playout: staging
-  frontend: staging
-  django: staging
+  frontend: v2.0.4
+  django: v0.1.2
   stream: main
 
 helm_chart_versions:
@@ -30,3 +28,4 @@ helm_chart_versions:
   external_dns: "1.19.0"
   metallb: "0.15.3"
   kubegres: "v1.19"
+

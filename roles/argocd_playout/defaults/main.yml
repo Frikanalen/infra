@@ -3,7 +3,7 @@
 
 # Playout app settings
 argocd_playout_app_name: playout
-argocd_playout_namespace: "{{ argocd_default_app_namespace }}"
+argocd_playout_namespace: "{{ frikanalen_app_namespace }}"
 argocd_playout_repo_url: https://github.com/Frikanalen/playout.git
 argocd_playout_repo_path: chart
 
@@ -22,8 +22,8 @@ argocd_playout_values:
     - name: CASPAR_HOST
       value: "{{ caspar_host }}"
     - name: API_URL
-      value: "{{ frikanalen_base_url }}/"
+      value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
   
   timezone:
     enabled: true
-    path: "{{ timezone_path }}"
+    path: "/usr/share/zoneinfo/{{ timezone_region }}"

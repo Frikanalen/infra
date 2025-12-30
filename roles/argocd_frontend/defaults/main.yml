@@ -3,7 +3,7 @@
 
 # Frontend app settings
 argocd_frontend_app_name: frontend
-argocd_frontend_namespace: "{{ argocd_default_app_namespace }}"
+argocd_frontend_namespace: "{{ frikanalen_app_namespace }}"
 argocd_frontend_repo_url: https://github.com/Frikanalen/frontend.git
 argocd_frontend_repo_path: chart
 
@@ -12,10 +12,10 @@ argocd_frontend_version: "{{ app_versions.frontend | default('staging') }}"
 
 # Helm values - only overrides from chart defaults
 argocd_frontend_values:
-  djangoUrl: "{{ frikanalen_base_url }}/"
+  djangoUrl: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
 
   ingress:
-    className: "{{ default_ingress_class }}"
+    className: "{{ frikanalen_public_ingress_class }}"
     hostname: "{{ frikanalen_domain }}"
   
   image:

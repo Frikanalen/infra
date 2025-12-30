@@ -1,13 +1,4 @@
 ---
-- name: Ensure Python k8s client libraries are installed (Debian/Ubuntu)
-  ansible.builtin.apt:
-    name:
-      - python3-kubernetes
-      - python3-yaml
-      - python3-jsonpatch
-    state: present
-  become: yes
-
 - name: Add Argo CD Helm repo
   become: yes
   kubernetes.core.helm_repository:

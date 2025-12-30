@@ -2,9 +2,14 @@
 # Deploy ArgoCD applications to staging
 - hosts: staging
   tags: [argocd, apps]
+  vars:
+    argocd_django_db_super_password: "{{ vault_dev_django_postgres_super_password }}"
+    argocd_django_db_replication_password: "{{ vault_dev_django_postgres_replication_password }}"
+    argocd_django_db_django_password: "{{ vault_dev_django_postgres_django_password }}"
   roles:
     - argocd_django
     - argocd_frontend
     - argocd_graphics
     - argocd_schedule
     - argocd_playout
+    - argocd_stream

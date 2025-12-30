@@ -1,0 +1,41 @@
+---
+- name: Add IP alias to vtnet1
+  ansible.builtin.command: >
+    ifconfig {{ fw_ext_if }} alias {{ prod_ingress_ext_ip }}
+    netmask {{ prod_ingress_ext_netmask }}
+  register: ifconfig_result
+  changed_when: ifconfig_result.rc == 0
+  failed_when: ifconfig_result.rc != 0 and 'File exists' not in ifconfig_result.stderr
+
+- name: Ensure IP alias persists across reboots
+  ansible.builtin.lineinfile:
+    path: /etc/rc.conf
+    regexp: '^ifconfig_{{ fw_ext_if }}_alias[0-9]+="inet {{ prod_ingress_ext_ip }}'
+    line: 'ifconfig_{{ fw_ext_if }}_alias0="inet {{ prod_ingress_ext_ip }} netmask {{ prod_ingress_ext_netmask }}"'
+    create: false
+
+- name: Deploy ingress port forwarding rules
+  ansible.builtin.template:
+    src: ingress_prod.conf.j2
+    dest: /etc/pf.conf.d/ingress_prod.conf
+    mode: "0600"
+
+- name: Add ingress_prod rdr-anchor and nat-anchor to pf.conf (NAT section)
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - ingress_prod NAT"
+    insertafter: "^nat on"
+    block: |
+      rdr-anchor "ingress_prod"
+      nat-anchor "ingress_prod"
+  notify: reload pf
+
+- name: Add ingress_prod anchor to pf.conf (filter section)
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - ingress_prod"
+    insertafter: "^# Drop-in configuration files"
+    block: |
+      anchor "ingress_prod"
+      load anchor "ingress_prod" from "/etc/pf.conf.d/ingress_prod.conf"
+  notify: reload pf

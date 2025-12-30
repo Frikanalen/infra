@@ -1,3 +1,11 @@
+- name: Ensure Python k8s client libraries are installed (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+      - python3-jsonpatch
+    state: present
+
 - name: Get latest Helm release version from GitHub
   ansible.builtin.uri:
     url: https://api.github.com/repos/helm/helm/releases/latest

@@ -1,10 +1,13 @@
 ---
 traefik_namespace: traefik
-traefik_chart_version: "37.4.0"
+traefik_chart_version: "{{ helm_chart_versions.traefik }}"
 
 # ACME/Let's Encrypt configuration
 traefik_acme_email: toresbe@protonmail.com
 traefik_acme_storage: /data/acme.json
+traefik_acme_challenge: dns # 'dns' for RFC2136 or 'http' for HTTP-01
+traefik_acme_server: https://acme-v02.api.letsencrypt.org/directory
+# Staging server: https://acme-staging-v02.api.letsencrypt.org/directory
 
 # Service configuration
 traefik_service_type: LoadBalancer
@@ -13,11 +16,12 @@ traefik_service_type: LoadBalancer
 traefik_dashboard_enabled: true
 
 # Ingress class for external-dns integration
-traefik_ingress_class: public
+traefik_ingress_class: "{{ frikanalen_public_ingress_class }}"
 
 # RFC2136 DNS challenge defaults (same as external_dns)
-traefik_rfc2136_host: "192.168.3.2"
+# Only relevant if traefik_acme_challenge is 'dns'
+traefik_rfc2136_host: "{{ frikanalen_dyndns_server | default('') }}"
 traefik_rfc2136_port: "53"
-traefik_rfc2136_tsig_keyname: "staging-update-key"
+traefik_rfc2136_tsig_keyname: "{{ frikanalen_dyndns_tsig_keyname | default('') }}"
 traefik_rfc2136_tsig_algorithm: "hmac-sha256"
 

@@ -1,0 +1,18 @@
+---
+# defaults for argocd_stream role
+
+# Stream app settings
+argocd_stream_app_name: stream
+argocd_stream_namespace: "{{ frikanalen_app_namespace }}"
+argocd_stream_repo_url: https://github.com/Frikanalen/live-stream-packager.git
+argocd_stream_repo_path: "."
+
+# Version - controls both repo revision and image tag
+argocd_stream_version: "{{ app_versions.stream | default('main') }}"
+
+# Helm values - only overrides from chart defaults
+argocd_stream_values:
+  cubemap:
+    loadBalancerIP: "{{ argocd_stream_cubemap_ip }}"
+  ingress:
+    host: "{{ frikanalen_domain }}"
