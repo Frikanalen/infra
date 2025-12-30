@@ -22,7 +22,13 @@ scrub on $ext_if all no-df fragment reassemble
 # NAT for internal network (exclude hairpin NAT destinations handled by anchors)
 nat on $ext_if from $int_net to ! $dev_ingress_ext_ip -> ($ext_if)
 
+# BEGIN ANSIBLE MANAGED BLOCK - ingress_prod NAT
+# END ANSIBLE MANAGED BLOCK - ingress_prod NAT
+
 # Drop-in configuration files go here (anchors added by their respective roles)
+
+# BEGIN ANSIBLE MANAGED BLOCK - ingress_prod
+# END ANSIBLE MANAGED BLOCK - ingress_prod
 
 # Default block inbound
 block in log all
