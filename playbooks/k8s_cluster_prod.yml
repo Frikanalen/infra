@@ -25,7 +25,6 @@
     traefik_loadbalancer_ip: "192.168.3.104"
     traefik_public_ip: "158.36.191.231"
     traefik_acme_challenge: http
-    #traefik_acme_server: https://acme-staging-v02.api.letsencrypt.org/directory
   roles:
     - metallb
     - traefik

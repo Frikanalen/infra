@@ -1,0 +1,15 @@
+---
+# Shared ArgoCD/Kubernetes infrastructure settings
+argocd_namespace: argocd
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+argocd_default_app_namespace: default
+
+# Shared settings
+timezone_region: Europe/Oslo
+timezone_path: "/usr/share/zoneinfo/{{ timezone_region }}"
+default_ingress_class: public
+
+# Database defaults (can be overridden per-environment)
+django_db_user: fkweb
+django_db_name: fkweb
+django_db_port: "5432"
