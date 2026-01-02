@@ -65,10 +65,60 @@
         isDefaultClass: true
         name: "{{ traefik_ingress_class }}"
       
+      ports:
+        web:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+
       providers:
         kubernetesIngress:
           ingressEndpoint:
             ip: "{{ traefik_public_ip }}"
+  become: false
+  run_once: true
+
+- name: Create www redirect Middleware
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      metadata:
+        name: www-redirect
+        namespace: "{{ traefik_namespace }}"
+      spec:
+        redirectRegex:
+          regex: "^https?://www\\.(.+)"
+          replacement: "https://${1}"
+          permanent: true
+  become: false
+  run_once: true
+
+- name: Create www redirect IngressRoute
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: IngressRoute
+      metadata:
+        name: www-redirect
+        namespace: "{{ traefik_namespace }}"
+      spec:
+        entryPoints:
+          - web
+          - websecure
+        routes:
+          - match: "Host(`www.{{ frikanalen_domain }}`)"
+            kind: Rule
+            middlewares:
+              - name: www-redirect
+            services:
+              - name: noop@internal
+                kind: TraefikService
+        tls:
+          certResolver: letsencrypt
   become: false
   run_once: true
 
