@@ -5,7 +5,17 @@
     dest: /etc/pf.conf.d/pbx.conf
     mode: "0600"
 
-- name: Add pbx anchor to pf.conf
+- name: Add pbx rdr-anchor and nat-anchor to pf.conf (NAT section)
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - pbx NAT"
+    insertafter: "^nat on"
+    block: |
+      rdr-anchor "pbx"
+      nat-anchor "pbx"
+  notify: reload pf
+
+- name: Add pbx anchor to pf.conf (filter section)
   ansible.builtin.blockinfile:
     path: /etc/pf.conf
     marker: "# {mark} ANSIBLE MANAGED BLOCK - pbx"
