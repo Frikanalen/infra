@@ -16,7 +16,7 @@ traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 argocd_stream_cubemap_ip: "192.168.3.105"
 
 app_versions:
-  graphics: v1.0.0
+  graphics: staging
   playout: staging
   frontend: v2.0.4
   django: v0.1.2
