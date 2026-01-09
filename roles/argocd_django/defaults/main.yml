@@ -27,9 +27,11 @@ argocd_django_db_django_password: ""
 
 # Helm values - only overrides from chart defaults
 argocd_django_values:
-  image:
-    tag: "{{ argocd_django_version }}"
-    
+  django:
+    image:
+      repository: ghcr.io/frikanalen/django-api
+      tag: "{{ argocd_django_version }}"
+
   env:
     ALLOWED_HOSTS: "{{ frikanalen_domain }}"
     CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
@@ -38,16 +40,3 @@ argocd_django_values:
     className: "{{ frikanalen_public_ingress_class }}"
     hosts:
       - host: "{{ frikanalen_domain }}"
-        paths:
-          - path: /admin
-            serviceName: django-api
-            servicePort: 8080
-          - path: /api
-            serviceName: django-api
-            servicePort: 8080
-          - path: /static
-            serviceName: django-api
-            servicePort: 80
-          - path: /xmltv
-            serviceName: django-api
-            servicePort: 8080
