@@ -7,7 +7,7 @@
   ansible.builtin.user:
     name: "{{ item.username }}"
     groups: sudo
-    shell: /bin/bash
+    shell: "{{ item.shell | default('/bin/bash') }}"
     state: present
     create_home: true
   loop: "{{ users }}"
