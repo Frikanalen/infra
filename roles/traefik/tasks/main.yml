@@ -74,8 +74,8 @@
 
       providers:
         kubernetesIngress:
-          ingressEndpoint:
-            ip: "{{ traefik_public_ip }}"
+          publishedService:
+            enabled: true
   become: false
   run_once: true
 
