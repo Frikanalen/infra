@@ -37,6 +37,6 @@ argocd_django_values:
     CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
 
   ingress:
+    enabled: true
     className: "{{ frikanalen_public_ingress_class }}"
-    hosts:
-      - host: "{{ frikanalen_domain }}"
+    hostname: "{{ frikanalen_domain }}"
