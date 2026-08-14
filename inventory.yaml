@@ -19,6 +19,7 @@ all:
         vm2:
         vm3:
         vm4:
+        vmtx1:
 
     kubeprod:
       hosts:

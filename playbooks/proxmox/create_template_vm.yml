@@ -20,7 +20,8 @@
     bridge_name: "vmbr0"
     image_directory: "/var/lib/vz/template/iso"
 
-    # The VMID is the prefix followed by the single-digit Proxmox node number.
+    # The VMID is the prefix followed by this node's vmid_suffix, a single
+    # digit set per-host in data/hosts.yml (host_config.<node>.vmid_suffix).
     # For example, Ubuntu 24.04 is 9001 on vm1 and 9004 on vm4. VMIDs must be
     # unique across the Proxmox cluster even though the disks are node-local.
     cloud_templates:
@@ -34,13 +35,17 @@
         image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 
   tasks:
-    - name: Validate Proxmox node naming convention
+    - name: Determine this node's VMID suffix
+      ansible.builtin.set_fact:
+        node_vmid_suffix: "{{ host_config[inventory_hostname].vmid_suffix | default('') }}"
+
+    - name: Validate Proxmox node VMID suffix is configured
       ansible.builtin.assert:
         that:
-          - inventory_hostname is match('^vm[0-9]$')
+          - node_vmid_suffix is match('^[0-9]$')
         fail_msg: >-
-          Template VMIDs require a single-digit node name such as vm1.
-          Update the VMID allocation before adding differently named nodes.
+          {{ inventory_hostname }} has no single-digit vmid_suffix configured
+          in data/hosts.yml. Add one before running this playbook.
 
     - name: Ensure cloud image directory exists
       ansible.builtin.file:
@@ -89,7 +94,7 @@
 
     - name: Create missing base VMs
       ansible.builtin.command: >-
-        qm create {{ item.vmid_prefix }}{{ inventory_hostname[-1] }}
+        qm create {{ item.vmid_prefix }}{{ node_vmid_suffix }}
         --name {{ item.name }}
         --memory 2048
         --cores 2
@@ -105,7 +110,7 @@
     - name: Import cloud image disks
       ansible.builtin.command: >-
         qm importdisk
-        {{ item.vmid_prefix }}{{ inventory_hostname[-1] }}
+        {{ item.vmid_prefix }}{{ node_vmid_suffix }}
         {{ image_directory }}/{{ item.image_filename }}
         {{ storage_name }}
       when: item.name not in existing_template_names
@@ -116,10 +121,10 @@
 
     - name: Attach imported disks and set boot options
       ansible.builtin.command: >-
-        qm set {{ item.vmid_prefix }}{{ inventory_hostname[-1] }}
+        qm set {{ item.vmid_prefix }}{{ node_vmid_suffix }}
         --scsihw virtio-scsi-pci
         --scsi0
-        {{ storage_name }}:vm-{{ item.vmid_prefix }}{{ inventory_hostname[-1] }}-disk-0
+        {{ storage_name }}:vm-{{ item.vmid_prefix }}{{ node_vmid_suffix }}-disk-0
         --boot c
         --bootdisk scsi0
       when: item.name not in existing_template_names
@@ -130,7 +135,7 @@
 
     - name: Convert VMs to templates
       ansible.builtin.command: >-
-        qm template {{ item.vmid_prefix }}{{ inventory_hostname[-1] }}
+        qm template {{ item.vmid_prefix }}{{ node_vmid_suffix }}
       when: item.name not in existing_template_names
       changed_when: true
       loop: "{{ cloud_templates }}"
