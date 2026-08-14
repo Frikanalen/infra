@@ -16,6 +16,7 @@ locals {
         cores      = try(h.vm.cores, 8)
         memory_max = try(h.vm.memory_max, 16384)
         memory_min = try(h.vm.memory_min, 8192)
+        template   = try(h.vm.template, var.template)
       },
       h.vm
     )
@@ -32,7 +33,7 @@ resource "proxmox_vm_qemu" "kube" {
   tags        = "ubuntu"
   target_node = each.value.node # "vm1" .. "vm4"
 
-  clone = "ubuntu-24.04-cloud"
+  clone = each.value.template
 
   cpu {
     # note this creates portability problems if CPU cores in cluster have different features

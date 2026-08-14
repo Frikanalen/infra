@@ -16,6 +16,6 @@ variable "proxmox_token_secret" {
 
 variable "template" {
   type        = string
-  description = "Name of the Ubuntu cloud-init template"
+  description = "Default Proxmox cloud-init template name for VMs without a host-specific template"
   default     = "ubuntu-24.04-cloud"
 }
