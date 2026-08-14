@@ -12,12 +12,13 @@ locals {
         # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
         # It speeds disk I/O at the cost of almost certain data loss on host power failure.
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
-        disk_cache = try(h.vm.disk_cache, "none")
-        cores      = try(h.vm.cores, 8)
-        memory_max = try(h.vm.memory_max, 16384)
-        memory_min = try(h.vm.memory_min, 8192)
-        template   = try(h.vm.template, var.template)
-        storage    = try(h.vm.storage, "localssd-lvm")
+        disk_cache   = try(h.vm.disk_cache, "none")
+        cores        = try(h.vm.cores, 8)
+        memory_max   = try(h.vm.memory_max, 16384)
+        memory_min   = try(h.vm.memory_min, 8192)
+        template     = try(h.vm.template, var.template)
+        storage      = try(h.vm.storage, "localssd-lvm")
+        pci_mappings = try(h.vm.pci_mappings, [])
       },
       h.vm
     )
@@ -82,6 +83,45 @@ resource "proxmox_vm_qemu" "kube" {
     model  = "virtio"
     bridge = "vmbr0"
     queues = 4 # consider 8 in production
+  }
+
+  # PCIe passthrough (e.g. GPUs, capture cards), referencing cluster PCI
+  # Resource Mappings (Datacenter > Resource Mappings) by name rather than
+  # raw host PCI addresses: the Proxmox API rejects raw hostpciN assignment
+  # from anything but a root@pam ticket session, so API-token-driven
+  # Terraform must go through a mapping. Host-side driver binding to
+  # vfio-pci is handled by Proxmox at VM start.
+  dynamic "pcis" {
+    for_each = length(each.value.pci_mappings) > 0 ? [each.value.pci_mappings] : []
+    content {
+      dynamic "pci0" {
+        for_each = length(pcis.value) > 0 ? [pcis.value[0]] : []
+        content {
+          mapping {
+            mapping_id = pci0.value
+            pcie       = true
+          }
+        }
+      }
+      dynamic "pci1" {
+        for_each = length(pcis.value) > 1 ? [pcis.value[1]] : []
+        content {
+          mapping {
+            mapping_id = pci1.value
+            pcie       = true
+          }
+        }
+      }
+      dynamic "pci2" {
+        for_each = length(pcis.value) > 2 ? [pcis.value[2]] : []
+        content {
+          mapping {
+            mapping_id = pci2.value
+            pcie       = true
+          }
+        }
+      }
+    }
   }
 
   # Cloud-init

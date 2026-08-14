@@ -1,0 +1,81 @@
+#
+# Creates Proxmox cluster PCI Resource Mappings (Datacenter > Resource
+# Mappings) from data/hosts.yml, sourced per Proxmox node from
+# host_config.<node>.pci_mappings.
+#
+# Terraform's proxmox_vm_qemu resource can only attach PCI passthrough
+# devices by mapping name, not raw host addresses: the Proxmox API refuses
+# to set a hostpciN device directly from anything but a literal root@pam
+# session, which our API token is not. Resource Mappings are the
+# token-compatible path, and since the telmate/proxmox Terraform provider
+# has no resource type for them, they're provisioned here instead, mirroring
+# how create_template_vm.yml handles the other piece of Proxmox config
+# Terraform can't express.
+#
+# Resource Mappings are cluster-wide (written to the shared pmxcfs), so this
+# only needs to run once from any single cluster member.
+#
+---
+- name: Create Proxmox PCI resource mappings
+  hosts: proxmox
+  gather_facts: false
+  become: true
+  run_once: true
+
+  tasks:
+    - name: Flatten PCI mappings from all Proxmox nodes
+      ansible.builtin.set_fact:
+        pci_mappings: >-
+          {{ pci_mappings | default([]) +
+             (item.value.pci_mappings | map('combine', {'node': item.key}) | list) }}
+      loop: "{{ host_config | dict2items }}"
+      when: item.value.pci_mappings is defined
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: List existing PCI resource mappings
+      ansible.builtin.command: pvesh get /cluster/mapping/pci --output-format json
+      register: existing_pci_mappings
+      changed_when: false
+
+    - name: Record existing mapping IDs
+      ansible.builtin.set_fact:
+        existing_mapping_ids: >-
+          {{ (existing_pci_mappings.stdout | from_json) | map(attribute='id') | list }}
+
+    - name: Create missing PCI resource mappings
+      ansible.builtin.command: >-
+        pvesh create /cluster/mapping/pci
+        --id {{ item.id }}
+        --description {{ item.description | quote }}
+        --map
+        node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},subsystem-id={{ item.subsystem_id }},iommugroup={{ item.iommu_group }}
+      when: item.id not in existing_mapping_ids
+      changed_when: true
+      loop: "{{ pci_mappings }}"
+      loop_control:
+        label: "{{ item.id }}"
+
+    - name: Determine Proxmox nodes with PCI resource mappings
+      ansible.builtin.set_fact:
+        pci_mapping_nodes: "{{ pci_mappings | map(attribute='node') | unique | list }}"
+
+    - name: Validate PCI resource mappings against actual hardware
+      ansible.builtin.command: >-
+        pvesh get /cluster/mapping/pci --check-node {{ item }} --output-format json
+      register: mapping_checks
+      changed_when: false
+      loop: "{{ pci_mapping_nodes }}"
+
+    - name: Assert PCI resource mappings have no validation errors
+      ansible.builtin.assert:
+        that:
+          - >-
+            (item.stdout | from_json) | map(attribute='checks') | map('length') | sum == 0
+        fail_msg: >-
+          One or more PCI resource mappings failed validation on
+          {{ item.item }}; see `pvesh get /cluster/mapping/pci --check-node
+          {{ item.item }}` for details.
+      loop: "{{ mapping_checks.results }}"
+      loop_control:
+        label: "{{ item.item }}"
