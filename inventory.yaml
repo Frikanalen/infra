@@ -21,6 +21,10 @@ all:
         vm4:
         vmtx1:
 
+    caspar:
+      hosts:
+        caspar1:
+
     kubeprod:
       hosts:
         prod-kube-1:
@@ -50,3 +54,4 @@ qemu_guest:
   children:
     kubeprod:
     kubedev:
+    caspar:
