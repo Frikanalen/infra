@@ -1,0 +1,5 @@
+# Newest driver available in Ubuntu's own archive (jammy-updates/restricted)
+# as of writing; ubuntu-drivers' "recommended" pick (nvidia-driver-390) is
+# just the oldest branch that still lists the card as supported, not the
+# newest, so we pin explicitly rather than autoinstalling.
+nvidia_driver_package: nvidia-driver-580
