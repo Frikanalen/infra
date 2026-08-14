@@ -17,6 +17,7 @@ locals {
         memory_max = try(h.vm.memory_max, 16384)
         memory_min = try(h.vm.memory_min, 8192)
         template   = try(h.vm.template, var.template)
+        storage    = try(h.vm.storage, "localssd-lvm")
       },
       h.vm
     )
@@ -58,7 +59,7 @@ resource "proxmox_vm_qemu" "kube" {
       scsi0 {
         disk {
           size     = "40G"
-          storage  = "localssd-lvm"
+          storage  = each.value.storage
           cache    = each.value.disk_cache
           iothread = true
           discard  = true
@@ -68,7 +69,7 @@ resource "proxmox_vm_qemu" "kube" {
     ide {
       ide2 {
         cloudinit {
-          storage = "localssd-lvm"
+          storage = each.value.storage
         }
       }
     }
