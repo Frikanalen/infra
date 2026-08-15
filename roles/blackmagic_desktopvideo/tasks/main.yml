@@ -1,0 +1,78 @@
+- name: Check for an already-installed Desktop Video package
+  ansible.builtin.command: dpkg-query -W -f=${Version} desktopvideo
+  register: blackmagic_installed
+  changed_when: false
+  failed_when: false
+
+- name: Confirm Desktop Video archive is present on the control node
+  ansible.builtin.stat:
+    path: "{{ blackmagic_desktop_video_local_archive }}"
+  register: blackmagic_local_archive
+  delegate_to: localhost
+  become: false
+  when: blackmagic_installed.rc != 0
+
+- name: Fail with guidance if the archive is missing locally
+  ansible.builtin.assert:
+    that: blackmagic_local_archive.stat.exists
+    fail_msg: |-
+      Couldn't find the Blackmagic Desktop Video archive, so there's a manual step needed first:
+
+        1. Go to https://www.blackmagicdesign.com/support/family/capture-and-playback
+           and download "Desktop Video {{ blackmagic_desktop_video_version }}" for Linux.
+           (Blackmagic doesn't offer a stable direct download link, so this can't be automated.)
+        2. Save it on THIS machine (the one running ansible-playbook, not the target host) at:
+             {{ blackmagic_desktop_video_local_archive }}
+        3. Re-run this playbook.
+
+      If you downloaded a different version, either rename the file to match the path
+      above or set blackmagic_desktop_video_version to match what you downloaded.
+  when: blackmagic_installed.rc != 0
+
+- name: Install DKMS build prerequisites
+  ansible.builtin.apt:
+    name:
+      - dkms
+      - "linux-headers-{{ ansible_kernel }}"
+    update_cache: true
+  when: blackmagic_installed.rc != 0
+
+- name: Ensure Desktop Video cache directory exists
+  ansible.builtin.file:
+    path: "{{ blackmagic_desktop_video_cache_dir }}"
+    state: directory
+    mode: "0755"
+  when: blackmagic_installed.rc != 0
+
+- name: Copy Desktop Video archive to the host
+  ansible.builtin.copy:
+    src: "{{ blackmagic_desktop_video_local_archive }}"
+    dest: "{{ blackmagic_desktop_video_cache_dir }}/Blackmagic_Desktop_Video_Linux_{{ blackmagic_desktop_video_version }}.tar.gz"
+    mode: "0644"
+  when: blackmagic_installed.rc != 0
+
+- name: Extract Desktop Video archive
+  ansible.builtin.unarchive:
+    src: "{{ blackmagic_desktop_video_cache_dir }}/Blackmagic_Desktop_Video_Linux_{{ blackmagic_desktop_video_version }}.tar.gz"
+    dest: "{{ blackmagic_desktop_video_cache_dir }}"
+    remote_src: true
+    creates: "{{ blackmagic_desktop_video_cache_dir }}/Blackmagic_Desktop_Video_Linux_{{ blackmagic_desktop_video_version }}"
+  when: blackmagic_installed.rc != 0
+
+- name: Find Desktop Video deb package
+  ansible.builtin.find:
+    paths: "{{ blackmagic_desktop_video_cache_dir }}/Blackmagic_Desktop_Video_Linux_{{ blackmagic_desktop_video_version }}/deb/x86_64"
+    patterns: "desktopvideo_*_amd64.deb"
+  register: blackmagic_deb
+  when: blackmagic_installed.rc != 0
+
+- name: Install Desktop Video package
+  ansible.builtin.apt:
+    deb: "{{ blackmagic_deb.files[0].path }}"
+  when: blackmagic_installed.rc != 0 and blackmagic_deb.matched > 0
+
+- name: Verify the Blackmagic kernel module is loaded
+  ansible.builtin.command: lsmod
+  register: blackmagic_lsmod
+  changed_when: false
+  failed_when: "'blackmagic' not in blackmagic_lsmod.stdout"

@@ -6,6 +6,7 @@
 - name: Provision caspar playout hosts
   hosts: caspar
   become: true
-  gather_facts: false
+  gather_facts: true
   roles:
     - nvidia_driver
+    - blackmagic_desktopvideo
