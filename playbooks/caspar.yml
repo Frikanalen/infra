@@ -10,3 +10,4 @@
   roles:
     - nvidia_driver
     - blackmagic_desktopvideo
+    - casparcg
