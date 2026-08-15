@@ -1,0 +1,8 @@
+# Blackmagic has no stable, scriptable download URL for Desktop Video (the
+# real download link is generated per-session after clicking through a EULA
+# on their site and expires shortly after). The archive is therefore expected
+# to already exist on the Ansible control node at this path, downloaded by
+# hand from https://www.blackmagicdesign.com/support/family/capture-and-playback
+blackmagic_desktop_video_version: "16.3"
+blackmagic_desktop_video_local_archive: "{{ lookup('env', 'HOME') }}/Blackmagic_Desktop_Video_Linux_{{ blackmagic_desktop_video_version }}.tar.gz"
+blackmagic_desktop_video_cache_dir: /var/cache/blackmagic

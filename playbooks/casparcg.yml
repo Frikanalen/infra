@@ -1,3 +1,0 @@
-- hosts: casparcg_nodes
-  roles:
-    - role: casparcg

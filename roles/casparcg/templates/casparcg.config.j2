@@ -10,17 +10,24 @@
   <lock-clear-phrase>secret</lock-clear-phrase>
   <channels>
      <channel>
-	     <video-mode>720p5000</video-mode>
+	     <video-mode>{{ casparcg_video_mode }}</video-mode>
         <consumers>
+{% if casparcg_consumer_type == 'decklink' %}
             <decklink>
-                <device>1</device>
-                <key-device>device</key-device>
-                <embedded-audio>true</embedded-audio>
-                <latency>normal</latency>
-                <keyer>internal</keyer>
-                <key-only>false</key-only>
-                <buffer-depth>3</buffer-depth>
+                <device>{{ casparcg_decklink_device }}</device>
+                <key-device>{{ casparcg_decklink_key_device }}</key-device>
+                <embedded-audio>{{ casparcg_decklink_embedded_audio | lower }}</embedded-audio>
+                <latency>{{ casparcg_decklink_latency }}</latency>
+                <keyer>{{ casparcg_decklink_keyer }}</keyer>
+                <key-only>{{ casparcg_decklink_key_only | lower }}</key-only>
+                <buffer-depth>{{ casparcg_decklink_buffer_depth }}</buffer-depth>
             </decklink>
+{% elif casparcg_consumer_type == 'ffmpeg' %}
+            <ffmpeg>
+                <path>{{ casparcg_ffmpeg_path }}</path>
+                <args>{{ casparcg_ffmpeg_args }}</args>
+            </ffmpeg>
+{% endif %}
         </consumers>
      </channel>
 </channels>

@@ -1,0 +1,51 @@
+- name: Check for an already-loaded NVIDIA driver
+  ansible.builtin.command: nvidia-smi --query-gpu=driver_version --format=csv,noheader
+  register: nvidia_smi_check
+  changed_when: false
+  failed_when: false
+
+- name: Install NVIDIA driver package
+  ansible.builtin.apt:
+    name: "{{ nvidia_driver_package }}"
+    update_cache: true
+  register: nvidia_driver_install
+  when: nvidia_smi_check.rc != 0
+
+- name: Reboot to load the new NVIDIA kernel module
+  ansible.builtin.reboot:
+    reboot_timeout: 300
+  when: nvidia_driver_install is changed
+
+- name: Wait for NVIDIA driver to report itself
+  ansible.builtin.command: nvidia-smi --query-gpu=driver_version --format=csv,noheader
+  register: nvidia_smi_verify
+  changed_when: false
+  retries: 5
+  delay: 10
+  until: nvidia_smi_verify.rc == 0
+
+# Xorg won't auto-pick a device when both the passed-through NVIDIA GPU and
+# QEMU's virtual VGA are present ("Cannot run in framebuffer mode. Please
+# specify busIDs for all framebuffer devices"), so it needs an explicit
+# BusID. Looked up dynamically rather than hardcoded, since it depends on
+# which/how-many PCI devices are passed through to this VM.
+- name: Find the NVIDIA GPU's PCI address
+  ansible.builtin.shell: "set -o pipefail && lspci -D -d 10de: | grep 'VGA compatible controller' | cut -d' ' -f1"
+  args:
+    executable: /bin/bash
+  register: nvidia_pci_address
+  changed_when: false
+
+- name: Compute Xorg BusID for the NVIDIA GPU
+  ansible.builtin.set_fact:
+    nvidia_xorg_busid: >-
+      PCI:{{ nvidia_pci_address.stdout.split(':')[1] | int(base=16) }}:{{
+      nvidia_pci_address.stdout.split(':')[2].split('.')[0] | int(base=16) }}:{{
+      nvidia_pci_address.stdout.split(':')[2].split('.')[1] | int(base=16) }}
+
+- name: Generate xorg.conf pinned to the NVIDIA GPU
+  ansible.builtin.command: >-
+    nvidia-xconfig --busid={{ nvidia_xorg_busid }}
+    --allow-empty-initial-configuration --no-probe-all-gpus
+  args:
+    creates: /etc/X11/xorg.conf

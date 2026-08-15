@@ -1,0 +1,20 @@
+- name: Install Xorg and Mesa software-rendering packages
+  ansible.builtin.apt:
+    name: "{{ mesa_driver_packages }}"
+    state: present
+    update_cache: true
+
+# nvidia_driver's caspar1 comment notes that a driver mismatch silently
+# drops the OpenGL image mixer to software rendering rather than failing
+# loudly. Here software rendering *is* the goal, so check the inverse:
+# fail loudly if llvmpipe isn't actually what's answering, e.g. because a
+# GPU got passed through to this host by mistake.
+- name: Verify Mesa reports the llvmpipe software renderer
+  ansible.builtin.shell: |
+    set -o pipefail
+    xvfb-run -a glxinfo | grep 'OpenGL renderer string'
+  args:
+    executable: /bin/bash
+  register: mesa_renderer_check
+  changed_when: false
+  failed_when: "'llvmpipe' not in mesa_renderer_check.stdout"
