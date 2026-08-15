@@ -9,6 +9,7 @@ This role installs CasparCG Server with its CEF dependencies, sets up a dedicate
 | `casparcg_cef_url`       | See defaults                           | URL to CasparCG CEF .deb                                                      |
 | `casparcg_server_url`    | See defaults                           | URL to CasparCG Server .deb                                                   |
 | `casparcg_user`          | `casparcg`                             | System user                                                                   |
+| `casparcg_media_path`    | `/mnt/media/`                          | Media path, mounted from file01 by `roles/nfs_client`                        |
 | `casparcg_home`          | `/home/{{ casparcg_user }}`            | Home directory                                                                |
 | `casparcg_exec`          | `/usr/bin/casparcg-server-2.4`         | Server executable                                                             |
 | `casparcg_config_src`    | `casparcg.config`                      | Role-file name of config                                                      |

@@ -22,7 +22,8 @@ definitions.
   application versions, domains, ingress settings, and Helm chart versions.
 - `playbooks/` - entry points for applying infrastructure state.
 - `roles/` - local Ansible roles for common setup, users, DNS, firewall,
-  MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CasparCG, and app deployment.
+  MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CasparCG, NFS, and app
+  deployment.
 - `terraform/` - Proxmox VM guest orchestration.
 
 ## Common Playbooks
@@ -57,10 +58,17 @@ Deploys ArgoCD application definitions for Django, frontend, graphics, schedule,
 playout, and stream components.
 
 ```sh
-ansible-playbook playbooks/casparcg.yml
+ansible-playbook playbooks/caspar.yml
 ```
 
-Configures CasparCG nodes.
+Configures CasparCG nodes, including mounting the media archive from file01
+over NFS.
+
+```sh
+ansible-playbook playbooks/storage.yml
+```
+
+Configures the NFS export of the ZFS media archive on file01.
 
 ## Requirements
 

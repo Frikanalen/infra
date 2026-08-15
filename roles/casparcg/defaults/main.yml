@@ -6,6 +6,9 @@ casparcg_server_url: "https://github.com/CasparCG/server/releases/download/v2.5.
 casparcg_exec: "/usr/bin/casparcg-server-2.5"
 # System user
 casparcg_user: "casparcg"
+# Media archive, mounted from file01 by roles/nfs_client (see
+# group_vars/caspar.yml and playbooks/caspar.yml)
+casparcg_media_path: "/mnt/media/"
 # nodm settings
 nodm_enabled: true
 

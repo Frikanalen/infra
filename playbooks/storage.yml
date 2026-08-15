@@ -1,0 +1,11 @@
+#
+# Host-specific provisioning for storage hosts (file01): everything here is
+# particular to this class of host, unlike playbooks/site.yml's shared
+# roles.
+#
+- name: Provision NFS export of the media archive
+  hosts: storage
+  become: true
+  gather_facts: true
+  roles:
+    - nfs_server

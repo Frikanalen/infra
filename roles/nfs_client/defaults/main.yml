@@ -1,0 +1,7 @@
+# List of NFS shares to mount. Each entry:
+#   src:  "host:/export/path"
+#   path: local mount point
+#   opts: mount options (default below is read-only, matching a media
+#         archive that clients consume but don't write to)
+nfs_client_mounts: []
+nfs_client_default_opts: "ro,_netdev,nofail"

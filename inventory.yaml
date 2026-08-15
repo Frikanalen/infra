@@ -30,6 +30,10 @@ all:
           hosts:
             caspar-sw1:
 
+    storage:
+      hosts:
+        file01:
+
     kubeprod:
       hosts:
         prod-kube-1:

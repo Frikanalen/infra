@@ -14,6 +14,7 @@
   roles:
     - nvidia_driver
     - blackmagic_desktopvideo
+    - nfs_client
     - casparcg
 
 - name: Provision software-only CasparCG playout hosts
@@ -22,4 +23,5 @@
   gather_facts: true
   roles:
     - mesa_driver
+    - nfs_client
     - casparcg

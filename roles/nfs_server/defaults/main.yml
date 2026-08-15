@@ -1,0 +1,5 @@
+# List of NFS exports to configure in /etc/exports. Each entry's "clients"
+# string is passed through verbatim, so it can list multiple client/options
+# groups per RFE conventions, e.g.:
+#   "host1(ro,sync,no_subtree_check) host2(rw,sync,no_subtree_check)"
+nfs_exports: []

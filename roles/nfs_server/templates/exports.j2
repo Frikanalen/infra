@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+{% for export in nfs_exports %}
+{{ export.path }} {{ export.clients }}
+{% endfor %}
