@@ -1,5 +1,9 @@
-# Newest driver available in Ubuntu's own archive (jammy-updates/restricted)
-# as of writing; ubuntu-drivers' "recommended" pick (nvidia-driver-390) is
-# just the oldest branch that still lists the card as supported, not the
-# newest, so we pin explicitly rather than autoinstalling.
+# 580 is a hard ceiling, not just "newest as of writing": NVIDIA moved the
+# GT 1030 (Pascal/GP108) to the 580.xx legacy branch, and every driver
+# newer than that (tried 610) refuses to load for it at all
+# ("NVRM: No NVIDIA GPU found"), silently dropping CasparCG's OpenGL image
+# mixer to software Mesa rendering. ubuntu-drivers' "recommended" pick
+# (nvidia-driver-390) is a separate issue: that's just the oldest branch
+# that still lists the card as supported, not the newest usable one, which
+# is why this is pinned explicitly rather than autoinstalled.
 nvidia_driver_package: nvidia-driver-580
