@@ -5,7 +5,9 @@
   gather_facts: true
   roles:
     - users
-  tags: common
+  tags:
+    - common
+    - users
 - name: Do common setup
   hosts: all
   become: true
@@ -19,20 +21,29 @@
   gather_facts: false
   roles:
     - qemu_guest
-  tags: common
+  tags:
+    - common
+    - qemu_guest
 - name: Configure DNS server
   hosts: util
   roles:
     - dns_server_install
     - dns_server_zones_static
     - dns_server_zones_dynamic
+  tags: dns
 - name: Point .229 public IP to util
   hosts: util
   roles:
     - util_wan
+  tags:
+    - network
+    - firewall
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true
   roles:
     - microk8s_install
     - microk8s_kubectl
+  tags:
+    - k8s
+    - microk8s
