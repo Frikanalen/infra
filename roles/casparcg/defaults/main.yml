@@ -1,8 +1,8 @@
-# Default URLs for CasparCG .deb packages. jammy (22.04) builds, matching
-# caspar1; switch to the noble1 asset if this role is ever applied to a
-# 24.04 host.
-casparcg_cef_url: "https://github.com/CasparCG/server/releases/download/v2.5.0-stable/casparcg-cef-142_142.0.17.g60aac24%2B2-jammy1_amd64.deb"
-casparcg_server_url: "https://github.com/CasparCG/server/releases/download/v2.5.0-stable/casparcg-server-2.5_2.5.0.stable-jammy_amd64.deb"
+# Default URLs for CasparCG .deb packages. noble (24.04) builds, matching
+# caspar1; switch to the jammy1 asset if this role is ever applied to a
+# 22.04 host.
+casparcg_cef_url: "https://github.com/CasparCG/server/releases/download/v2.5.0-stable/casparcg-cef-142_142.0.17.g60aac24%2B2-noble1_amd64.deb"
+casparcg_server_url: "https://github.com/CasparCG/server/releases/download/v2.5.0-stable/casparcg-server-2.5_2.5.0.stable-noble1_amd64.deb"
 casparcg_exec: "/usr/bin/casparcg-server-2.5"
 # System user
 casparcg_user: "casparcg"
