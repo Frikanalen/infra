@@ -10,7 +10,7 @@ frikanalen_dyndns_owner_id: staging-external-dns
 frikanalen_domain: staging.frikanalen.no
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.34"
+caspar_host: "192.168.3.101"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
