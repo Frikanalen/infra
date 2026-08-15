@@ -22,8 +22,13 @@ all:
         vmtx1:
 
     caspar:
-      hosts:
-        caspar1:
+      children:
+        caspar_hw:
+          hosts:
+            caspar1:
+        caspar_sw:
+          hosts:
+            caspar-sw1:
 
     kubeprod:
       hosts:

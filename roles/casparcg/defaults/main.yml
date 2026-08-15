@@ -8,3 +8,36 @@ casparcg_exec: "/usr/bin/casparcg-server-2.5"
 casparcg_user: "casparcg"
 # nodm settings
 nodm_enabled: true
+
+# Channel/consumer configuration. Defaults reproduce caspar1's Decklink
+# output; caspar_sw hosts override casparcg_consumer_type to "ffmpeg" (see
+# group_vars/caspar_sw.yml) to stream to a UDP destination instead.
+casparcg_video_mode: "720p5000"
+casparcg_consumer_type: "decklink" # decklink | ffmpeg
+
+casparcg_decklink_device: 1
+casparcg_decklink_key_device: "device"
+casparcg_decklink_embedded_audio: true
+casparcg_decklink_latency: "normal"
+casparcg_decklink_keyer: "internal"
+casparcg_decklink_key_only: false
+casparcg_decklink_buffer_depth: 3
+
+casparcg_ffmpeg_path: "udp://192.168.3.1:5568"
+# The ffmpeg consumer's <args> aren't a real ffmpeg command line: it
+# regex-splits "-key value" pairs into a flat map, and only recognizes a
+# handful of literal key names of its own choosing (see
+# ffmpeg_consumer.cpp's initialize()). Notably the container format must be
+# given as "-format", not ffmpeg's usual "-f" (that lands on an unrecognized
+# "f" key and gets silently dropped, leaving avformat_alloc_output_context2
+# unable to guess a format from a udp:// path). Likewise codec overrides
+# need "-codec:v"/"-codec:a", not "-c:v"/"-c:a".
+#
+# -filter:a is required, not optional: CasparCG's internal audio bus is
+# always 16-channel, and on ffmpeg builds with the new channel-layout API
+# the code that's supposed to constrain the filter graph to what the
+# encoder supports is an unimplemented TODO stub, so the 16-channel audio
+# reaches avcodec_open2 unfiltered and mp2 (mono/stereo only) rejects it.
+# Explicitly downmixing via aformat is the only thing that actually
+# constrains it.
+casparcg_ffmpeg_args: "-format mpegts -codec:v mpeg2video -b:v 8M -codec:a mp2 -b:a 192k -filter:a aformat=channel_layouts=stereo"

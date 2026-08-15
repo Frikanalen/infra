@@ -1,0 +1,7 @@
+---
+# caspar_sw hosts have no GPU or Decklink card passed through (see
+# roles/mesa_driver and playbooks/caspar.yml): CasparCG renders with Mesa's
+# llvmpipe software rasterizer and streams output over UDP instead of SDI,
+# using the casparcg role's casparcg_ffmpeg_path/casparcg_ffmpeg_args
+# defaults.
+casparcg_consumer_type: "ffmpeg"

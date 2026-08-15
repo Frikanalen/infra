@@ -3,11 +3,23 @@
 # guests: everything here is particular to this class of host and has no
 # reason to apply anywhere else, unlike playbooks/site.yml's shared roles.
 #
-- name: Provision caspar playout hosts
-  hosts: caspar
+# caspar_hw hosts (e.g. caspar1) use a passed-through NVIDIA GPU and
+# Decklink card for output. caspar_sw hosts (e.g. caspar-sw1) are the
+# software-only alternative: Mesa (llvmpipe) for OpenGL and casparcg's
+# ffmpeg consumer streaming UDP instead, so they need neither GPU driver.
+- name: Provision hardware-accelerated CasparCG playout hosts
+  hosts: caspar_hw
   become: true
   gather_facts: true
   roles:
     - nvidia_driver
     - blackmagic_desktopvideo
+    - casparcg
+
+- name: Provision software-only CasparCG playout hosts
+  hosts: caspar_sw
+  become: true
+  gather_facts: true
+  roles:
+    - mesa_driver
     - casparcg

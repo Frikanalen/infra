@@ -38,9 +38,9 @@
     mode: '0644'
   become: true
 
-- name: Copy casparcg.config to /etc
-  copy:
-    src: "casparcg.config"
+- name: Render casparcg.config to /etc
+  template:
+    src: "casparcg.config.j2"
     dest: "/etc/casparcg.config"
     owner: root
     group: root
