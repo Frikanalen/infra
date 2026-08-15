@@ -1,0 +1,22 @@
+---
+- name: Add Argo CD Helm repo
+  become: yes
+  kubernetes.core.helm_repository:
+    repo_name: "{{ argocd_image_updater_chart_repo_name }}"
+    repo_url: "{{ argocd_image_updater_chart_repo_url }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Install or upgrade Argo CD Image Updater via Helm
+  become: yes
+  kubernetes.core.helm:
+    release_name: argocd-image-updater
+    chart_ref: "{{ argocd_image_updater_chart_name }}"
+    release_namespace: "{{ argocd_namespace }}"
+    create_namespace: true
+    chart_version: "{{ argocd_image_updater_chart_version | default(omit) }}"
+    values: "{{ argocd_image_updater_chart_values }}"
+    update_repo_cache: true
+    wait: true
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    state: present

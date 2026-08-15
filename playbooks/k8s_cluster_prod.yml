@@ -30,4 +30,5 @@
     - traefik
     - kubegres
     - argocd
+    - argocd_image_updater
 

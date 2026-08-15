@@ -34,3 +34,4 @@
     - external_dns
     - kubegres
     - argocd
+    - argocd_image_updater
