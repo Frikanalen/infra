@@ -47,7 +47,7 @@ ansible-playbook playbooks/k8s_cluster_dev.yml
 ```
 
 Forms MicroK8s clusters and installs base Kubernetes services such as MetalLB,
-Traefik, Kubegres, and ArgoCD.
+Traefik, Kubegres, ArgoCD, and ArgoCD Image Updater.
 
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml

@@ -17,6 +17,10 @@ django_db_secret_name: django-postgres-passwords
 
 argocd_stream_cubemap_ip: "192.168.3.91"
 
+# Auto-roll staging deployments when a new image is pushed to the tracked
+# floating tag (see argocd_image_updater role and each argocd_* app role).
+argocd_image_updater_enabled: true
+
 app_versions:
   graphics: staging
   playout: staging
@@ -27,6 +31,7 @@ app_versions:
 helm_chart_versions:
   traefik: "38.0.2"
   argocd: "9.1.7"
+  argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
   kubegres: "v1.19"

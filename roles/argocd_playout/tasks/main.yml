@@ -5,3 +5,11 @@
     definition: "{{ lookup('template', 'application.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy Playout Argo CD Image Updater tracking
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'image-updater.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+  when: argocd_image_updater_enabled | bool

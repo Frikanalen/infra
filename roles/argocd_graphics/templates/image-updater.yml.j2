@@ -1,0 +1,19 @@
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: {{ argocd_graphics_app_name }}
+  namespace: {{ argocd_namespace }}
+spec:
+  applicationRefs:
+    - namePattern: "{{ argocd_graphics_app_name }}"
+      images:
+        - alias: {{ argocd_graphics_app_name }}
+          imageName: "{{ argocd_graphics_image_repository }}:{{ argocd_graphics_version }}"
+          manifestTargets:
+            helm:
+              name: image.repository
+              tag: image.tag
+          commonUpdateSettings:
+            updateStrategy: digest
+      writeBackConfig:
+        method: argocd
