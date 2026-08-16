@@ -131,7 +131,7 @@ resource "proxmox_vm_qemu" "kube" {
   ipconfig0 = "ip=${each.value.ip_cidr},gw=192.168.3.2"
 
   nameserver   = "192.168.3.2"
-  searchdomain = "dc1.frikanalen.no frikanalen.no"
+  searchdomain = "dc1.frikanalen.no"
 
   agent  = 1
   onboot = true
