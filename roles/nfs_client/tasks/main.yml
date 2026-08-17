@@ -6,14 +6,43 @@
     update_cache: yes
   become: true
 
-- name: Ensure NFS mount points exist
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    mode: '0755'
+# No task to create the mount points: ansible.posix.mount's `state: mounted`
+# already does mkdir -p on the path. An explicit file/state=directory task
+# with a mode is not merely redundant, it breaks every run after the first --
+# once the share is mounted, that path *is* the read-only NFS root, whose
+# mode comes from the server, so the module tries to chmod it and fails with
+# EROFS.
+
+- name: Determine what each NFS mount point currently points at
+  # findmnt reads /proc/self/mountinfo and never contacts the server, so this
+  # stays quick even when an export has been revoked underneath us.
+  ansible.builtin.command: "findmnt -n -o SOURCE {{ item.path }}"
   loop: "{{ nfs_client_mounts }}"
   loop_control:
     label: "{{ item.path }}"
+  register: nfs_client_current_sources
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Unmount NFS shares whose source has changed
+  # `state: mounted` alone is not enough to move a mount to a different
+  # export. It rewrites fstab and then runs `mount -o remount`, which on
+  # Linux re-applies options but leaves the NFS server path alone, and the
+  # module's umount/mount fallback only fires if that returns non-zero --
+  # which it does not. The play would report changed, fstab would be correct,
+  # and the live mount would still be serving the old export until a reboot.
+  ansible.posix.mount:
+    path: "{{ item.item.path }}"
+    state: unmounted
+  loop: "{{ nfs_client_current_sources.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+  when:
+    # Defaulted so a findmnt that could not run at all leaves the mount
+    # alone rather than blowing up on an undefined rc.
+    - (item.rc | default(1)) == 0
+    - (item.stdout | default('') | trim) != item.item.src
   become: true
 
 - name: Mount NFS shares
