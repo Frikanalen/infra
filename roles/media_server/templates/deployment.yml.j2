@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-server
+  namespace: {{ media_server_namespace }}
+  labels:
+    app: media-server
+spec:
+  replicas: {{ media_server_replicas }}
+  selector:
+    matchLabels:
+      app: media-server
+  template:
+    metadata:
+      labels:
+        app: media-server
+      annotations:
+        # Rolls the pods when the server block changes -- the Deployment
+        # doesn't otherwise watch the ConfigMap it mounts.
+        checksum/config: "{{ lookup('template', 'nginx.conf.j2') | hash('sha256') }}"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+      containers:
+        - name: nginx
+          image: "{{ media_server_image_repository }}:{{ media_server_image_tag }}"
+          ports:
+            - name: http
+              containerPort: 8080
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          volumeMounts:
+            # The export's root lands exactly where the URL path expects it
+            # (e.g. /media/622346/...), so nginx needs no rewrite or
+            # strip-prefix step to serve it.
+            - name: archive
+              mountPath: "/usr/share/nginx/html{{ media_server_path }}"
+              readOnly: true
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            # nginx-unprivileged needs to write here even when it isn't
+            # asked to cache or proxy anything -- see the read-only rootfs
+            # note below.
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: archive
+          nfs:
+            server: "{{ media_server_nfs_host }}"
+            path: "{{ media_server_nfs_path }}"
+            readOnly: true
+        - name: nginx-conf
+          configMap:
+            name: media-server-nginx-conf
+        # readOnlyRootFilesystem above means nginx can't write its own
+        # scratch dirs (temp buffers, the pid file) into the image
+        # filesystem the way it normally would; these emptyDirs give it
+        # somewhere to.
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

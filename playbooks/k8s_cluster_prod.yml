@@ -17,6 +17,11 @@
   roles:
     - microk8s_kubectl
     - k8s_base_helm
+    # nfs-common only -- nfs_client_mounts is deliberately left unset here.
+    # roles/media_server mounts the archive as a raw k8s NFS volume, which
+    # kubelet mounts per-pod on whichever node it lands on; it just needs
+    # mount.nfs present on every node, not a host-level fstab entry.
+    - nfs_client
 
 - hosts: prod-kube-1
   tags: [ingress]

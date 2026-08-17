@@ -18,3 +18,9 @@ django_db_port: "5432"
 # argocd_ingest routes this path to tusd, and argocd_django advertises it to
 # the frontend as a video's uploadUrl.
 ingest_upload_path: /upload
+
+# Where the media archive is served on the main site. Shared because two
+# roles must agree: media_server routes this path to the archive's HTTP
+# file server, and argocd_django advertises it to the frontend/API as
+# FK_MEDIA_URLPREFIX, the prefix every video file URL is built from.
+ingest_media_path: /media

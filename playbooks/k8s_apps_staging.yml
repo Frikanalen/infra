@@ -18,3 +18,4 @@
     # argocd_ingest, which reads the key back to roll the pod on rotation.
     - ingest_archive_account
     - argocd_ingest
+    - media_server

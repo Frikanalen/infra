@@ -1,0 +1,35 @@
+# {{ ansible_managed }}
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+
+    autoindex off;
+
+    # The archive files are already world-readable on disk (see
+    # roles/ingest_archive_account), and this server is read-only besides,
+    # so there's nothing gated by who's asking.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # Large files served out of an NFS-backed root: plain sendfile() blocks
+    # a worker for the whole read, since NFS reads don't go through the
+    # local page cache the way local disk does. aio threads hands that read
+    # off to a thread pool instead, so one slow archive read doesn't stall
+    # every other request on the worker.
+    aio threads;
+    sendfile on;
+    tcp_nopush on;
+    output_buffers 2 1m;
+
+    location {{ media_server_path }}/ {
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}

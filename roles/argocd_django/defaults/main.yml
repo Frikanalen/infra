@@ -43,6 +43,12 @@ argocd_django_values:
     # Handed to the frontend as a video's uploadUrl. Must resolve to the tusd
     # ingress that roles/argocd_ingest creates.
     FK_UPLOAD_URL: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}{{ ingest_upload_path }}"
+    # Prefix every video file URL is built from. Must resolve to the ingress
+    # roles/media_server creates, and match its export -- staging's archive
+    # is a separate directory from prod's (see group_vars/staging.yml), so
+    # this deliberately varies by frikanalen_domain rather than pointing both
+    # environments at the same media host.
+    FK_MEDIA_URLPREFIX: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}{{ ingest_media_path }}/"
 
   ingress:
     enabled: true

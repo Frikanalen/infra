@@ -24,6 +24,15 @@ archive_media_staging_mode: "2775"
 archive_media_staging_export_path: /archive/media-staging
 archive_media_staging_nfs_client: caspar-sw1
 
+# Every other client the export in group_vars/storage.yml also lists (the
+# kubedev nodes roles/media_server's pods can land on). The reset script must
+# drop all of these, not just archive_media_staging_nfs_client above -- nfsd
+# keeps the dataset busy as long as any one of them is still shared, and the
+# destroy below would fail with "dataset is busy". Empty by default so the
+# role still works standalone; group_vars/storage.yml is what actually
+# populates it.
+archive_media_staging_kube_clients: []
+
 # Weekly, start of Monday.
 archive_media_staging_cron_weekday: "1"
 archive_media_staging_cron_hour: "0"

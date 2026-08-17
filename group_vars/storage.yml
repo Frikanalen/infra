@@ -16,10 +16,34 @@ archive_media_staging_export_path: /archive/media-staging
 archive_media_staging_nfs_client: caspar-sw1
 archive_media_staging_export_fsid: 10
 
+# roles/media_server mounts the archive straight into an nginx pod as a raw
+# k8s NFS volume, so it needs no host-level mount -- but kubelet does the
+# actual mount on whichever node the pod lands on, and a pod can land on any
+# node in the cluster, so every node needs export access, not just one.
+# Kept as explicit host lists (rather than a subnet) so this stays in step
+# with inventory.yaml's kubeprod/kubedev membership.
+archive_media_kube_clients:
+  - prod-kube-1
+  - prod-kube-2
+  - prod-kube-3
+
+archive_media_staging_kube_clients:
+  - dev-kube-1
+  - dev-kube-2
+  - dev-kube-3
+
 nfs_exports:
   - path: /archive/media
-    clients: "caspar1(ro,sync,no_subtree_check)"
-  - path: "{{ archive_media_staging_export_path }}"
     clients: >-
-      {{ archive_media_staging_nfs_client }}(ro,sync,no_subtree_check,fsid={{
-      archive_media_staging_export_fsid }})
+      {{ (['caspar1'] + archive_media_kube_clients)
+         | map('regex_replace', '^(.*)$', '\1(ro,sync,no_subtree_check)')
+         | join(' ') }}
+  - path: "{{ archive_media_staging_export_path }}"
+    # Every client shares the one pinned fsid above -- see the comment
+    # there. roles/media_staging_reset must drop every one of these before
+    # it can destroy and reclone the dataset; see
+    # archive_media_staging_kube_clients in that role's defaults.
+    clients: >-
+      {{ ([archive_media_staging_nfs_client] + archive_media_staging_kube_clients)
+         | map('regex_replace', '^(.*)$', '\1(ro,sync,no_subtree_check,fsid=' ~ archive_media_staging_export_fsid ~ ')')
+         | join(' ') }}
