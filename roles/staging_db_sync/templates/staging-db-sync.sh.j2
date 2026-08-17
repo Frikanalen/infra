@@ -100,10 +100,10 @@ wait_for_port "$STAGING_PORT"
 #   ERROR: cannot drop constraint fk_weeklyslot_pkey on table
 #   public.fk_weeklyslot because other objects depend on it
 #
-# Enumerating what is really there and dropping it CASCADE does not care how
-# far the two schemas have drifted, which is the whole point of a wipe-and-
-# replace. It needs no privileges beyond the ones fkweb already has, since
-# fkweb owns everything its own migrations created.
+# Dropping what fkweb actually owns does not care how far the two schemas
+# have drifted, which is the whole point of a wipe-and-replace. It needs no
+# privileges beyond the ones fkweb already has, since fkweb owns everything
+# its own migrations created.
 #
 # Piping the restore into a single psql transaction keeps the swap atomic:
 # staging serves last week's data right up to the commit, and a failure
@@ -112,16 +112,19 @@ wait_for_port "$STAGING_PORT"
 # block, so lock_timeout bounds the wait -- otherwise this holds the
 # port-forward open until next Monday's run piles up behind it.
 {
-  cat <<'SQL'
-DO $do$
-DECLARE r RECORD;
-BEGIN
-  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
-    EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', r.tablename);
-  END LOOP;
-END
-$do$;
-SQL
+  # DROP OWNED BY rather than a loop over pg_tables: this takes out
+  # everything the role owns -- functions, custom types, views and standalone
+  # sequences as well as tables -- so nothing staging grew that prod never
+  # had can survive to collide with the restore. A table loop leaves those
+  # behind.
+  #
+  # It also attempts to revoke the role's own privileges, which is why the
+  # run prints "no privileges could be revoked". That warning is the wanted
+  # outcome rather than a problem: the grants came from the Kubegres init
+  # script and were made by postgres, so fkweb cannot revoke them from
+  # itself, and the restore keeps the CREATE on schema public it needs.
+  echo "DROP OWNED BY \"$DB_USER\";"
+
   # --no-acl as well as --no-owner: the dump carries prod's grants on schema
   # public, which fkweb cannot apply because it does not own the schema, and
   # they are not wanted anyway. Staging's grants belong to the Kubegres init
