@@ -27,23 +27,53 @@ PROD_PORT={{ staging_db_sync_prod_local_port }}
 STAGING_PORT={{ staging_db_sync_staging_local_port }}
 
 DUMP_FILE="$(mktemp /var/tmp/staging-db-sync.XXXXXX.pgdump)"
+TOC_FILE="$(mktemp /var/tmp/staging-db-sync.XXXXXX.toc)"
 PROD_PF_PID=""
 STAGING_PF_PID=""
 
+stop_port_forward() {
+  local pid="$1"
+  [ -n "$pid" ] || return 0
+  # Kill the children first. `microk8s kubectl` is a wrapper script that runs
+  # kubectl as a child rather than exec'ing it, so $! is the wrapper's shell,
+  # and killing only that orphans the real kubectl -- which goes on holding
+  # the local port. That is how a failed run leaves a listener behind for the
+  # next one to trip over.
+  pkill -P "$pid" 2>/dev/null || true
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
 cleanup() {
-  if [ -n "$PROD_PF_PID" ]; then
-    kill "$PROD_PF_PID" 2>/dev/null || true
-  fi
-  if [ -n "$STAGING_PF_PID" ]; then
-    kill "$STAGING_PF_PID" 2>/dev/null || true
-  fi
-  rm -f "$DUMP_FILE"
+  stop_port_forward "$PROD_PF_PID"
+  stop_port_forward "$STAGING_PF_PID"
+  rm -f "$DUMP_FILE" "$TOC_FILE"
 }
 trap cleanup EXIT
 
-wait_for_port() {
+require_port_free() {
+  # Refuse to start if something is already listening. Without this a stale
+  # forward left by an earlier run silently satisfies the readiness check
+  # below, and we would dump or restore down someone else's tunnel without
+  # ever knowing which database is on the other end.
   local port="$1"
+  if pg_isready -h 127.0.0.1 -p "$port" >/dev/null 2>&1; then
+    echo "Port $port is already serving Postgres -- a previous run's port-forward is probably still alive." >&2
+    echo "Check with: ss -lptn 'sport = :$port'" >&2
+    return 1
+  fi
+}
+
+wait_for_port() {
+  # Takes the forwarding process's pid so a forward that died -- most often
+  # because it could not bind -- fails the run immediately rather than
+  # letting us fall through onto whatever else happens to hold the port.
+  local port="$1" pid="$2"
   for _ in $(seq 1 30); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "Port-forward for port $port exited before it was ready" >&2
+      return 1
+    fi
     if pg_isready -h 127.0.0.1 -p "$port" >/dev/null 2>&1; then
       return 0
     fi
@@ -75,19 +105,30 @@ echo "$(date -Is) Starting staging database refresh"
 PROD_PASSWORD="$(secret_password --kubeconfig="$PROD_KUBECONFIG")"
 STAGING_PASSWORD="$(secret_password)"
 
+require_port_free "$PROD_PORT"
 $KUBECTL --kubeconfig="$PROD_KUBECONFIG" -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$PROD_PORT:5432" &
 PROD_PF_PID=$!
-wait_for_port "$PROD_PORT"
+wait_for_port "$PROD_PORT" "$PROD_PF_PID"
 
 PGPASSWORD="$PROD_PASSWORD" pg_dump -h 127.0.0.1 -p "$PROD_PORT" -U "$DB_USER" -Fc -d "$DB_NAME" -f "$DUMP_FILE"
 
-kill "$PROD_PF_PID" 2>/dev/null || true
-wait "$PROD_PF_PID" 2>/dev/null || true
+stop_port_forward "$PROD_PF_PID"
 PROD_PF_PID=""
 
+require_port_free "$STAGING_PORT"
 $KUBECTL -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$STAGING_PORT:5432" &
 STAGING_PF_PID=$!
-wait_for_port "$STAGING_PORT"
+wait_for_port "$STAGING_PORT" "$STAGING_PF_PID"
+
+# Restore everything except extensions. They are infrastructure the operator
+# provisions, not application data: pg_stat_statements and friends are owned
+# by postgres, so the dump's `COMMENT ON EXTENSION` fails outright as fkweb
+# with "must be owner of extension", and if staging ever lacks one the
+# `CREATE EXTENSION` fails too, since the untrusted ones need superuser.
+# Filtering them out of the archive's table of contents sidesteps both and,
+# unlike --no-comments, keeps any comments the application does define.
+pg_restore -l "$DUMP_FILE" \
+  | grep -vE '^[0-9]+; [0-9]+ [0-9]+ (EXTENSION|COMMENT - EXTENSION) ' > "$TOC_FILE"
 
 # Drop what is actually in the schema, then restore, both in one transaction.
 #
@@ -129,7 +170,7 @@ wait_for_port "$STAGING_PORT"
   # public, which fkweb cannot apply because it does not own the schema, and
   # they are not wanted anyway. Staging's grants belong to the Kubegres init
   # script, and fkweb owns every table it restores here regardless.
-  pg_restore --no-owner --no-acl -f - "$DUMP_FILE"
+  pg_restore -L "$TOC_FILE" --no-owner --no-acl -f - "$DUMP_FILE"
 } | PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
   psql -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
     --single-transaction -v ON_ERROR_STOP=1 -q
