@@ -14,6 +14,9 @@ export PATH="/usr/sbin:/sbin:$PATH"
 SOURCE="{{ archive_media_staging_source }}"
 TARGET="{{ archive_media_staging_target }}"
 SNAPSHOT="${SOURCE}@{{ archive_media_staging_snapshot_prefix }}-$(date +%Y%m%d%H%M%S)"
+OWNER="{{ archive_media_staging_owner }}"
+GROUP="{{ archive_media_staging_group }}"
+MODE="{{ archive_media_staging_mode }}"
 
 echo "$(date -Is) Resetting $TARGET from $SOURCE"
 
@@ -25,12 +28,44 @@ fi
 
 zfs clone "$SNAPSHOT" "$TARGET"
 
-# The old clone (if any) is gone, so any earlier staging-sync snapshots on
-# the source are now unreferenced. Drop them so they don't accumulate
-# forever -- the new snapshot above is the only one the current clone needs.
-zfs list -H -o name -t snapshot -r "$SOURCE" \
-  | grep -- "@{{ archive_media_staging_snapshot_prefix }}-" \
-  | grep -v -F "$SNAPSHOT" \
-  | xargs -r -n1 zfs destroy
+# The clone's root directory comes from the snapshot, so it arrives owned the
+# way the production archive is -- group-writable by fkupload. The staging
+# ingest account is deliberately not in that group (see
+# roles/ingest_archive_account and group_vars/staging.yml: that separation is
+# what stops a staging upload reaching the production archive), so without
+# this it cannot write here, and its provisioning play's write assertion
+# fails. Restoring the ownership that role gives a directory it creates
+# itself keeps the two in agreement every week, not just on the run that
+# happened to create the directory first.
+#
+# Only the root directory, never -R: the tree below is 30TB of clone that
+# shares its blocks with the source, and rewriting every inode's ownership
+# would both take hours and dirty the lot, throwing away the space saving
+# that makes this approach viable at all. Staging ingest adds new files
+# alongside the prod-derived content rather than rewriting it.
+MOUNTPOINT="$(zfs get -H -o value mountpoint "$TARGET")"
+if id "$OWNER" >/dev/null 2>&1; then
+  chown "$OWNER:$GROUP" "$MOUNTPOINT"
+  chmod "$MODE" "$MOUNTPOINT"
+else
+  echo "$(date -Is) WARNING: user $OWNER does not exist, leaving $MOUNTPOINT owned as inherited." >&2
+  echo "$(date -Is)          Staging ingest cannot archive here until roles/ingest_archive_account has run." >&2
+fi
+
+# The old clone is gone, so every staging-sync snapshot except the one just
+# taken is now unreferenced. Drop them so they don't accumulate forever.
+#
+# Deliberately not a `grep | xargs` pipeline: under `set -o pipefail` a grep
+# that matches nothing exits 1 and takes the whole script down with it, which
+# is precisely what happens on the first run, when the snapshot just taken is
+# the only one that exists. Matching in the shell keeps "nothing to prune" an
+# ordinary outcome while still letting a genuine `zfs destroy` failure fail
+# the run.
+zfs list -H -o name -t snapshot -r "$SOURCE" | while read -r snap; do
+  case "$snap" in
+    "$SNAPSHOT") continue ;;
+    "$SOURCE@{{ archive_media_staging_snapshot_prefix }}-"*) zfs destroy "$snap" ;;
+  esac
+done
 
 echo "$(date -Is) Reset complete"
