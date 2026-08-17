@@ -1,0 +1,59 @@
+---
+- name: Install postgresql-client for pg_dump/pg_restore
+  ansible.builtin.apt:
+    name: postgresql-client
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Fetch prod cluster admin kubeconfig
+  # no_log throughout: this is a cluster-admin credential for production, and
+  # both the registered stdout and the copy below would otherwise be printed
+  # verbatim by --diff or by -vvv, which is how a credential ends up in a
+  # terminal scrollback or a CI log.
+  ansible.builtin.command: microk8s config
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  become: true
+  no_log: true
+  delegate_to: "{{ staging_db_sync_prod_host }}"
+  register: staging_db_sync_prod_kubeconfig
+  changed_when: false
+
+- name: Ensure kubeconfig directory exists
+  ansible.builtin.file:
+    path: "{{ staging_db_sync_kubeconfig_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  become: true
+
+- name: Install prod cluster kubeconfig for the DB-sync cron
+  ansible.builtin.copy:
+    content: "{{ staging_db_sync_prod_kubeconfig.stdout }}"
+    dest: "{{ staging_db_sync_kubeconfig_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  become: true
+  no_log: true
+
+- name: Install the staging database refresh script
+  ansible.builtin.template:
+    src: staging-db-sync.sh.j2
+    dest: "{{ staging_db_sync_script_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+
+- name: Install weekly staging database refresh cron job
+  ansible.builtin.cron:
+    name: "Refresh staging database from prod"
+    user: root
+    weekday: "{{ staging_db_sync_cron_weekday }}"
+    hour: "{{ staging_db_sync_cron_hour }}"
+    minute: "{{ staging_db_sync_cron_minute }}"
+    job: "{{ staging_db_sync_script_path }} >> {{ staging_db_sync_log_path }} 2>&1"
+  become: true

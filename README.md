@@ -68,7 +68,23 @@ over NFS.
 ansible-playbook playbooks/storage.yml
 ```
 
-Configures the NFS export of the ZFS media archive on file01.
+Configures the NFS export of the ZFS media archive on file01, and installs a
+weekly cron job there that resets `archive/media-staging` to a fresh clone of
+`archive/media` (Monday 00:00, see `roles/media_staging_reset`) -- this is
+the dataset `caspar-sw1` (staging playout) mounts, so staging always starts
+its week from a clean copy of prod's archive.
+
+```sh
+ansible-playbook playbooks/staging_db_sync.yml
+```
+
+Installs a weekly cron job on the staging cluster node (`dev-kube-1`) that
+refreshes the staging Django database from production: `pg_dump`/`pg_restore`
+over a `kubectl port-forward` into each cluster's `django-postgres`, followed
+by `manage.py migrate` to bring the restored schema forward to whatever
+staging's tracked branch expects (Monday 00:15, see `roles/staging_db_sync`).
+This gives the staging node a cluster-admin kubeconfig for prod, fetched at
+provisioning time -- treat it as sensitive.
 
 ## Requirements
 

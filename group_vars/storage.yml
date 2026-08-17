@@ -1,6 +1,25 @@
 # file01: exports the ZFS media archive (archive/media) read-only to the
-# CasparCG playout hosts over NFSv4. Client hostnames resolve via the
+# production playout host, and a weekly-reset clone of it
+# (archive/media-staging, see roles/media_staging_reset) to the staging
+# playout host, over NFSv4. Client hostnames resolve via the
 # dc1.frikanalen.no search domain set up by roles/common.
+# The staging clone is destroyed and recreated every week by
+# roles/media_staging_reset, which is why its export pins an explicit fsid.
+# NFSv4 otherwise derives the filesystem id from the dataset, so each reset
+# would hand caspar-sw1 a new one and stale every file handle it holds.
+# Pinned, the handles survive: a ZFS clone keeps the snapshot's object ids,
+# so a file present in both the old and new clone answers to the same handle.
+# Files staging created and the reset removed go stale, which is correct.
+#
+# Must not be 0 -- that designates the NFSv4 pseudo-root.
+archive_media_staging_export_path: /archive/media-staging
+archive_media_staging_nfs_client: caspar-sw1
+archive_media_staging_export_fsid: 10
+
 nfs_exports:
   - path: /archive/media
-    clients: "caspar1(ro,sync,no_subtree_check) caspar-sw1(ro,sync,no_subtree_check)"
+    clients: "caspar1(ro,sync,no_subtree_check)"
+  - path: "{{ archive_media_staging_export_path }}"
+    clients: >-
+      {{ archive_media_staging_nfs_client }}(ro,sync,no_subtree_check,fsid={{
+      archive_media_staging_export_fsid }})

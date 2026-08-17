@@ -1,0 +1,31 @@
+---
+- name: Install the staging media dataset reset script
+  ansible.builtin.template:
+    src: reset-media-staging.sh.j2
+    dest: "{{ archive_media_staging_script_path }}"
+    owner: root
+    group: root
+    mode: "0750"
+  become: true
+
+- name: Check whether the staging media dataset already exists
+  ansible.builtin.command: "zfs list -H -o name {{ archive_media_staging_target }}"
+  register: archive_media_staging_check
+  changed_when: false
+  failed_when: false
+  become: true
+
+- name: Bootstrap the staging media dataset
+  ansible.builtin.command: "{{ archive_media_staging_script_path }}"
+  become: true
+  when: archive_media_staging_check.rc != 0
+
+- name: Install weekly staging media reset cron job
+  ansible.builtin.cron:
+    name: "Reset staging media archive snapshot"
+    user: root
+    weekday: "{{ archive_media_staging_cron_weekday }}"
+    hour: "{{ archive_media_staging_cron_hour }}"
+    minute: "{{ archive_media_staging_cron_minute }}"
+    job: "{{ archive_media_staging_script_path }} >> {{ archive_media_staging_log_path }} 2>&1"
+  become: true

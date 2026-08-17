@@ -1,0 +1,118 @@
+#!/bin/bash
+# Refreshes the staging {{ staging_db_sync_db_name }} database from prod.
+#
+# Dumps prod's {{ staging_db_sync_db_service }} over a kubectl port-forward,
+# then restores into staging's {{ staging_db_sync_db_service }} the same way,
+# authenticating with the djangoPassword already sitting in each cluster's
+# own {{ staging_db_sync_db_secret_name }} secret -- no credentials beyond
+# what's already deployed by roles/argocd_django. {{ staging_db_sync_db_user }}
+# owns every table it created via migrations, so it can dump and
+# clean-restore its own database without needing superuser access.
+#
+# {{ ansible_managed }}
+set -euo pipefail
+
+export PATH="/snap/bin:$PATH"
+
+KUBECTL="microk8s kubectl"
+PROD_KUBECONFIG="{{ staging_db_sync_kubeconfig_path }}"
+NAMESPACE="{{ staging_db_sync_namespace }}"
+DB_SERVICE="{{ staging_db_sync_db_service }}"
+DB_NAME="{{ staging_db_sync_db_name }}"
+DB_USER="{{ staging_db_sync_db_user }}"
+SECRET_NAME="{{ staging_db_sync_db_secret_name }}"
+DJANGO_DEPLOYMENT="{{ staging_db_sync_django_deployment }}"
+DJANGO_CONTAINER="{{ staging_db_sync_django_container }}"
+PROD_PORT={{ staging_db_sync_prod_local_port }}
+STAGING_PORT={{ staging_db_sync_staging_local_port }}
+
+DUMP_FILE="$(mktemp /var/tmp/staging-db-sync.XXXXXX.pgdump)"
+PROD_PF_PID=""
+STAGING_PF_PID=""
+
+cleanup() {
+  if [ -n "$PROD_PF_PID" ]; then
+    kill "$PROD_PF_PID" 2>/dev/null || true
+  fi
+  if [ -n "$STAGING_PF_PID" ]; then
+    kill "$STAGING_PF_PID" 2>/dev/null || true
+  fi
+  rm -f "$DUMP_FILE"
+}
+trap cleanup EXIT
+
+wait_for_port() {
+  local port="$1"
+  for _ in $(seq 1 30); do
+    if pg_isready -h 127.0.0.1 -p "$port" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "Timed out waiting for port $port to accept connections" >&2
+  return 1
+}
+
+secret_password() {
+  # Guarded rather than returned raw: an absent djangoPassword key yields an
+  # empty jsonpath result that base64 decodes to nothing and exits 0, and the
+  # `microk8s kubectl` wrapper likewise prints a message and exits 0 if the
+  # node is ever demoted out of the control plane. Both would hand us an
+  # empty password and surface as a puzzling authentication failure several
+  # steps later.
+  local pw
+  pw="$($KUBECTL "$@" -n "$NAMESPACE" get secret "$SECRET_NAME" \
+    -o jsonpath='{.data.djangoPassword}' | base64 -d)"
+  if [ -z "$pw" ]; then
+    echo "No djangoPassword found in secret $SECRET_NAME (args: $*)" >&2
+    return 1
+  fi
+  printf '%s' "$pw"
+}
+
+echo "$(date -Is) Starting staging database refresh"
+
+PROD_PASSWORD="$(secret_password --kubeconfig="$PROD_KUBECONFIG")"
+STAGING_PASSWORD="$(secret_password)"
+
+$KUBECTL --kubeconfig="$PROD_KUBECONFIG" -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$PROD_PORT:5432" &
+PROD_PF_PID=$!
+wait_for_port "$PROD_PORT"
+
+PGPASSWORD="$PROD_PASSWORD" pg_dump -h 127.0.0.1 -p "$PROD_PORT" -U "$DB_USER" -Fc -d "$DB_NAME" -f "$DUMP_FILE"
+
+kill "$PROD_PF_PID" 2>/dev/null || true
+wait "$PROD_PF_PID" 2>/dev/null || true
+PROD_PF_PID=""
+
+$KUBECTL -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$STAGING_PORT:5432" &
+STAGING_PF_PID=$!
+wait_for_port "$STAGING_PORT"
+
+# --single-transaction is what makes this safe to run against a live staging
+# Django. pg_restore otherwise continues past errors, so a restore that fails
+# halfway leaves a half-dropped schema behind and the migrate below then runs
+# against it; wrapped in one transaction the whole thing either lands or
+# rolls back, and staging keeps serving last week's data either way.
+#
+# It does mean taking ACCESS EXCLUSIVE on every table at once, which an open
+# Django transaction can block. lock_timeout bounds that: without it the
+# restore waits forever, holding the port-forward open, and next Monday's run
+# piles up behind this one. Django's connections are per-request, so at this
+# hour it should get the locks uncontested.
+PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
+  pg_restore -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  --clean --if-exists --no-owner --single-transaction "$DUMP_FILE"
+
+kill "$STAGING_PF_PID" 2>/dev/null || true
+wait "$STAGING_PF_PID" 2>/dev/null || true
+STAGING_PF_PID=""
+
+# Prod may be behind staging's migrations (staging tracks main; prod tracks a
+# release tag), so the schema pg_restore just brought in can lag what
+# staging's Django code expects. Bring it forward the same way the chart's
+# own db-migrate hook does on every deploy.
+$KUBECTL -n "$NAMESPACE" exec "deploy/$DJANGO_DEPLOYMENT" -c "$DJANGO_CONTAINER" -- \
+  python manage.py migrate --noinput
+
+echo "$(date -Is) Staging database refresh complete"

@@ -8,4 +8,5 @@
   become: true
   gather_facts: true
   roles:
+    - media_staging_reset
     - nfs_server

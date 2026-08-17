@@ -1,0 +1,30 @@
+---
+# defaults for media_staging_reset role
+
+archive_media_staging_source: archive/media
+archive_media_staging_target: archive/media-staging
+archive_media_staging_snapshot_prefix: staging-sync
+
+archive_media_staging_script_path: /usr/local/sbin/reset-media-staging.sh
+archive_media_staging_log_path: /var/log/reset-media-staging.log
+
+# Ownership to restore on the clone's root directory after each reset. A
+# fresh clone inherits the production archive's ownership from the snapshot,
+# which the staging ingest account cannot write to by design -- it is
+# deliberately kept out of prod's fkupload group. These must therefore match
+# what roles/ingest_archive_account creates an archive directory as, i.e.
+# ingest_archive_user from group_vars/staging.yml. Change one, change both.
+archive_media_staging_owner: ingest-staging
+archive_media_staging_group: ingest-staging
+archive_media_staging_mode: "2775"
+
+# The dataset is NFS-exported, so the reset has to drop the export before it
+# can destroy it. Overridden in group_vars/storage.yml, which is where the
+# matching nfs_exports entry lives -- keep the two in step.
+archive_media_staging_export_path: /archive/media-staging
+archive_media_staging_nfs_client: caspar-sw1
+
+# Weekly, start of Monday.
+archive_media_staging_cron_weekday: "1"
+archive_media_staging_cron_hour: "0"
+archive_media_staging_cron_minute: "0"
