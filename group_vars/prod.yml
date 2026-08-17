@@ -11,6 +11,13 @@ caspar_host: "192.168.3.35"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+# Ingest archives over SSH, so it runs in Kubernetes rather than on file01
+# itself. The account and key are provisioned by roles/ingest_archive_account;
+# this is the existing media archive that roles/nfs_server exports.
+ingest_archive_host: file01
+ingest_archive_user: ingest
+ingest_archive_dir: /archive/media
+
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
 argocd_stream_cubemap_ip: "192.168.3.105"

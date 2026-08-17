@@ -1,0 +1,25 @@
+---
+# defaults for ingest_archive_account role
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# ingest_archive_host, ingest_archive_user and ingest_archive_dir come from
+# group_vars, which is what keeps staging and production pointed at separate
+# accounts and directories on the storage host.
+ingest_archive_port: 22
+
+# Secret the key is kept in. This is the only place the private key is stored:
+# it is generated on first run and read back on every run after that, so it
+# never needs to live in the vault or on anyone's laptop.
+ingest_archive_namespace: "{{ frikanalen_app_namespace }}"
+ingest_archive_secret_name: ingest-archive-ssh
+
+ingest_archive_key_comment: "ingest@{{ inventory_hostname }}"
+
+# Host key type read from the archive host to build known_hosts. Reading it
+# from the host itself is why ingest never has to trust ssh-keyscan.
+ingest_archive_host_key_type: ed25519
+
+# What the archive key is allowed to do. Ingest only ever speaks SFTP, so a
+# stolen key cannot get a shell, forward ports, or allocate a PTY.
+ingest_archive_key_options: 'restrict,command="internal-sftp"'
