@@ -89,20 +89,47 @@ $KUBECTL -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$STAGING_PORT:5432" &
 STAGING_PF_PID=$!
 wait_for_port "$STAGING_PORT"
 
-# --single-transaction is what makes this safe to run against a live staging
-# Django. pg_restore otherwise continues past errors, so a restore that fails
-# halfway leaves a half-dropped schema behind and the migrate below then runs
-# against it; wrapped in one transaction the whole thing either lands or
-# rolls back, and staging keeps serving last week's data either way.
+# Drop what is actually in the schema, then restore, both in one transaction.
 #
-# It does mean taking ACCESS EXCLUSIVE on every table at once, which an open
-# Django transaction can block. lock_timeout bounds that: without it the
-# restore waits forever, holding the port-forward open, and next Monday's run
-# piles up behind this one. Django's connections are per-request, so at this
-# hour it should get the locks uncontested.
-PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
-  pg_restore -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  --clean --if-exists --no-owner --single-transaction "$DUMP_FILE"
+# Deliberately not `pg_restore --clean`: that only drops the objects present
+# in the dump, and staging tracks main while prod tracks a release tag, so
+# staging routinely holds tables prod has never heard of. Those survive the
+# clean and then block dropping the keys they reference, which is precisely
+# how this failed the first time it ran for real:
+#
+#   ERROR: cannot drop constraint fk_weeklyslot_pkey on table
+#   public.fk_weeklyslot because other objects depend on it
+#
+# Enumerating what is really there and dropping it CASCADE does not care how
+# far the two schemas have drifted, which is the whole point of a wipe-and-
+# replace. It needs no privileges beyond the ones fkweb already has, since
+# fkweb owns everything its own migrations created.
+#
+# Piping the restore into a single psql transaction keeps the swap atomic:
+# staging serves last week's data right up to the commit, and a failure
+# leaves it on last week's data rather than empty. That takes ACCESS
+# EXCLUSIVE on every table at once, which an open Django transaction can
+# block, so lock_timeout bounds the wait -- otherwise this holds the
+# port-forward open until next Monday's run piles up behind it.
+{
+  cat <<'SQL'
+DO $do$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', r.tablename);
+  END LOOP;
+END
+$do$;
+SQL
+  # --no-acl as well as --no-owner: the dump carries prod's grants on schema
+  # public, which fkweb cannot apply because it does not own the schema, and
+  # they are not wanted anyway. Staging's grants belong to the Kubegres init
+  # script, and fkweb owns every table it restores here regardless.
+  pg_restore --no-owner --no-acl -f - "$DUMP_FILE"
+} | PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
+  psql -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
+    --single-transaction -v ON_ERROR_STOP=1 -q
 
 kill "$STAGING_PF_PID" 2>/dev/null || true
 wait "$STAGING_PF_PID" 2>/dev/null || true
