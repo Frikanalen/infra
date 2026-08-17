@@ -6,8 +6,7 @@
     argocd_django_db_super_password: "{{ vault_dev_django_postgres_super_password }}"
     argocd_django_db_replication_password: "{{ vault_dev_django_postgres_replication_password }}"
     argocd_django_db_django_password: "{{ vault_dev_django_postgres_django_password }}"
-    argocd_ingest_api_username: "{{ vault_dev_ingest_api_username }}"
-    argocd_ingest_api_password: "{{ vault_dev_ingest_api_password }}"
+    argocd_ingest_api_token: "{{ vault_dev_ingest_api_token }}"
   roles:
     - argocd_django
     - argocd_frontend

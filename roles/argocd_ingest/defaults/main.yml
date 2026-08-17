@@ -21,10 +21,11 @@ argocd_image_updater_enabled: false
 # Archive credentials, created by the ingest_archive_account role
 argocd_ingest_ssh_secret_name: "{{ ingest_archive_secret_name | default('ingest-archive-ssh') }}"
 
-# Django API login - must be set by caller, from vault
+# Django API token - must be set by caller, from vault. A token rather than a
+# login: ingest would otherwise exchange credentials for one at startup, and
+# could not boot unless the API were already reachable.
 argocd_ingest_api_secret_name: ingest-api
-argocd_ingest_api_username: ""
-argocd_ingest_api_password: ""
+argocd_ingest_api_token: ""
 
 # PVC that tusd writes uploads into, shared with ingest
 argocd_ingest_uploads_claim: "{{ ingest_uploads_claim | default('') }}"

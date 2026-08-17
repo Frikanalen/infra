@@ -8,6 +8,14 @@
       No archive credentials found. Run the ingest_archive_account role first;
       it generates the key and stores it in the Kubernetes secret ingest reads.
 
+- name: Ensure the Django API token was supplied
+  ansible.builtin.assert:
+    that:
+      - argocd_ingest_api_token | length > 0
+    fail_msg: >-
+      argocd_ingest_api_token must be set, normally from data/vault.yml. Ingest
+      cannot talk to the API without it.
+
 - name: Ensure ingest namespace exists
   become: yes
   kubernetes.core.k8s:
