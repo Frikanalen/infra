@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: apps
+  name: "{{ argocd_gitops_application_name }}"
   namespace: {{ argocd_namespace }}
 spec:
   project: default
