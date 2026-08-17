@@ -18,6 +18,12 @@ archive_media_staging_owner: ingest-staging
 archive_media_staging_group: ingest-staging
 archive_media_staging_mode: "2775"
 
+# The dataset is NFS-exported, so the reset has to drop the export before it
+# can destroy it. Overridden in group_vars/storage.yml, which is where the
+# matching nfs_exports entry lives -- keep the two in step.
+archive_media_staging_export_path: /archive/media-staging
+archive_media_staging_nfs_client: caspar-sw1
+
 # Weekly, start of Monday.
 archive_media_staging_cron_weekday: "1"
 archive_media_staging_cron_hour: "0"

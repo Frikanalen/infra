@@ -54,8 +54,20 @@ wait_for_port() {
 }
 
 secret_password() {
-  $KUBECTL "$@" -n "$NAMESPACE" get secret "$SECRET_NAME" \
-    -o jsonpath='{.data.djangoPassword}' | base64 -d
+  # Guarded rather than returned raw: an absent djangoPassword key yields an
+  # empty jsonpath result that base64 decodes to nothing and exits 0, and the
+  # `microk8s kubectl` wrapper likewise prints a message and exits 0 if the
+  # node is ever demoted out of the control plane. Both would hand us an
+  # empty password and surface as a puzzling authentication failure several
+  # steps later.
+  local pw
+  pw="$($KUBECTL "$@" -n "$NAMESPACE" get secret "$SECRET_NAME" \
+    -o jsonpath='{.data.djangoPassword}' | base64 -d)"
+  if [ -z "$pw" ]; then
+    echo "No djangoPassword found in secret $SECRET_NAME (args: $*)" >&2
+    return 1
+  fi
+  printf '%s' "$pw"
 }
 
 echo "$(date -Is) Starting staging database refresh"
@@ -77,8 +89,20 @@ $KUBECTL -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$STAGING_PORT:5432" &
 STAGING_PF_PID=$!
 wait_for_port "$STAGING_PORT"
 
-PGPASSWORD="$STAGING_PASSWORD" pg_restore -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
-  --clean --if-exists --no-owner "$DUMP_FILE"
+# --single-transaction is what makes this safe to run against a live staging
+# Django. pg_restore otherwise continues past errors, so a restore that fails
+# halfway leaves a half-dropped schema behind and the migrate below then runs
+# against it; wrapped in one transaction the whole thing either lands or
+# rolls back, and staging keeps serving last week's data either way.
+#
+# It does mean taking ACCESS EXCLUSIVE on every table at once, which an open
+# Django transaction can block. lock_timeout bounds that: without it the
+# restore waits forever, holding the port-forward open, and next Monday's run
+# piles up behind this one. Django's connections are per-request, so at this
+# hour it should get the locks uncontested.
+PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
+  pg_restore -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
+  --clean --if-exists --no-owner --single-transaction "$DUMP_FILE"
 
 kill "$STAGING_PF_PID" 2>/dev/null || true
 wait "$STAGING_PF_PID" 2>/dev/null || true

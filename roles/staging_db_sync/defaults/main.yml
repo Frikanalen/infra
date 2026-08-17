@@ -35,6 +35,11 @@ staging_db_sync_django_container: django
 staging_db_sync_prod_local_port: 15432
 staging_db_sync_staging_local_port: 15433
 
+# How long the restore waits for the table locks it needs before giving up
+# and rolling back. Bounded so a stuck restore fails this week's run rather
+# than hanging and colliding with next week's.
+staging_db_sync_lock_timeout: "60s"
+
 # Weekly, 15 minutes after the Monday-midnight media reset (roles/media_
 # staging_reset) so the two don't land in the same instant.
 staging_db_sync_cron_weekday: "1"

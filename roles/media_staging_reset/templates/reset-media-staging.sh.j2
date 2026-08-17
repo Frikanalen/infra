@@ -17,12 +17,30 @@ SNAPSHOT="${SOURCE}@{{ archive_media_staging_snapshot_prefix }}-$(date +%Y%m%d%H
 OWNER="{{ archive_media_staging_owner }}"
 GROUP="{{ archive_media_staging_group }}"
 MODE="{{ archive_media_staging_mode }}"
+EXPORT_PATH="{{ archive_media_staging_export_path }}"
+NFS_CLIENT="{{ archive_media_staging_nfs_client }}"
 
 echo "$(date -Is) Resetting $TARGET from $SOURCE"
 
 zfs snapshot "$SNAPSHOT"
 
 if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
+  # Drop the NFS export before destroying. The export is managed in
+  # /etc/exports rather than through the ZFS sharenfs property, so ZFS will
+  # not unshare it for us: nfsd keeps a reference to the mount and the
+  # destroy fails with "dataset is busy".
+  #
+  # Only this one export, never `exportfs -ua`: that would also drop
+  # caspar1's view of the production archive, taking prod playout down to
+  # reset staging.
+  if exportfs -s | grep -qF "$EXPORT_PATH"; then
+    exportfs -u "${NFS_CLIENT}:${EXPORT_PATH}"
+  fi
+
+  # Deliberately no -f. If something on file01 still holds the mount open --
+  # an in-flight staging SFTP upload, say -- failing here and mailing the
+  # cron output is better than yanking the filesystem out from under it. The
+  # reset is a week late; the upload would be corrupt.
   zfs destroy -r "$TARGET"
 fi
 
@@ -44,13 +62,19 @@ zfs clone "$SNAPSHOT" "$TARGET"
 # that makes this approach viable at all. Staging ingest adds new files
 # alongside the prod-derived content rather than rewriting it.
 MOUNTPOINT="$(zfs get -H -o value mountpoint "$TARGET")"
-if id "$OWNER" >/dev/null 2>&1; then
+if id "$OWNER" >/dev/null 2>&1 && getent group "$GROUP" >/dev/null 2>&1; then
   chown "$OWNER:$GROUP" "$MOUNTPOINT"
   chmod "$MODE" "$MOUNTPOINT"
 else
-  echo "$(date -Is) WARNING: user $OWNER does not exist, leaving $MOUNTPOINT owned as inherited." >&2
+  echo "$(date -Is) WARNING: $OWNER:$GROUP does not exist, leaving $MOUNTPOINT owned as inherited." >&2
   echo "$(date -Is)          Staging ingest cannot archive here until roles/ingest_archive_account has run." >&2
 fi
+
+# Restore the export. -r re-reads /etc/exports and syncs against it, so this
+# puts back only what was removed above and leaves the production export
+# alone. The pinned fsid (group_vars/storage.yml) is what lets caspar-sw1's
+# existing file handles keep resolving across the swap.
+exportfs -ra
 
 # The old clone is gone, so every staging-sync snapshot except the one just
 # taken is now unreferenced. Drop them so they don't accumulate forever.
