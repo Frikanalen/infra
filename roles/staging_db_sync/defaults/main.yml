@@ -1,0 +1,42 @@
+---
+# defaults for staging_db_sync role
+
+# Inventory hostname of a prod cluster node to fetch the admin kubeconfig
+# from, so this host can reach prod's django-postgres for the dump side of
+# the weekly refresh. This is a full cluster-admin credential -- scoping a
+# ServiceAccount down to just "exec into one pod" would need RBAC plumbing
+# this repo doesn't have yet -- so treat kubeconfig-prod on this host as
+# sensitive as any other cluster-admin credential.
+staging_db_sync_prod_host: prod-kube-1
+
+staging_db_sync_kubeconfig_dir: /etc/frikanalen
+staging_db_sync_kubeconfig_path: "{{ staging_db_sync_kubeconfig_dir }}/kubeconfig-prod"
+
+staging_db_sync_script_path: /usr/local/sbin/staging-db-sync.sh
+staging_db_sync_log_path: /var/log/staging-db-sync.log
+
+# Reuses the same names both clusters already deploy via roles/argocd_django
+# and group_vars/{prod,staging}.yml, so no new credentials are introduced --
+# the script reads the djangoPassword that's already sitting in each
+# cluster's own secret.
+staging_db_sync_namespace: "{{ frikanalen_app_namespace }}"
+staging_db_sync_db_service: "{{ django_db_host }}"
+staging_db_sync_db_secret_name: "{{ django_db_secret_name }}"
+
+# Fixed by the django-api Helm chart (chart/values.yaml: database.databaseName
+# / database.user), not currently parameterized anywhere in this repo.
+staging_db_sync_db_name: fkweb
+staging_db_sync_db_user: fkweb
+
+# Also fixed by the chart (chart/templates/deployment.yaml).
+staging_db_sync_django_deployment: django
+staging_db_sync_django_container: django
+
+staging_db_sync_prod_local_port: 15432
+staging_db_sync_staging_local_port: 15433
+
+# Weekly, 15 minutes after the Monday-midnight media reset (roles/media_
+# staging_reset) so the two don't land in the same instant.
+staging_db_sync_cron_weekday: "1"
+staging_db_sync_cron_hour: "0"
+staging_db_sync_cron_minute: "15"

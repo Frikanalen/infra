@@ -1,0 +1,36 @@
+#!/bin/bash
+# Resets {{ archive_media_staging_target }} to the current state of
+# {{ archive_media_staging_source }} by cloning a fresh snapshot and
+# discarding the previous clone. Anything staging wrote since the last reset
+# (e.g. ingest-staging uploads) is lost -- that's the point: staging always
+# starts its week from a clean copy of prod.
+#
+# {{ ansible_managed }}
+set -euo pipefail
+
+# cron's default PATH omits /usr/sbin, where zfs/zpool live on Ubuntu.
+export PATH="/usr/sbin:/sbin:$PATH"
+
+SOURCE="{{ archive_media_staging_source }}"
+TARGET="{{ archive_media_staging_target }}"
+SNAPSHOT="${SOURCE}@{{ archive_media_staging_snapshot_prefix }}-$(date +%Y%m%d%H%M%S)"
+
+echo "$(date -Is) Resetting $TARGET from $SOURCE"
+
+zfs snapshot "$SNAPSHOT"
+
+if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
+  zfs destroy -r "$TARGET"
+fi
+
+zfs clone "$SNAPSHOT" "$TARGET"
+
+# The old clone (if any) is gone, so any earlier staging-sync snapshots on
+# the source are now unreferenced. Drop them so they don't accumulate
+# forever -- the new snapshot above is the only one the current clone needs.
+zfs list -H -o name -t snapshot -r "$SOURCE" \
+  | grep -- "@{{ archive_media_staging_snapshot_prefix }}-" \
+  | grep -v -F "$SNAPSHOT" \
+  | xargs -r -n1 zfs destroy
+
+echo "$(date -Is) Reset complete"

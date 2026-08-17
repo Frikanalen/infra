@@ -5,3 +5,12 @@
 # using the casparcg role's casparcg_ffmpeg_path/casparcg_ffmpeg_args
 # defaults.
 casparcg_consumer_type: "ffmpeg"
+
+# caspar_sw1 is the staging playout host, so it mounts the weekly-reset
+# clone of the archive (see roles/media_staging_reset and
+# group_vars/storage.yml) rather than the live one caspar_hw uses
+# (group_vars/caspar_hw.yml) -- staging playout never sees an in-progress
+# prod upload, and a bad staging test file never touches the real archive.
+nfs_client_mounts:
+  - src: "file01:/archive/media-staging"
+    path: /mnt/media

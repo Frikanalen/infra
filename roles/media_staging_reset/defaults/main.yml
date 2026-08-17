@@ -1,0 +1,14 @@
+---
+# defaults for media_staging_reset role
+
+archive_media_staging_source: archive/media
+archive_media_staging_target: archive/media-staging
+archive_media_staging_snapshot_prefix: staging-sync
+
+archive_media_staging_script_path: /usr/local/sbin/reset-media-staging.sh
+archive_media_staging_log_path: /var/log/reset-media-staging.log
+
+# Weekly, start of Monday.
+archive_media_staging_cron_weekday: "1"
+archive_media_staging_cron_hour: "0"
+archive_media_staging_cron_minute: "0"

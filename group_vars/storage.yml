@@ -1,6 +1,10 @@
 # file01: exports the ZFS media archive (archive/media) read-only to the
-# CasparCG playout hosts over NFSv4. Client hostnames resolve via the
+# production playout host, and a weekly-reset clone of it
+# (archive/media-staging, see roles/media_staging_reset) to the staging
+# playout host, over NFSv4. Client hostnames resolve via the
 # dc1.frikanalen.no search domain set up by roles/common.
 nfs_exports:
   - path: /archive/media
-    clients: "caspar1(ro,sync,no_subtree_check) caspar-sw1(ro,sync,no_subtree_check)"
+    clients: "caspar1(ro,sync,no_subtree_check)"
+  - path: /archive/media-staging
+    clients: "caspar-sw1(ro,sync,no_subtree_check)"
