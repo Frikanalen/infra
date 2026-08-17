@@ -87,12 +87,19 @@
     - name: Ensure the archive account exists
       # nologin is safe with a forced internal-sftp command: sshd serves SFTP
       # in-process and never runs the account's shell.
+      #
+      # Membership of ingest_archive_group is what grants write access to an
+      # archive that already exists: /archive/media is group-writable by the
+      # group that owns it. It is deliberately set for production only, so
+      # staging cannot reach the production archive — keep it that way.
       ansible.builtin.user:
         name: "{{ ingest_archive_user }}"
         system: yes
         create_home: yes
         home: "/home/{{ ingest_archive_user }}"
         shell: /usr/sbin/nologin
+        groups: "{{ [ingest_archive_group] if ingest_archive_group else omit }}"
+        append: yes
         state: present
 
     - name: Check whether the archive directory exists
@@ -121,13 +128,12 @@
         exclusive: yes
         state: present
 
-    - name: Verify the archive account can write to the archive directory
-      # Turns a silent "ingest cannot archive anything" into a failed play.
+    - name: Check the archive account can write to the archive directory
+      # No -s: runuser rejects it alongside -u, and without it the command is
+      # exec'd directly rather than through the account's nologin shell.
       ansible.builtin.command:
         argv:
           - runuser
-          - -s
-          - /bin/sh
           - -u
           - "{{ ingest_archive_user }}"
           - --
@@ -135,6 +141,19 @@
           - -w
           - "{{ ingest_archive_dir }}"
       changed_when: false
+      failed_when: false
+      register: ingest_archive_writable
+
+    - name: Verify the archive account can write to the archive directory
+      # Turns a silent "ingest cannot archive anything" into a failed play.
+      ansible.builtin.assert:
+        that:
+          - ingest_archive_writable.rc == 0
+        fail_msg: >-
+          {{ ingest_archive_user }} cannot write to {{ ingest_archive_dir }}.
+          Set ingest_archive_group to a group with write access to it, as
+          prod does, or fix the directory's permissions. Check with
+          `ls -ld {{ ingest_archive_dir }}` and `id {{ ingest_archive_user }}`.
 
     - name: Read the archive host's SSH host key
       ansible.builtin.slurp:

@@ -41,9 +41,24 @@ key and replaces the authorised one. Nothing else needs updating.
    host rather than `ssh-keyscan` means there is no trust-on-first-use window.
 7. Writes the secret.
 
+## Write access
+
 The existing archive directory is never chowned — only created when missing.
 `/archive/media` is already there and exported over NFS by `roles/nfs_server`,
 and its ownership is not this role's to restyle.
+
+It is already group-writable by `fkupload`, so production grants access by
+putting the account in that group, via `ingest_archive_group`. Staging leaves
+it unset: the role creates that directory and the account owns it outright.
+
+Keeping the two environments out of one shared group is the whole point, so
+resist the temptation to set `ingest_archive_group` for staging when its
+archive one day already exists. Give it a group of its own instead.
+
+POSIX ACLs would not improve on this. They add principals, not verbs: `w` on a
+directory still means create, delete and rename, so an ACL grants exactly what
+group membership does. The finer permissions — create without delete — exist
+only in NFSv4 ACLs, and `archive/media` is `acltype=off`, mounted `noacl`.
 
 ## Environments
 

@@ -23,3 +23,11 @@ ingest_archive_host_key_type: ed25519
 # What the archive key is allowed to do. Ingest only ever speaks SFTP, so a
 # stolen key cannot get a shell, forward ports, or allocate a PTY.
 ingest_archive_key_options: 'restrict,command="internal-sftp"'
+
+# Group granting write access to an existing archive directory. Set for the
+# environment whose archive already exists and is group-writable; left unset
+# where the role creates the directory and the account owns it outright.
+#
+# Deliberately per-environment: putting both accounts in one group is exactly
+# the separation this is meant to keep.
+ingest_archive_group: ""
