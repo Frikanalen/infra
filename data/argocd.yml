@@ -13,3 +13,8 @@ default_ingress_class: public
 django_db_user: fkweb
 django_db_name: fkweb
 django_db_port: "5432"
+
+# Where tusd is served on the main site. Shared because two roles must agree:
+# argocd_ingest routes this path to tusd, and argocd_django advertises it to
+# the frontend as a video's uploadUrl.
+ingest_upload_path: /upload

@@ -22,6 +22,10 @@ ingest_archive_host: file01
 ingest_archive_user: ingest-staging
 ingest_archive_dir: /archive/media-staging
 
+# tusd runs alongside ingest in the same pod, served at /upload on
+# frikanalen_domain. Django's FK_UPLOAD_URL must point there.
+ingest_uploads_size: 100Gi
+
 argocd_stream_cubemap_ip: "192.168.3.91"
 
 # Auto-roll staging deployments when a new image is pushed to the tracked
@@ -34,6 +38,7 @@ app_versions:
   frontend: main
   django: main
   stream: main
+  ingest: main
 
 helm_chart_versions:
   traefik: "38.0.2"

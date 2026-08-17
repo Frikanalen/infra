@@ -1,0 +1,41 @@
+---
+- name: Ensure the archive credentials were provisioned
+  ansible.builtin.assert:
+    that:
+      - ingest_archive_private_key is defined
+      - ingest_archive_private_key | length > 0
+    fail_msg: >-
+      No archive credentials found. Run the ingest_archive_account role first;
+      it generates the key and stores it in the Kubernetes secret ingest reads.
+
+- name: Ensure ingest namespace exists
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ argocd_ingest_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Create Django API credentials secret
+  become: yes
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'api-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy Ingest via ArgoCD Application
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'application.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy Ingest Argo CD Image Updater tracking
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'image-updater.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+  when: argocd_image_updater_enabled | bool

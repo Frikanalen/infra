@@ -18,6 +18,10 @@ ingest_archive_host: file01
 ingest_archive_user: ingest
 ingest_archive_dir: /archive/media
 
+# tusd runs alongside ingest in the same pod, served at /upload on
+# frikanalen_domain. Django's FK_UPLOAD_URL must point there.
+ingest_uploads_size: 500Gi
+
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
 argocd_stream_cubemap_ip: "192.168.3.105"
@@ -28,6 +32,7 @@ app_versions:
   frontend: v2.0.4
   django: v0.1.3
   stream: main
+  ingest: main
 
 helm_chart_versions:
   traefik: "38.0.2"
