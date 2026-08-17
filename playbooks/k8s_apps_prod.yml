@@ -6,6 +6,7 @@
     argocd_django_db_super_password: "{{ vault_prod_django_postgres_super_password }}"
     argocd_django_db_replication_password: "{{ vault_prod_django_postgres_replication_password }}"
     argocd_django_db_django_password: "{{ vault_prod_django_postgres_django_password }}"
+    argocd_ingest_api_token: "{{ vault_prod_ingest_api_token }}"
     argocd_namespace: "argocd"
   roles:
     - argocd_django
@@ -14,3 +15,7 @@
     - argocd_schedule
     - argocd_playout
     - argocd_stream
+    # Generates the archive key and provisions the file01 account; must precede
+    # argocd_ingest, which reads the key back to roll the pod on rotation.
+    - ingest_archive_account
+    - argocd_ingest

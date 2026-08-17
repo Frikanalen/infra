@@ -40,6 +40,9 @@ argocd_django_values:
   env:
     ALLOWED_HOSTS: "{{ frikanalen_domain }}"
     CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
+    # Handed to the frontend as a video's uploadUrl. Must resolve to the tusd
+    # ingress that roles/argocd_ingest creates.
+    FK_UPLOAD_URL: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}{{ ingest_upload_path }}"
 
   ingress:
     enabled: true
