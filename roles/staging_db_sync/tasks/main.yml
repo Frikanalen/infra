@@ -7,10 +7,15 @@
   become: true
 
 - name: Fetch prod cluster admin kubeconfig
+  # no_log throughout: this is a cluster-admin credential for production, and
+  # both the registered stdout and the copy below would otherwise be printed
+  # verbatim by --diff or by -vvv, which is how a credential ends up in a
+  # terminal scrollback or a CI log.
   ansible.builtin.command: microk8s config
   environment:
     PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
   become: true
+  no_log: true
   delegate_to: "{{ staging_db_sync_prod_host }}"
   register: staging_db_sync_prod_kubeconfig
   changed_when: false
@@ -32,6 +37,7 @@
     group: root
     mode: "0600"
   become: true
+  no_log: true
 
 - name: Install the staging database refresh script
   ansible.builtin.template:
