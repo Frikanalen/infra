@@ -12,13 +12,15 @@ locals {
         # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
         # It speeds disk I/O at the cost of almost certain data loss on host power failure.
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
-        disk_cache   = try(h.vm.disk_cache, "none")
-        cores        = try(h.vm.cores, 8)
-        memory_max   = try(h.vm.memory_max, 16384)
-        memory_min   = try(h.vm.memory_min, 8192)
-        template     = try(h.vm.template, var.template)
-        storage      = try(h.vm.storage, "localssd-lvm")
-        pci_mappings = try(h.vm.pci_mappings, [])
+        disk_cache     = try(h.vm.disk_cache, "none")
+        cores          = try(h.vm.cores, 8)
+        memory_max     = try(h.vm.memory_max, 16384)
+        memory_min     = try(h.vm.memory_min, 8192)
+        template       = try(h.vm.template, var.template)
+        storage        = try(h.vm.storage, "localssd-lvm")
+        ceph_storage   = try(h.vm.ceph_storage, "local-lvm")
+        ceph_disk_size = try(h.vm.ceph_disk_size, null)
+        pci_mappings   = try(h.vm.pci_mappings, [])
       },
       h.vm
     )
@@ -64,6 +66,21 @@ resource "proxmox_vm_qemu" "kube" {
           cache    = each.value.disk_cache
           iothread = true
           discard  = true
+        }
+      }
+      dynamic "scsi1" {
+        for_each = each.value.ceph_disk_size == null ? [] : [each.value.ceph_disk_size]
+        content {
+          disk {
+            size      = scsi1.value
+            storage   = each.value.ceph_storage
+            cache     = "none"
+            iothread  = true
+            discard   = true
+            backup    = false
+            replicate = false
+            serial    = "ceph-osd-${each.value.vmid}"
+          }
         }
       }
     }
