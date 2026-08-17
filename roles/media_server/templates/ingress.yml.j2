@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: media-server
+  namespace: {{ media_server_namespace }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.tls.certresolver: "{{ media_server_cert_resolver }}"
+spec:
+  ingressClassName: {{ media_server_ingress_class }}
+  tls:
+    - hosts:
+        - {{ media_server_hostname }}
+  rules:
+    - host: {{ media_server_hostname }}
+      http:
+        paths:
+          - path: {{ media_server_path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: media-server
+                port:
+                  name: http

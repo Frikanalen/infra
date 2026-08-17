@@ -1,0 +1,37 @@
+---
+- name: Ensure media-server namespace exists
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ media_server_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy media-server nginx config
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'configmap.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy media-server Deployment
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'deployment.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy media-server Service
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'service.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy media-server Ingress
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'ingress.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

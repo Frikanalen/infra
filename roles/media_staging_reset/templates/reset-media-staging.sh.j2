@@ -18,7 +18,14 @@ OWNER="{{ archive_media_staging_owner }}"
 GROUP="{{ archive_media_staging_group }}"
 MODE="{{ archive_media_staging_mode }}"
 EXPORT_PATH="{{ archive_media_staging_export_path }}"
-NFS_CLIENT="{{ archive_media_staging_nfs_client }}"
+# Every client currently allowed to mount this export -- see
+# archive_media_staging_kube_clients in this role's defaults for why it's
+# not just the one NFS_CLIENT this variable name suggests.
+NFS_CLIENTS=(
+{% for client in [archive_media_staging_nfs_client] + archive_media_staging_kube_clients %}
+  "{{ client }}"
+{% endfor %}
+)
 
 echo "$(date -Is) Resetting $TARGET from $SOURCE"
 
@@ -28,13 +35,16 @@ if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
   # Drop the NFS export before destroying. The export is managed in
   # /etc/exports rather than through the ZFS sharenfs property, so ZFS will
   # not unshare it for us: nfsd keeps a reference to the mount and the
-  # destroy fails with "dataset is busy".
+  # destroy fails with "dataset is busy" as long as ANY client below is
+  # still shared, not just the first one.
   #
-  # Only this one export, never `exportfs -ua`: that would also drop
-  # caspar1's view of the production archive, taking prod playout down to
-  # reset staging.
+  # Only this one export's clients, never `exportfs -ua`: that would also
+  # drop caspar1's and the kubeprod nodes' view of the production archive,
+  # taking prod playout and media serving down to reset staging.
   if exportfs -s | grep -qF "$EXPORT_PATH"; then
-    exportfs -u "${NFS_CLIENT}:${EXPORT_PATH}"
+    for client in "${NFS_CLIENTS[@]}"; do
+      exportfs -u "${client}:${EXPORT_PATH}"
+    done
   fi
 
   # Deliberately no -f. If something on file01 still holds the mount open --

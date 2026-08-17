@@ -1,0 +1,33 @@
+---
+# defaults for media_server role
+#
+# Serves the archive nfs_server exports straight over HTTP/HTTPS, so the
+# frontend can link directly to a video file instead of routing it through
+# Django. One instance per cluster (prod, staging), each pointed at its own
+# archive export -- see group_vars/prod.yml and group_vars/staging.yml, and
+# group_vars/storage.yml for the export side.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+media_server_namespace: "{{ frikanalen_app_namespace }}"
+media_server_replicas: 2
+
+# Plain, official, actively-maintained nginx -- byte-range support (needed
+# for video seeking) is built into its static file handling with no config,
+# and the "unprivileged" variant runs as a non-root user out of the box.
+media_server_image_repository: nginxinc/nginx-unprivileged
+media_server_image_tag: "1.27-alpine"
+
+# NFS export this instance serves. ingest_archive_host/ingest_archive_dir
+# come from group_vars (prod.yml / staging.yml) -- the same archive ingest
+# writes into over SFTP.
+media_server_nfs_host: "{{ ingest_archive_host }}"
+media_server_nfs_path: "{{ ingest_archive_dir }}"
+
+# Where the archive is exposed on the main site. Shared with argocd_django,
+# which advertises this as FK_MEDIA_URLPREFIX -- see data/argocd.yml.
+media_server_path: "{{ ingest_media_path }}"
+
+media_server_hostname: "{{ frikanalen_domain }}"
+media_server_ingress_class: "{{ frikanalen_public_ingress_class }}"
+media_server_cert_resolver: letsencrypt
