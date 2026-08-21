@@ -6,6 +6,16 @@ argument_specs:
         type: str
         required: true
         description: TSIG secret for RFC2136 dynamic DNS updates (base64 encoded)
+      external_dns_release_name:
+        type: str
+        required: false
+        default: external-dns
+        description: Helm release name -- override to run a second instance against the same cluster
+      external_dns_manage_ingress_class:
+        type: bool
+        required: false
+        default: false
+        description: Create the IngressClass object for external_dns_ingress_class if it doesn't already exist
       external_dns_namespace:
         type: str
         required: false

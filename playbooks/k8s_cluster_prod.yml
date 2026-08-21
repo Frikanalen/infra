@@ -32,9 +32,31 @@
     traefik_acme_challenge: http
     argocd_gitops_application_name: rook-ceph
     argocd_gitops_repo_path: apps/rook-ceph
+    # frikanalen.no stays on HTTP-01 above (unchanged). intern.frikanalen.no
+    # is internal-only, so it needs its own DNS-01 resolver -- see the
+    # conflict assertion in roles/traefik/tasks/main.yml for why this can't
+    # just flip traefik_acme_challenge to dns instead.
+    traefik_internal_acme_enabled: true
+    traefik_internal_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+    traefik_internal_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
   roles:
     - metallb
     - traefik
+    # external-dns for intern.frikanalen.no: watches ingressClassName:
+    # internal and targets the cluster's internal ingress IP. There is
+    # deliberately no "public" external-dns instance here -- frikanalen.no
+    # is a static record managed outside this repo (see isp7/isp8.imc.as).
+    - role: external_dns
+      vars:
+        external_dns_release_name: external-dns-internal
+        external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
+        external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
+        external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+        external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+        external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
+        external_dns_manage_ingress_class: true
     - kubegres
     - argocd
     - argocd_gitops

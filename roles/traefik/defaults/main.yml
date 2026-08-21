@@ -25,3 +25,19 @@ traefik_rfc2136_port: "53"
 traefik_rfc2136_tsig_keyname: "{{ frikanalen_dyndns_tsig_keyname | default('') }}"
 traefik_rfc2136_tsig_algorithm: "hmac-sha256"
 
+# Optional second cert resolver, for hosts that need DNS-01 while
+# traefik_acme_challenge above stays on a different challenge type -- e.g.
+# prod's public frikanalen.no zone uses HTTP-01, but an internal-only zone
+# can't (Let's Encrypt can't reach an internal IP on port 80). Must not be
+# enabled at the same time as traefik_acme_challenge: dns -- lego reads
+# RFC2136 credentials from process-wide env vars, so one pod can't run two
+# *different* RFC2136 credential sets. See the assert in tasks/main.yml.
+traefik_internal_acme_enabled: false
+traefik_internal_cert_resolver_name: letsencrypt-internal
+traefik_internal_acme_storage: /data/acme-internal.json
+traefik_internal_rfc2136_host: "{{ frikanalen_dyndns_server | default('') }}"
+traefik_internal_rfc2136_port: "53"
+traefik_internal_rfc2136_tsig_keyname: ""
+traefik_internal_rfc2136_tsig_algorithm: "hmac-sha256"
+traefik_internal_rfc2136_tsig_secret: ""
+

@@ -79,3 +79,43 @@ argument_specs:
         type: str
         required: false
         description: TSIG secret for RFC2136 (base64 encoded, required if traefik_acme_challenge is 'dns')
+      traefik_internal_acme_enabled:
+        type: bool
+        required: false
+        default: false
+        description: >-
+          Add a second, DNS-01/RFC2136 cert resolver alongside the primary one above.
+          Must not be combined with traefik_acme_challenge: dns (one pod can only hold
+          one RFC2136 credential set).
+      traefik_internal_cert_resolver_name:
+        type: str
+        required: false
+        default: letsencrypt-internal
+        description: Name of the second cert resolver, referenced by Ingress/IngressRoute certResolver annotations
+      traefik_internal_acme_storage:
+        type: str
+        required: false
+        default: /data/acme-internal.json
+        description: ACME storage path for the second resolver
+      traefik_internal_rfc2136_host:
+        type: str
+        required: false
+        description: DNS server for the second resolver's RFC2136 challenge
+      traefik_internal_rfc2136_port:
+        type: str
+        required: false
+        default: "53"
+        description: DNS server port for the second resolver
+      traefik_internal_rfc2136_tsig_keyname:
+        type: str
+        required: false
+        description: TSIG key name for the second resolver
+      traefik_internal_rfc2136_tsig_algorithm:
+        type: str
+        required: false
+        default: hmac-sha256
+        description: TSIG algorithm for the second resolver
+      traefik_internal_rfc2136_tsig_secret:
+        type: str
+        required: false
+        description: TSIG secret for the second resolver (required if traefik_internal_acme_enabled is true)

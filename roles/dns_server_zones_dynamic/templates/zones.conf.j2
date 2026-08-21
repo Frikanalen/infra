@@ -1,10 +1,13 @@
 // Managed by Ansible - dynamic zones (RFC2136)
 
-zone "{{ dns_dynamic_zone_name }}" IN {
+{% for zone in dns_dynamic_zones %}
+zone "{{ zone.name }}" IN {
     type master;
-    file "db.{{ dns_dynamic_zone_name }}";
+    file "db.{{ zone.name }}";
     dnssec-policy default;
     inline-signing yes;
-    allow-update { key {{ dns_dynamic_tsig_key_name }}; };
-    allow-transfer { key {{ dns_dynamic_tsig_key_name }}; };
+    allow-update { key {{ zone.tsig_key_name }}; };
+    allow-transfer { key {{ zone.tsig_key_name }}; };
 };
+
+{% endfor %}

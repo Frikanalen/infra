@@ -39,6 +39,21 @@
     - metallb
     - traefik
     - external_dns
+    # Second external-dns instance: watches ingressClassName: internal and
+    # writes to intern.dev.frikanalen.no instead of staging.frikanalen.no,
+    # targeting the cluster's internal ingress IP rather than the public
+    # one. Reuses staging-update-key (role default), which
+    # roles/dns_server_zones_dynamic also authorizes on this zone.
+    - role: external_dns
+      vars:
+        external_dns_release_name: external-dns-internal
+        external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
+        external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
+        external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+        external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
+        external_dns_manage_ingress_class: true
     - kubegres
     - argocd
     - argocd_gitops

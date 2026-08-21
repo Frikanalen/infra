@@ -12,9 +12,23 @@
   become: false
   run_once: true
 
+- name: Ensure IngressClass exists for external_dns_ingress_class
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: networking.k8s.io/v1
+      kind: IngressClass
+      metadata:
+        name: "{{ external_dns_ingress_class }}"
+      spec:
+        controller: traefik.io/ingress-controller
+  when: external_dns_manage_ingress_class
+  become: false
+  run_once: true
+
 - name: Install external-dns via Helm
   kubernetes.core.helm:
-    name: external-dns
+    name: "{{ external_dns_release_name }}"
     chart_ref: external-dns/external-dns
     chart_version: "{{ external_dns_chart_version | default(omit, true) }}"
     release_namespace: "{{ external_dns_namespace }}"
@@ -49,7 +63,7 @@
   kubernetes.core.k8s_info:
     kind: Deployment
     namespace: "{{ external_dns_namespace }}"
-    name: external-dns
+    name: "{{ external_dns_release_name }}"
     wait: true
     wait_condition:
       type: Available

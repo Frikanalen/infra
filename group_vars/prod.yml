@@ -2,6 +2,15 @@
 timezone_region: Europe/Oslo
 frikanalen_app_namespace: default
 frikanalen_public_ingress_class: public
+frikanalen_dyndns_server: "192.168.3.2"
+
+# Internal-only zone for VPN-reachable ingresses on this cluster -- see
+# roles/dns_server_zones_dynamic and the "ingress" play in
+# playbooks/k8s_cluster_prod.yml for how external-dns/Traefik pick it up.
+frikanalen_intern_zone: intern.frikanalen.no
+frikanalen_intern_tsig_keyname: prod-cluster-update-key
+frikanalen_intern_owner_id: prod-internal-external-dns
+frikanalen_intern_ingress_class: internal
 
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
