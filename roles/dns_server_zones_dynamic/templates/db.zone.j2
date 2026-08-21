@@ -1,5 +1,5 @@
 $TTL {{ dns_soa_minimum }}
-@   IN SOA  ns1.{{ dns_dynamic_zone_name }}. hostmaster.{{ dns_dynamic_zone_name }}. (
+@   IN SOA  ns1.{{ zone.name }}. hostmaster.{{ zone.name }}. (
         {{ dns_soa_serial }} ; serial
         {{ dns_soa_refresh }} ; refresh
         {{ dns_soa_retry }}   ; retry
@@ -7,13 +7,14 @@ $TTL {{ dns_soa_minimum }}
         {{ dns_soa_minimum }} ; minimum
 )
 
-    IN NS   ns1.{{ dns_dynamic_zone_name }}.
+    IN NS   ns1.{{ zone.name }}.
 
-; Name server A record
-ns1 IN A {{ dns_ns1_public_address }}
+; Name server A record -- always public: external resolvers and Let's
+; Encrypt must be able to reach this nameserver on port 53.
+ns1 IN A {{ zone.ns1_address }}
 
 ; Root A record
-@   IN A {{ dns_ingress_public_address }}
+@   IN A {{ zone.apex_address }}
 
 
 ; Records below can be managed via RFC2136 dynamic updates

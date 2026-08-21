@@ -9,14 +9,44 @@
     group: bind
     mode: "0755"
 
+- name: Find existing TSIG key files
+  ansible.builtin.find:
+    paths: "{{ dns_named_conf_d }}"
+    patterns: "tsig-key-*.conf"
+  register: dns_dynamic_existing_tsig_files
+
+# Files here are named after the key, not the zone (tsig-key-<key
+# name>.conf) so one key can back more than one zone without being
+# declared twice -- see dns_dynamic_tsig_keys in defaults/main.yml. Any
+# file left over from a key that's been renamed or removed still declares
+# that key in named.conf.d, and BIND fails to reload on a duplicate key
+# definition if the new name and the stale one ever collide -- which is
+# exactly what happened renaming the old per-zone naming scheme to this one.
+- name: Remove TSIG key files for keys no longer in dns_dynamic_tsig_keys
+  become: yes
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  vars:
+    dns_dynamic_expected_tsig_files: >-
+      {{ dns_dynamic_tsig_keys | map(attribute='name') | map('regex_replace', '^(.*)$', 'tsig-key-\1.conf') | list }}
+  loop: "{{ dns_dynamic_existing_tsig_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: (item.path | basename) not in dns_dynamic_expected_tsig_files
+  notify: reload named
+
 - name: Render TSIG key configuration
   become: yes
   ansible.builtin.template:
     src: "tsig-key.conf.j2"
-    dest: "{{ dns_named_conf_d }}/tsig-key-{{ dns_dynamic_zone_name }}.conf"
+    dest: "{{ dns_named_conf_d }}/tsig-key-{{ item.name }}.conf"
     owner: bind
     group: bind
     mode: "0640"
+  loop: "{{ dns_dynamic_tsig_keys }}"
+  loop_control:
+    label: "{{ item.name }}"
   no_log: true
   notify: reload named
 
@@ -30,13 +60,17 @@
     mode: "0644"
   notify: reload named
 
-- name: Render forward zone for {{ dns_dynamic_zone_name }}
+- name: Render forward zone files
   become: yes
   ansible.builtin.template:
-    src: "db.staging.frikanalen.no.j2"
-    dest: "{{ dns_zone_dir }}/db.{{ dns_dynamic_zone_name }}"
+    src: "db.zone.j2"
+    dest: "{{ dns_zone_dir }}/db.{{ zone.name }}"
     owner: bind
     group: bind
     mode: "0644"
-    force: no  # Don't overwrite if zone has been updated dynamically
+    force: no  # Don't overwrite if the zone has been updated dynamically
+  loop: "{{ dns_dynamic_zones }}"
+  loop_control:
+    loop_var: zone
+    label: "{{ zone.name }}"
   notify: reload named

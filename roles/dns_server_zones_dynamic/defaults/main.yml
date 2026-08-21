@@ -1,25 +1,52 @@
 ---
 
-# Zone we are managing
-dns_dynamic_zone_name: "staging.frikanalen.no"
-
-# SOA defaults
+# SOA timing, shared by every zone below.
 dns_soa_serial: "{{ '%Y%m%d%H' | strftime }}"
 dns_soa_refresh: 3600
 dns_soa_retry: 900
 dns_soa_expire: 604800
 dns_soa_minimum: 86400
 
-# Public IP address for externally-facing zones
-dns_ns1_public_address: "158.36.191.229"
+# TSIG keys available for RFC2136 updates. Keyed by name (not by zone) so a
+# single key can be authorized on more than one zone -- see
+# dns_dynamic_zones below, where intern.dev.frikanalen.no reuses
+# staging-update-key rather than minting a key per zone. Defining the same
+# key twice (once per zone that uses it) would make named.conf.d declare
+# the same key name twice and fail to reload.
+dns_dynamic_tsig_keys:
+  - name: staging-update-key
+    algorithm: hmac-sha256
+    secret: "{{ vault_dns_tsig_secret }}"
+  - name: prod-cluster-update-key
+    algorithm: hmac-sha256
+    secret: "{{ vault_prod_dns_tsig_secret }}"
 
-# Public IP address for root A record
-dns_ingress_public_address: "158.36.191.229"
+# Dynamic (RFC2136-updatable) zones hosted on this nameserver.
+#
+# ns1_address is the nameserver's own glue A record and must always be the
+# public IP -- Let's Encrypt and any external resolver need to reach this
+# server on port 53 regardless of what the zone itself is used for.
+#
+# apex_address is the zone's root A record. For staging.frikanalen.no this
+# is the same public ingress IP the zone's other records point at. For the
+# intern.* zones it is deliberately the cluster's internal-only ingress IP:
+# these zones exist so hosts under them resolve to VPN-reachable addresses,
+# never the public one.
+dns_dynamic_zones:
+  - name: staging.frikanalen.no
+    tsig_key_name: staging-update-key
+    ns1_address: "158.36.191.229"
+    apex_address: "158.36.191.229"
 
-# RFC2136 TSIG key configuration
-dns_dynamic_tsig_key_name: "staging-update-key"
-dns_dynamic_tsig_algorithm: "hmac-sha256"
-dns_dynamic_tsig_secret: "{{ vault_dns_tsig_secret }}"
+  - name: intern.frikanalen.no
+    tsig_key_name: prod-cluster-update-key
+    ns1_address: "158.36.191.229"
+    apex_address: "192.168.3.104"
+
+  - name: intern.dev.frikanalen.no
+    tsig_key_name: staging-update-key
+    ns1_address: "158.36.191.229"
+    apex_address: "192.168.3.90"
 
 # Paths are for BIND installed from pkg/ports on FreeBSD.
 dns_zone_dir: "/usr/local/etc/namedb/master"

@@ -7,6 +7,14 @@ frikanalen_dyndns_tsig_keyname: staging-update-key
 frikanalen_dyndns_zone: staging.frikanalen.no
 frikanalen_dyndns_owner_id: staging-external-dns
 
+# Internal-only zone for VPN-reachable ingresses on this cluster. Reuses
+# staging-update-key above rather than a separate key -- same cluster, same
+# trust boundary as staging.frikanalen.no already uses.
+frikanalen_intern_zone: intern.dev.frikanalen.no
+frikanalen_intern_tsig_keyname: staging-update-key
+frikanalen_intern_owner_id: dev-internal-external-dns
+frikanalen_intern_ingress_class: internal
+
 frikanalen_domain: staging.frikanalen.no
 frikanalen_scheme: https
 

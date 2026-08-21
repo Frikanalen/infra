@@ -1,4 +1,16 @@
 ---
+- name: Assert the internal resolver doesn't need a second RFC2136 credential set
+  ansible.builtin.assert:
+    that:
+      - not (traefik_acme_challenge == 'dns' and traefik_internal_acme_enabled)
+    fail_msg: >-
+      traefik_acme_challenge: dns and traefik_internal_acme_enabled: true both
+      need RFC2136 env vars in this pod, but lego reads them from process-wide
+      env vars, so only one RFC2136 credential set can be active at a time.
+      Point traefik_internal_rfc2136_tsig_keyname at the same key the primary
+      resolver already uses instead of enabling a second one.
+  when: traefik_internal_acme_enabled
+
 - name: Install kubernetes Python library
   ansible.builtin.apt:
     name: python3-kubernetes
@@ -35,22 +47,23 @@
 
       env: >-
         {{
-          [
-            {'name': 'RFC2136_NAMESERVER', 'value': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port},
-            {'name': 'RFC2136_TSIG_KEY', 'value': traefik_rfc2136_tsig_keyname},
-            {'name': 'RFC2136_TSIG_ALGORITHM', 'value': traefik_rfc2136_tsig_algorithm},
-            {'name': 'RFC2136_TSIG_SECRET', 'value': traefik_rfc2136_tsig_secret}
-          ] if traefik_acme_challenge == 'dns' else []
+          (
+            [
+              {'name': 'RFC2136_NAMESERVER', 'value': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port},
+              {'name': 'RFC2136_TSIG_KEY', 'value': traefik_rfc2136_tsig_keyname},
+              {'name': 'RFC2136_TSIG_ALGORITHM', 'value': traefik_rfc2136_tsig_algorithm},
+              {'name': 'RFC2136_TSIG_SECRET', 'value': traefik_rfc2136_tsig_secret}
+            ] if traefik_acme_challenge == 'dns' else
+            [
+              {'name': 'RFC2136_NAMESERVER', 'value': traefik_internal_rfc2136_host ~ ':' ~ traefik_internal_rfc2136_port},
+              {'name': 'RFC2136_TSIG_KEY', 'value': traefik_internal_rfc2136_tsig_keyname},
+              {'name': 'RFC2136_TSIG_ALGORITHM', 'value': traefik_internal_rfc2136_tsig_algorithm},
+              {'name': 'RFC2136_TSIG_SECRET', 'value': traefik_internal_rfc2136_tsig_secret}
+            ] if traefik_internal_acme_enabled else []
+          )
         }}
 
-      certificatesResolvers:
-        letsencrypt:
-          acme:
-            email: "{{ traefik_acme_email }}"
-            storage: "{{ traefik_acme_storage }}"
-            caServer: "{{ traefik_acme_server }}"
-            dnsChallenge: "{{ {'provider': 'rfc2136'} if traefik_acme_challenge == 'dns' else omit }}"
-            httpChallenge: "{{ {'entryPoint': 'web'} if traefik_acme_challenge == 'http' else omit }}"
+      certificatesResolvers: "{{ traefik_cert_resolvers }}"
 
       service:
         type: "{{ traefik_service_type }}"
@@ -76,6 +89,35 @@
         kubernetesIngress:
           publishedService:
             enabled: true
+  vars:
+    traefik_letsencrypt_acme: >-
+      {{
+        {
+          'email': traefik_acme_email,
+          'storage': traefik_acme_storage,
+          'caServer': traefik_acme_server
+        } | combine(
+          {'dnsChallenge': {'provider': 'rfc2136'}} if traefik_acme_challenge == 'dns'
+          else {'httpChallenge': {'entryPoint': 'web'}}
+        )
+      }}
+    traefik_internal_acme: >-
+      {{
+        {
+          'email': traefik_acme_email,
+          'storage': traefik_internal_acme_storage,
+          'caServer': traefik_acme_server,
+          'dnsChallenge': {'provider': 'rfc2136'}
+        }
+      }}
+    traefik_cert_resolvers: >-
+      {{
+        {'letsencrypt': {'acme': traefik_letsencrypt_acme}}
+        | combine(
+          {traefik_internal_cert_resolver_name: {'acme': traefik_internal_acme}}
+          if traefik_internal_acme_enabled else {}
+        )
+      }}
   become: false
   run_once: true
 

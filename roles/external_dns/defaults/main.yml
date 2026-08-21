@@ -1,6 +1,15 @@
 ---
+# Helm release name. Override to run a second, independent external-dns
+# instance against the same cluster (e.g. one release per DNS zone/ingress
+# class) -- see playbooks/k8s_cluster_prod.yml and k8s_cluster_dev.yml.
+external_dns_release_name: external-dns
 external_dns_namespace: external-dns
 external_dns_chart_version: "{{ helm_chart_versions.external_dns }}"
+
+# Create the IngressClass object named external_dns_ingress_class if it
+# doesn't already exist. Leave false for the "public" instance, whose
+# IngressClass is already created by roles/traefik's ingressClass.enabled.
+external_dns_manage_ingress_class: false
 
 # DNS provider configuration (RFC2136 for BIND9)
 external_dns_provider: rfc2136
