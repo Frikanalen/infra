@@ -1,0 +1,30 @@
+---
+- name: Ensure namespace exists
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ cnpg_cluster_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Create app user secret
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'app-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Create superuser secret
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'superuser-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy CloudNativePG Cluster
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'cluster.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

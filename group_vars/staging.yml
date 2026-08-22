@@ -55,3 +55,6 @@ helm_chart_versions:
   external_dns: "1.19.0"
   metallb: "0.15.3"
   kubegres: "v1.19"
+  # CloudNativePG Helm chart version, not the operator's app version (chart
+  # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
+  cnpg: "0.29.0"

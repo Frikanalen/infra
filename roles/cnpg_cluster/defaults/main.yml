@@ -1,0 +1,32 @@
+---
+# defaults for cnpg_cluster role
+#
+# Stands up a CloudNativePG Cluster alongside the existing Kubegres one
+# (roles/kubegres, deployed via roles/argocd_django) as a migration target.
+# Settings mirror django-api's chart/templates/database.yaml /
+# chart/values.yaml database.* block (postgres 16, 1 instance, 200Mi, fkweb
+# db/user) so the two clusters start out equivalent. Reuses the same
+# passwords as the Kubegres django-postgres secret so switching Django's
+# DATABASE_URL over later is just a hostname change, not a credential
+# rotation. Data migration itself is manual and out of scope for this role.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+cnpg_cluster_namespace: "{{ frikanalen_app_namespace }}"
+cnpg_cluster_name: pgcluster
+cnpg_cluster_image: "ghcr.io/cloudnative-pg/postgresql:16"
+cnpg_cluster_instances: 3
+cnpg_cluster_storage_size: 200Mi
+cnpg_cluster_storage_class: local-ssd
+
+cnpg_cluster_database_name: fkweb
+cnpg_cluster_database_user: fkweb
+
+cnpg_cluster_app_secret_name: "{{ cnpg_cluster_name }}-app"
+cnpg_cluster_superuser_secret_name: "{{ cnpg_cluster_name }}-superuser"
+
+# Passwords -- must be set by caller (e.g. from vault). Same values as
+# argocd_django_db_django_password / argocd_django_db_super_password so the
+# app user and superuser credentials match the existing Kubegres database.
+cnpg_cluster_app_password: ""
+cnpg_cluster_superuser_password: ""

@@ -8,8 +8,17 @@
     argocd_django_db_django_password: "{{ vault_prod_django_postgres_django_password }}"
     argocd_ingest_api_token: "{{ vault_prod_ingest_api_token }}"
     argocd_namespace: "argocd"
+    # Reuses the same credentials as the Kubegres django-postgres database
+    # (see roles/cnpg_cluster) so a later cutover is just a DATABASE_URL
+    # hostname change, not a credential rotation.
+    cnpg_cluster_app_password: "{{ vault_prod_django_postgres_django_password }}"
+    cnpg_cluster_superuser_password: "{{ vault_prod_django_postgres_super_password }}"
   roles:
     - argocd_django
+    # Stands up the CloudNativePG "pgcluster" Cluster as a migration target
+    # alongside the existing Kubegres database. Data migration itself is
+    # manual; see roles/cnpg_cluster.
+    - cnpg_cluster
     - argocd_frontend
     - argocd_graphics
     - argocd_schedule

@@ -58,6 +58,10 @@
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
     - kubegres
+    # CloudNativePG operator -- stands up alongside Kubegres as the
+    # migration target for roles/cnpg_cluster's pgcluster; see
+    # playbooks/k8s_apps_prod.yml.
+    - cnpg
     - argocd
     - argocd_gitops
     - role: argocd_gitops
