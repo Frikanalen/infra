@@ -38,6 +38,14 @@
   tags:
     - network
     - firewall
+- name: Mount local SSD on kube nodes
+  hosts: microk8s
+  become: true
+  roles:
+    - local_ssd_mount
+  tags:
+    - k8s
+    - local_ssd
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true
