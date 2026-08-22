@@ -28,6 +28,8 @@ argocd_playout_values:
       value: "{{ caspar_host }}"
     - name: API_URL
       value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
+    - name: GRAPHICS_URL
+      value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/graphics/"
   
   timezone:
     enabled: true
