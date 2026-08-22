@@ -1,0 +1,20 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: "{{ cnpg_cluster_name }}"
+  namespace: "{{ cnpg_cluster_namespace }}"
+spec:
+  instances: {{ cnpg_cluster_instances }}
+  imageName: "{{ cnpg_cluster_image }}"
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: "{{ cnpg_cluster_superuser_secret_name }}"
+  bootstrap:
+    initdb:
+      database: "{{ cnpg_cluster_database_name }}"
+      owner: "{{ cnpg_cluster_database_user }}"
+      secret:
+        name: "{{ cnpg_cluster_app_secret_name }}"
+  storage:
+    size: "{{ cnpg_cluster_storage_size }}"
+    storageClass: "{{ cnpg_cluster_storage_class }}"

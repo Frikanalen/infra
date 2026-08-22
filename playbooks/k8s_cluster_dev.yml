@@ -35,6 +35,10 @@
     - traefik
     - external_dns
     - kubegres
+    # CloudNativePG operator -- stands up alongside Kubegres as the
+    # migration target for roles/cnpg_cluster's pgcluster; see
+    # playbooks/k8s_apps_staging.yml.
+    - cnpg
     - argocd
     - argocd_gitops
     - argocd_image_updater

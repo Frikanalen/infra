@@ -31,6 +31,10 @@
     - metallb
     - traefik
     - kubegres
+    # CloudNativePG operator -- stands up alongside Kubegres as the
+    # migration target for roles/cnpg_cluster's pgcluster; see
+    # playbooks/k8s_apps_prod.yml.
+    - cnpg
     - argocd
     - argocd_gitops
     - argocd_image_updater

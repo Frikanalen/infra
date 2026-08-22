@@ -22,8 +22,8 @@ definitions.
   application versions, domains, ingress settings, and Helm chart versions.
 - `playbooks/` - entry points for applying infrastructure state.
 - `roles/` - local Ansible roles for common setup, users, DNS, firewall,
-  MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CasparCG, NFS, and app
-  deployment.
+  MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CloudNativePG, CasparCG, NFS,
+  and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
 
 ## Common Playbooks
@@ -47,7 +47,8 @@ ansible-playbook playbooks/k8s_cluster_dev.yml
 ```
 
 Forms MicroK8s clusters and installs base Kubernetes services such as MetalLB,
-Traefik, Kubegres, ArgoCD, and ArgoCD Image Updater.
+Traefik, Kubegres, the CloudNativePG operator, ArgoCD, and ArgoCD Image
+Updater.
 
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml
@@ -55,7 +56,13 @@ ansible-playbook playbooks/k8s_apps_staging.yml
 ```
 
 Deploys ArgoCD application definitions for Django, frontend, graphics, schedule,
-playout, and stream components.
+playout, and stream components. Also deploys a CloudNativePG `Cluster` named
+`pgcluster` (see `roles/cnpg_cluster`) as a migration target alongside the
+existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
+storage class, `fkweb` db/user, and the same credentials as Kubegres's
+`django-postgres` secret, so the eventual Django cutover is just a
+`DATABASE_URL` hostname change. Data migration into it is manual and
+Kubegres stays in place until that migration is done.
 
 ```sh
 ansible-playbook playbooks/caspar.yml
