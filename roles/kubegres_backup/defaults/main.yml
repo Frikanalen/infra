@@ -1,0 +1,40 @@
+---
+# defaults for kubegres_backup role
+#
+# Turns on Kubegres's own built-in backup CronJob (spec.backup: pg_dumpall,
+# gzipped, one file per run -- see reactive-tech/kubegres's
+# BackUpCronJobTemplate.yaml / BaseConfigMapTemplate.yaml) rather than
+# reinventing pg_dump scheduling here. It needs an existing PVC to write
+# into; this role points that PVC straight at file01's NFS export via a
+# statically-defined PV, the same "raw NFS volume" approach
+# roles/media_server already uses for the media archive, just wrapped in a
+# PV/PVC because that's what spec.backup.pvcName requires.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+kubegres_backup_namespace: "{{ frikanalen_app_namespace }}"
+
+# Must match chart/templates/database.yaml's .Values.database.kubegresName
+# in the django-api chart (django_db_host in group_vars) -- this is the
+# existing Kubegres resource being patched, not a new one.
+kubegres_backup_kubegres_name: "{{ django_db_host }}"
+
+kubegres_backup_nfs_host: file01
+# Matches db_backup_export_path in group_vars/storage.yml -- keep the two in
+# step.
+kubegres_backup_nfs_path: "{{ db_backup_export_path }}"
+
+kubegres_backup_pv_name: "{{ kubegres_backup_kubegres_name }}-backup"
+kubegres_backup_pvc_name: "{{ kubegres_backup_kubegres_name }}-backup"
+# NFS enforces no quota from this; it's bookkeeping to satisfy the PV/PVC
+# capacity fields, not an actual cap.
+kubegres_backup_capacity: 50Gi
+
+# Where the backup CronJob's pod mounts the PVC. Purely internal to that
+# pod -- unrelated to kubegres_backup_nfs_path, which is where it lands on
+# file01's side of the same NFS export.
+kubegres_backup_volume_mount: /var/lib/kubegres/backup
+
+# Daily, 03:00. See roles/db_backup_retention for the file01-side pruning
+# this needs, since Kubegres's own CronJob never deletes an old dump.
+kubegres_backup_schedule: "0 3 * * *"

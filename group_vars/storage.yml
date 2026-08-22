@@ -32,6 +32,17 @@ archive_media_staging_kube_clients:
   - dev-kube-2
   - dev-kube-3
 
+# Destination for the daily prod Kubegres backup CronJob (see
+# roles/kubegres_backup): a plain rw export, not part of the ZFS media
+# archive above. The backup pod runs the operator's own postgres:latest
+# image with no securityContext, which means it inherits that image's
+# built-in "postgres" user (uid/gid 999) -- see
+# playbooks/storage.yml, which chowns the directory to match. Writable by
+# every kubeprod node for the same reason as archive_media_kube_clients:
+# the backup CronJob's pod can land on any of them.
+db_backup_export_path: /util/k8s
+db_backup_kube_clients: "{{ archive_media_kube_clients }}"
+
 nfs_exports:
   - path: /archive/media
     clients: >-
@@ -46,4 +57,9 @@ nfs_exports:
     clients: >-
       {{ ([archive_media_staging_nfs_client] + archive_media_staging_kube_clients)
          | map('regex_replace', '^(.*)$', '\1(ro,sync,no_subtree_check,fsid=' ~ archive_media_staging_export_fsid ~ ')')
+         | join(' ') }}
+  - path: "{{ db_backup_export_path }}"
+    clients: >-
+      {{ db_backup_kube_clients
+         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
          | join(' ') }}

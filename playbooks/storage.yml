@@ -9,4 +9,5 @@
   gather_facts: true
   roles:
     - media_staging_reset
+    - db_backup_retention
     - nfs_server

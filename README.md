@@ -62,7 +62,11 @@ existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
 storage class, `fkweb` db/user, and the same credentials as Kubegres's
 `django-postgres` secret, so the eventual Django cutover is just a
 `DATABASE_URL` hostname change. Data migration into it is manual and
-Kubegres stays in place until that migration is done.
+Kubegres stays in place until that migration is done. Also enables
+Kubegres's built-in daily backup CronJob for prod's `django-postgres`
+(`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
+a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
+`playbooks/storage.yml`).
 
 ```sh
 ansible-playbook playbooks/caspar.yml
@@ -79,7 +83,11 @@ Configures the NFS export of the ZFS media archive on file01, and installs a
 weekly cron job there that resets `archive/media-staging` to a fresh clone of
 `archive/media` (Monday 00:00, see `roles/media_staging_reset`) -- this is
 the dataset `caspar-sw1` (staging playout) mounts, so staging always starts
-its week from a clean copy of prod's archive.
+its week from a clean copy of prod's archive. Also exports `/util/k8s` (rw,
+owned by uid/gid 999) as the destination for the prod database backup
+CronJob above, and installs a daily cron job there that prunes dumps older
+than 14 days (see `roles/db_backup_retention`), since Kubegres's own backup
+CronJob never deletes old ones itself.
 
 ```sh
 ansible-playbook playbooks/staging_db_sync.yml

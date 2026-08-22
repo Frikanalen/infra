@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ kubegres_backup_pv_name }}
+spec:
+  capacity:
+    storage: {{ kubegres_backup_capacity }}
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: {{ kubegres_backup_nfs_host }}
+    path: {{ kubegres_backup_nfs_path }}
