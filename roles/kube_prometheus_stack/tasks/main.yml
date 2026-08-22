@@ -1,0 +1,109 @@
+---
+- name: Install pip
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+  become: true
+
+# Debian's python3-kubernetes predates a 2022 upstream fix for CRDs with a
+# property literally named "self" (kubernetes-client/python#1715), which
+# breaks kubernetes.core.k8s on any such CRD. Pip installs to /usr/local/lib,
+# which takes priority over apt's /usr/lib on sys.path, so this shadows it.
+# Pinned below 36.0.0, which bumped its PyYAML requirement to >=6.0.3 --
+# the apt-installed PyYAML 6.0.1 has no RECORD file (dpkg-owned), so pip
+# can't uninstall it to satisfy that, and fails ("Cannot uninstall PyYAML
+# 6.0.1, RECORD file not found"). Versions below 36.0.0 only need
+# pyyaml>=5.4.1, which 6.0.1 already satisfies, so pip never touches it.
+- name: Install a kubernetes Python library new enough to handle CRDs with a "self" field
+  ansible.builtin.pip:
+    name: "kubernetes>=24.2.0,<36.0.0"
+    state: present
+    extra_args: --break-system-packages
+  become: true
+
+- name: Add prometheus-community Helm repository
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: https://prometheus-community.github.io/helm-charts
+  become: false
+  run_once: true
+
+- name: Install kube-prometheus-stack via Helm
+  kubernetes.core.helm:
+    name: kube-prometheus-stack
+    chart_ref: prometheus-community/kube-prometheus-stack
+    chart_version: "{{ kube_prometheus_stack_chart_version | default(omit, true) }}"
+    release_namespace: "{{ kube_prometheus_stack_namespace }}"
+    create_namespace: true
+    wait: true
+    # Chart install can take a while (CRDs + operator + Prometheus +
+    # Alertmanager + Grafana all coming up), well past kubernetes.core.helm's
+    # own default.
+    wait_timeout: 10m0s
+    values:
+      grafana:
+        # microk8s's cluster CA cert has no X509v3 Key Usage extension
+        # (only Basic Constraints: CA:TRUE). The k8s-sidecar image's Python
+        # base enables strict X.509 verification by default and rejects
+        # that CA outright ("CA cert does not include key usage extension"),
+        # crashlooping both sidecar containers. This is the flag k8s-sidecar
+        # ships specifically for old-style CAs like this one -- see
+        # https://github.com/kiwigrid/k8s-sidecar#environment-variables.
+        sidecar:
+          dashboards:
+            env:
+              DISABLE_X509_STRICT_VERIFICATION: "true"
+          datasources:
+            env:
+              DISABLE_X509_STRICT_VERIFICATION: "true"
+        ingress:
+          enabled: true
+          ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"
+          annotations:
+            traefik.ingress.kubernetes.io/router.tls.certresolver: "{{ kube_prometheus_stack_cert_resolver }}"
+          hosts:
+            - "{{ kube_prometheus_stack_grafana_hostname }}"
+          tls:
+            - hosts:
+                - "{{ kube_prometheus_stack_grafana_hostname }}"
+      prometheus:
+        ingress:
+          enabled: true
+          ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"
+          annotations:
+            traefik.ingress.kubernetes.io/router.tls.certresolver: "{{ kube_prometheus_stack_cert_resolver }}"
+          hosts:
+            - "{{ kube_prometheus_stack_prometheus_hostname }}"
+          paths:
+            - /
+          tls:
+            - hosts:
+                - "{{ kube_prometheus_stack_prometheus_hostname }}"
+      alertmanager:
+        ingress:
+          enabled: true
+          ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"
+          annotations:
+            traefik.ingress.kubernetes.io/router.tls.certresolver: "{{ kube_prometheus_stack_cert_resolver }}"
+          hosts:
+            - "{{ kube_prometheus_stack_alertmanager_hostname }}"
+          paths:
+            - /
+          tls:
+            - hosts:
+                - "{{ kube_prometheus_stack_alertmanager_hostname }}"
+  become: false
+  run_once: true
+
+- name: Wait for the Prometheus Operator controller to be ready
+  kubernetes.core.k8s_info:
+    kind: Deployment
+    namespace: "{{ kube_prometheus_stack_namespace }}"
+    name: kube-prometheus-stack-operator
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 120
+  become: false
+  run_once: true

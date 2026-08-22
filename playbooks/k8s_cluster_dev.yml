@@ -54,6 +54,10 @@
         external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
+    # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
+    # on intern.dev.frikanalen.no via the internal ingress class/external-dns
+    # instance above -- not reachable outside the VPN.
+    - kube_prometheus_stack
     - kubegres
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see

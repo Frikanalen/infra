@@ -1,0 +1,11 @@
+---
+# caspar-sw1 is staging's playout box (see caspar_host in
+# group_vars/staging.yml, which points the playout app's AMCP control at
+# this host), so its ffmpeg consumer should stream to staging's stream
+# packager instead of the casparcg role's default test destination.
+#
+# 192.168.3.91:5004 is staging's cubemap ingest: matches
+# argocd_stream_cubemap_ip in group_vars/staging.yml (the cubemap
+# component's LoadBalancer IP) and the dev_ingress_live_int_ip/:5004 rules
+# in playbooks/firewall.yml that front it.
+casparcg_ffmpeg_path: "udp://192.168.3.91:5004"

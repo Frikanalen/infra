@@ -1,0 +1,22 @@
+---
+# defaults for kube_prometheus_stack role
+#
+# Installs the Prometheus Operator, Prometheus, Alertmanager and Grafana via
+# the prometheus-community/kube-prometheus-stack chart, with ingresses for
+# Grafana/Prometheus/Alertmanager on the cluster's internal-only zone -- see
+# group_vars (frikanalen_intern_zone) and roles/external_dns's
+# external-dns-internal instance, which is what actually publishes these
+# hostnames.
+
+kube_prometheus_stack_chart_version: "{{ helm_chart_versions.kube_prometheus_stack }}"
+kube_prometheus_stack_namespace: monitoring
+
+# Same ingress class/cert resolver as any other internal-only ingress on
+# this cluster -- see roles/media_server/templates/ingress.yml.j2 for the
+# public equivalent.
+kube_prometheus_stack_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+kube_prometheus_stack_cert_resolver: letsencrypt
+
+kube_prometheus_stack_grafana_hostname: "grafana.{{ frikanalen_intern_zone }}"
+kube_prometheus_stack_prometheus_hostname: "prometheus.{{ frikanalen_intern_zone }}"
+kube_prometheus_stack_alertmanager_hostname: "alertmanager.{{ frikanalen_intern_zone }}"
