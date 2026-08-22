@@ -36,6 +36,10 @@ ingest_uploads_size: 500Gi
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
+# Prod's live feed is already served as MPEG-TS over HTTP by simula
+# (192.168.3.1:9094/frikanalen.ts), so the stream app pulls it directly
+# instead of running the in-cluster cubemap UDP reflector.
+argocd_stream_cubemap_enabled: false
 argocd_stream_cubemap_ip: "192.168.3.105"
 
 app_versions:
