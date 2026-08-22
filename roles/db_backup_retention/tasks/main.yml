@@ -1,0 +1,20 @@
+---
+- name: Ensure Kubegres backup directory exists
+  ansible.builtin.file:
+    path: "{{ db_backup_retention_path }}"
+    state: directory
+    owner: "{{ db_backup_retention_owner }}"
+    group: "{{ db_backup_retention_group }}"
+    mode: "0750"
+  become: true
+
+- name: Install daily prune of old Kubegres backups
+  ansible.builtin.cron:
+    name: "Prune old Kubegres backups"
+    user: root
+    hour: "{{ db_backup_retention_cron_hour }}"
+    minute: "{{ db_backup_retention_cron_minute }}"
+    # Matches backup_database.sh's naming: "$KUBEGRES_RESOURCE_NAME-backup-$fileDt.gz".
+    job: >-
+      find {{ db_backup_retention_path }} -maxdepth 1 -name '*-backup-*.gz' -mtime +{{ db_backup_retention_days }} -delete
+  become: true
