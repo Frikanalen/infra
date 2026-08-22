@@ -1,0 +1,24 @@
+- name: Find local SSD disk by serial
+  ansible.builtin.find:
+    paths: /dev/disk/by-id
+    patterns: "*localssd*"
+    file_type: any
+  register: local_ssd_by_id
+
+- name: Fail if local SSD disk is not attached
+  ansible.builtin.fail:
+    msg: "No /dev/disk/by-id/*localssd* device found -- check the scsi2 disk was provisioned for this VM."
+  when: local_ssd_by_id.matched == 0
+
+- name: Format local SSD disk
+  community.general.filesystem:
+    dev: "{{ local_ssd_by_id.files[0].path }}"
+    fstype: "{{ local_ssd_mount_fstype }}"
+
+- name: Mount local SSD disk
+  ansible.posix.mount:
+    path: "{{ local_ssd_mount_path }}"
+    src: "{{ local_ssd_by_id.files[0].path }}"
+    fstype: "{{ local_ssd_mount_fstype }}"
+    opts: defaults,discard,noatime
+    state: mounted

@@ -60,4 +60,8 @@
     - kubegres
     - argocd
     - argocd_gitops
+    - role: argocd_gitops
+      vars:
+        argocd_gitops_application_name: local-path-provisioner
+        argocd_gitops_repo_path: apps/local-path-provisioner
     - argocd_image_updater
