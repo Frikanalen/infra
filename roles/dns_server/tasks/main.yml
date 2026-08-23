@@ -15,11 +15,6 @@
     group: bind
     mode: "0755"
 
-- name: Load host definitions
-  ansible.builtin.include_vars:
-    file: "../data/hosts.yml"
-    name: dc1_hosts
-
 - name: Render named.conf
   become: true
   ansible.builtin.template:
@@ -39,7 +34,7 @@
     group: bind
     mode: "0644"
   vars:
-    hosts: "{{ dc1_hosts.host_config }}"
+    hosts: "{{ host_config }}"
   notify: reload named
 
 - name: Render reverse zones
@@ -52,7 +47,7 @@
     mode: "0644"
   loop: "{{ dns_reverse_prefixes }}"
   vars:
-    hosts: "{{ dc1_hosts.host_config }}"
+    hosts: "{{ host_config }}"
   notify: reload named
 
 - name: Enable and start named service

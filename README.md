@@ -13,11 +13,21 @@ definitions.
   Kubernetes nodes, staging, and production.
 - `ansible.cfg` - local Ansible defaults, including inventory, role path,
   vault-password file, remote user, and SSH key.
-- `data/users.yml` - user database and SSH keys. Submit changes here to request
-  or update developer/admin accounts.
-- `data/hosts.yml` - host/IP definitions used by infrastructure automation.
-- `data/argocd.yml` - ArgoCD application configuration data.
-- `data/vault.yml` - encrypted or sensitive values consumed by playbooks.
+- `data/` - the shared source of truth, and **also `group_vars/all`**, which is
+  a symlink to it. Everything in this directory is therefore loaded as
+  variables for every host in the inventory, at group_vars precedence — adding
+  a file here adds variables everywhere. It is a symlink rather than a copy so
+  that Terraform can read the same files: `terraform/main.tf` builds its VM
+  definitions straight out of `../data/hosts.yml`, so a host is defined once
+  and both tools agree.
+  - `data/users.yml` - user database and SSH keys. Submit changes here to
+    request or update developer/admin accounts.
+  - `data/hosts.yml` - host/IP definitions, and the VM specs Terraform clones
+    from. Exposed to playbooks as `host_config`.
+  - `data/argocd.yml` - ArgoCD and other cluster-wide application settings.
+  - `data/cluster.yml` - cluster capability flags, currently
+    `k8s_monitoring_enabled`.
+  - `data/vault.yml` - encrypted or sensitive values consumed by playbooks.
 - `group_vars/prod.yml` and `group_vars/staging.yml` - environment-specific
   application versions, domains, ingress settings, and Helm chart versions.
 - `playbooks/` - entry points for applying infrastructure state.

@@ -1,10 +1,5 @@
 ---
 
-- name: Load host definitions
-  ansible.builtin.include_vars:
-    file: "../data/hosts.yml"
-    name: dc1_hosts
-
 - name: Ensure zone directory exists with correct ownership
   become: true
   ansible.builtin.file:
@@ -33,7 +28,7 @@
     group: bind
     mode: "0644"
   vars:
-    host_entries: "{{ dc1_hosts.host_config }}"
+    host_entries: "{{ host_config }}"
   notify: reload named
 
 - name: Render reverse zones
@@ -46,5 +41,5 @@
     mode: "0644"
   loop: "{{ dns_reverse_prefixes }}"
   vars:
-    host_entries: "{{ dc1_hosts.host_config }}"
+    host_entries: "{{ host_config }}"
   notify: reload named
