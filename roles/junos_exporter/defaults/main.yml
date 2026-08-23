@@ -1,0 +1,152 @@
+---
+# defaults for junos_exporter role
+#
+# Scrapes fksw, the Juniper switch everything in 192.168.3.0/24 hangs off,
+# and feeds it to the Prometheus installed by roles/kube_prometheus_stack.
+# junos_exporter logs into the switch over SSH and runs the same operational
+# commands you would type by hand ("show interfaces", "show chassis
+# environment", ...) with "| display xml", so this needs a real login user on
+# fksw -- see this role's README for the switch-side configuration.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Lives with the rest of the monitoring stack so the ServiceMonitor below and
+# roles/kube_prometheus_stack's Prometheus are in one namespace.
+# Literal rather than a reference to kube_prometheus_stack_namespace: that
+# is another role's default, and role defaults are not in scope across roles.
+junos_exporter_namespace: monitoring
+
+junos_exporter_image_repository: czerwonk/junos_exporter
+# Pinned rather than :latest -- this reads a live switch, and an unreviewed
+# upstream change here is not something to discover via a broken dashboard.
+junos_exporter_image_tag: "v0.16.2"
+
+# The switch. fksw's vlan.3 (internal) IRB address, per data/hosts.yml.
+junos_exporter_target: "{{ host_config.fksw.ip_cidr.split('/')[0] }}"
+
+# Login user on fksw. Must match the "set system login user" created there.
+junos_exporter_ssh_user: junos_exporter
+
+# Private key half of the credential, generated and stored in data/vault.yml
+# by playbooks/junos_exporter_key.yml. The public half goes into fksw's
+# configuration by hand; there is no way to push it from here, since Ansible
+# has no login on the switch to push it with.
+junos_exporter_ssh_private_key: "{{ vault_junos_exporter_ssh_private_key }}"
+
+# Key type, and the filename it is mounted under. RSA rather than ed25519:
+# "set system login user ... authentication ssh-ed25519" only exists from
+# Junos 15.1, and fksw is EX-class hardware old enough that assuming it is
+# unwise. Change both together if fksw turns out to be new enough.
+junos_exporter_ssh_key_filename: id_rsa
+
+junos_exporter_secret_name: junos-exporter-ssh
+junos_exporter_port: 9326
+
+# What to ask the switch for.
+#
+# IMPORTANT: this list is rendered exhaustively into the config file --
+# every key below that is *not* in junos_exporter_enabled_features is
+# written out as "false" rather than omitted. That is not tidiness, it is
+# required. The exporter fills in its own defaults first and then merges the
+# config file over them, so a key you simply leave out stays at upstream's
+# default, and upstream defaults alarm, bgp, environment, firewall,
+# interfaces, interface_diagnostic, interface_queue, isis, ldp, macsec,
+# ospf, routes, routing_engine and system_statistics all to true. Omitting
+# them is how fksw ended up being asked for its MACsec connections.
+#
+# Every feature key junos_exporter v0.16.2 knows about. Adding one upstream
+# adds it here too, defaulted off, which is the safe direction.
+junos_exporter_known_features:
+  - accounting
+  - alarm
+  - arp
+  - bfd
+  - bgp
+  - cluster
+  - ddos_protection
+  - dot1x
+  - environment
+  - evpn
+  - evpn_ip_prefix
+  - firewall
+  - fpc
+  - interface_diagnostic
+  - interface_queue
+  - interfaces
+  - ipsec
+  - isis
+  - krt
+  - l2circuit
+  - l2vpn
+  - lacp
+  - ldp
+  - license
+  - lldp
+  - mac
+  - macsec
+  - mnha
+  - mpls_lsp
+  - nat
+  - nat2
+  - ntp
+  - ospf
+  - poe
+  - power
+  - routes
+  - routing_engine
+  - rpki
+  - rpm
+  - satellite
+  - security
+  - security_ike
+  - security_policies
+  - storage
+  - subscriber
+  - system
+  - system_statistics
+  - twamp
+  - ufd
+  - virtual_chassis
+  - vpws
+  - vrrp
+
+# What fksw actually is: a two-member EX4200-class virtual chassis doing
+# layer-2 switching, PoE and LACP, with a static default route and no
+# routing protocols whatsoever. Everything below is chosen against that
+# configuration -- there is no bgp/ospf/isis/ldp/mpls to scrape, no
+# firewall filters, no MACsec, and asking for them is what produced
+# "failed to parse 'show security macsec connections' output".
+junos_exporter_enabled_features:
+  # Chassis alarms, temperatures, fans and PSUs.
+  - alarm
+  - environment
+  # Per-port counters, and the optics on the xe- uplinks.
+  - interfaces
+  - interface_diagnostic
+  # protocols lldp is configured interface-wide, and the neighbour table is
+  # the quickest way to work out which physical box just went quiet.
+  - lldp
+  # ae1 and ae10-ae14 are LACP bundles. A member link dropping out halves a
+  # bundle's bandwidth without taking the aggregate down, so nothing else
+  # here would notice it.
+  - lacp
+  # poe interface all, on PoE-capable hardware.
+  - poe
+  # Two preprovisioned members, both routing-engine role. VC member and VCP
+  # state is a genuine failure mode and invisible from everywhere else.
+  - virtual_chassis
+  # Per-member FPC CPU, memory and temperature -- the per-slot view that
+  # routing_engine does not give you on a virtual chassis.
+  - fpc
+  - routing_engine
+  # EX-class flash is small and /var filling up is a classic way for one of
+  # these to get strange long before it falls over.
+  - storage
+  # Model and serial, for the header.
+  - system
+
+# Scrape pacing. Slower than the 30s default: a scrape is a series of
+# synchronous CLI commands against the routing engine of a switch whose CPU
+# is a decade old, and interface counters do not move fast enough to care.
+junos_exporter_scrape_interval: 60s
+junos_exporter_scrape_timeout: 45s

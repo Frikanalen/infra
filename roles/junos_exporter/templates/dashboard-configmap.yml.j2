@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: junos-exporter-dashboard
+  namespace: {{ junos_exporter_namespace }}
+  labels:
+    app: junos-exporter
+    # What makes Grafana pick this up. kube-prometheus-stack runs the
+    # kiwigrid k8s-sidecar next to Grafana watching for ConfigMaps carrying
+    # this label, and drops their contents into Grafana's provisioning
+    # directory. The chart sets searchNamespace: ALL, so this ConfigMap does
+    # not have to share a namespace with the stack -- it sits in
+    # {{ junos_exporter_namespace }} because that is where the exporter is,
+    # not because it must. labelValue is "1" in the chart, so the value is
+    # matched too and this is not merely convention.
+    grafana_dashboard: "1"
+data:
+  # Two dashboards, one ConfigMap -- the sidecar treats each key as its own
+  # dashboard. The first is generic and would work against any Junos device;
+  # the second encodes fksw's actual cabling and would not.
+  junos-exporter.json: |
+{{ lookup('file', 'junos-exporter-dashboard.json') | indent(4, first=True) }}
+  fksw-network.json: |
+{{ lookup('file', 'fksw-network-dashboard.json') | indent(4, first=True) }}

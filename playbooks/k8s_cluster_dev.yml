@@ -57,7 +57,13 @@
     # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
     # on intern.dev.frikanalen.no via the internal ingress class/external-dns
     # instance above -- not reachable outside the VPN.
-    - kube_prometheus_stack
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack]
+    # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
+    # hands it to the Prometheus above. Needs a login user on the switch that
+    # only a human can configure -- see roles/junos_exporter/README.md.
+    - role: junos_exporter
+      tags: [junos_exporter]
     - kubegres
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see

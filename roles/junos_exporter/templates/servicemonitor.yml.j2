@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: junos-exporter
+  namespace: {{ junos_exporter_namespace }}
+  labels:
+    app: junos-exporter
+spec:
+  # No release label needed: roles/kube_prometheus_stack sets
+  # serviceMonitorSelectorNilUsesHelmValues false, so Prometheus selects
+  # every ServiceMonitor in the cluster rather than only its own chart's.
+  selector:
+    matchLabels:
+      app: junos-exporter
+  namespaceSelector:
+    matchNames:
+      - {{ junos_exporter_namespace }}
+  endpoints:
+    - port: metrics
+      interval: {{ junos_exporter_scrape_interval }}
+      scrapeTimeout: {{ junos_exporter_scrape_timeout }}

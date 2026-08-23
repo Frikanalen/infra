@@ -1,0 +1,87 @@
+---
+# Deploys junos_exporter against fksw and points roles/kube_prometheus_stack's
+# Prometheus at it.
+#
+# The switch side of this is not automated and cannot be: authorising the key
+# means editing fksw's configuration, and Ansible has no login there to edit
+# it with. See this role's README for the four lines to paste in.
+
+- name: Verify the junos_exporter SSH key is in the vault
+  # Fails here with an actionable message rather than several tasks later
+  # with a Jinja undefined-variable error.
+  ansible.builtin.assert:
+    that:
+      - vault_junos_exporter_ssh_private_key is defined
+      - vault_junos_exporter_ssh_private_key | trim | length > 0
+    fail_msg: >-
+      vault_junos_exporter_ssh_private_key is not in data/vault.yml.
+      Generate it with `ansible-playbook playbooks/junos_exporter_key.yml`,
+      then paste the public key it prints into fksw's configuration.
+
+- name: Verify every enabled feature is one junos_exporter knows about
+  # A typo here would otherwise be silent: the feature would simply never be
+  # rendered as true, and the metric would quietly never appear.
+  ansible.builtin.assert:
+    that:
+      - junos_exporter_enabled_features | difference(junos_exporter_known_features) | length == 0
+    fail_msg: >-
+      junos_exporter_enabled_features contains
+      {{ junos_exporter_enabled_features | difference(junos_exporter_known_features) | join(', ') }},
+      which junos_exporter does not define. See junos_exporter_known_features
+      in this role's defaults for the valid keys.
+
+- name: Ensure the monitoring namespace exists
+  # kube_prometheus_stack creates this, but this role does not depend on
+  # having run after it in the same play.
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ junos_exporter_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter SSH key
+  become: yes
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'ssh-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter config
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'configmap.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter Deployment
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'deployment.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter Service
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'service.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter Grafana dashboard
+  # Picked up by the Grafana sidecar via the grafana_dashboard label rather
+  # than by anything in this role talking to Grafana -- see the template.
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the junos_exporter ServiceMonitor
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

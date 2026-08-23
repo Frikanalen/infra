@@ -48,7 +48,12 @@ ansible-playbook playbooks/k8s_cluster_dev.yml
 
 Forms MicroK8s clusters and installs base Kubernetes services such as MetalLB,
 Traefik, Kubegres, the CloudNativePG operator, ArgoCD, and ArgoCD Image
-Updater.
+Updater. The dev cluster additionally runs kube-prometheus-stack and, alongside
+it, `junos_exporter` pointed at the `fksw` switch (see `roles/junos_exporter`
+and `playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship
+with it: a generic per-metric one, and `fksw — Frikanalen network`, laid out
+by what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
+broadcast chain, management ports).
 
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml
@@ -67,6 +72,18 @@ Kubegres's built-in daily backup CronJob for prod's `django-postgres`
 (`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
 a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
 `playbooks/storage.yml`).
+
+```sh
+ansible-playbook playbooks/junos_exporter_key.yml
+```
+
+Generates the SSH credential `junos_exporter` uses to log into `fksw`, the
+Juniper switch the whole internal network hangs off, and stores the private
+half in `data/vault.yml`. Run once, by hand: it prints a public key that has
+to be pasted into the switch's configuration, which nothing here can do for
+you. The exporter itself is installed by `playbooks/k8s_cluster_dev.yml` and
+scraped by the Prometheus there -- see `roles/junos_exporter/README.md` for
+the login class the switch needs and how to rotate the key.
 
 ```sh
 ansible-playbook playbooks/caspar.yml
