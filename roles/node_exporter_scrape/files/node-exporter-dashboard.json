@@ -1,7 +1,7 @@
 {
   "title": "Hosts (node_exporter)",
   "uid": "node-exporter-estate",
-  "description": "The hosts outside the Kubernetes clusters -- file01 and the Proxmox hypervisors -- as node_exporter sees them. Provisioned by roles/node_exporter_scrape; edits made in the UI are overwritten on the next Ansible run. ZFS has its own dashboard.",
+  "description": "Every host running node_exporter. Defaults to all of them; the Node class variable narrows to the hosts outside the Kubernetes clusters -- file01 and the Proxmox hypervisors -- as against the kube nodes, which run the chart's own DaemonSet. Provisioned by roles/node_exporter_scrape; edits made in the UI are overwritten on the next Ansible run. ZFS has its own dashboard.",
   "tags": [
     "hosts",
     "node-exporter",
@@ -45,6 +45,24 @@
         "hide": 0
       },
       {
+        "name": "nodeclass",
+        "label": "Node class",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(node_uname_info, nodeclass)",
+        "definition": "label_values(node_uname_info, nodeclass)",
+        "current": {},
+        "refresh": 1,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "allValue": ".*"
+      },
+      {
         "name": "instance",
         "label": "Host",
         "type": "query",
@@ -52,8 +70,8 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "query": "label_values(node_uname_info{job=~\"$job\"}, instance)",
-        "definition": "label_values(node_uname_info{job=~\"$job\"}, instance)",
+        "query": "label_values(node_uname_info{job=~\"$job\",nodeclass=~\"$nodeclass\"}, instance)",
+        "definition": "label_values(node_uname_info{job=~\"$job\",nodeclass=~\"$nodeclass\"}, instance)",
         "current": {},
         "refresh": 1,
         "sort": 1,
@@ -115,7 +133,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(up{job=~\"$job\"} == 1)",
+          "expr": "count(up{job=~\"$job\",nodeclass=~\"$nodeclass\"} == 1)",
           "refId": "A",
           "range": true,
           "instant": false
@@ -179,7 +197,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "count(up{job=~\"$job\"} == 0) or vector(0)",
+          "expr": "count(up{job=~\"$job\",nodeclass=~\"$nodeclass\"} == 0) or vector(0)",
           "refId": "A",
           "range": true,
           "instant": false
@@ -248,7 +266,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100))",
+          "expr": "max(100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100))",
           "refId": "A",
           "range": true,
           "instant": false
@@ -317,7 +335,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(100 * (1 - node_memory_MemAvailable_bytes{job=~\"$job\",instance=~\"$instance\"} / node_memory_MemTotal_bytes{job=~\"$job\",instance=~\"$instance\"}))",
+          "expr": "max(100 * (1 - node_memory_MemAvailable_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} / node_memory_MemTotal_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}))",
           "refId": "A",
           "range": true,
           "instant": false
@@ -386,7 +404,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "max(100 * (1 - node_filesystem_avail_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"} / node_filesystem_size_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}))",
+          "expr": "max(100 * (1 - node_filesystem_avail_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"} / node_filesystem_size_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}))",
           "refId": "A",
           "range": true,
           "instant": false
@@ -454,7 +472,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "min(time() - node_boot_time_seconds{job=~\"$job\",instance=~\"$instance\"})",
+          "expr": "min(time() - node_boot_time_seconds{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"})",
           "refId": "A",
           "range": true,
           "instant": false
@@ -518,7 +536,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(node_systemd_unit_state{job=~\"$job\",instance=~\"$instance\",state=\"failed\"}) or vector(0)",
+          "expr": "sum(node_systemd_unit_state{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",state=\"failed\"}) or vector(0)",
           "refId": "A",
           "range": true,
           "instant": false
@@ -858,7 +876,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "up{job=~\"$job\",instance=~\"$instance\"}",
+          "expr": "up{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}",
           "refId": "A",
           "range": false,
           "instant": true,
@@ -871,7 +889,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "time() - node_boot_time_seconds{job=~\"$job\",instance=~\"$instance\"}",
+          "expr": "time() - node_boot_time_seconds{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}",
           "refId": "B",
           "range": false,
           "instant": true,
@@ -884,7 +902,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100)",
+          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100)",
           "refId": "C",
           "range": false,
           "instant": true,
@@ -897,7 +915,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=~\"$job\",instance=~\"$instance\"} / node_memory_MemTotal_bytes{job=~\"$job\",instance=~\"$instance\"})",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} / node_memory_MemTotal_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"})",
           "refId": "D",
           "range": false,
           "instant": true,
@@ -910,7 +928,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_load15{job=~\"$job\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"})",
+          "expr": "node_load15{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"})",
           "refId": "E",
           "range": false,
           "instant": true,
@@ -923,7 +941,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{job=~\"$job\",instance=~\"$instance\"}",
+          "expr": "node_memory_MemTotal_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}",
           "refId": "F",
           "range": false,
           "instant": true,
@@ -1058,7 +1076,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100)",
+          "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"}[5m])) * 100)",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1150,7 +1168,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_load1{job=~\"$job\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"})",
+          "expr": "node_load1{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"})",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1162,7 +1180,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_load15{job=~\"$job\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",instance=~\"$instance\",mode=\"idle\"})",
+          "expr": "node_load15{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} / on(instance) group_left() count by(instance) (node_cpu_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",mode=\"idle\"})",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -1246,7 +1264,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_MemTotal_bytes{job=~\"$job\",instance=~\"$instance\"} - node_memory_MemAvailable_bytes{job=~\"$job\",instance=~\"$instance\"}",
+          "expr": "node_memory_MemTotal_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} - node_memory_MemAvailable_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1333,7 +1351,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_memory_SwapTotal_bytes{job=~\"$job\",instance=~\"$instance\"} - node_memory_SwapFree_bytes{job=~\"$job\",instance=~\"$instance\"}",
+          "expr": "node_memory_SwapTotal_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"} - node_memory_SwapFree_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1488,7 +1506,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "100 * (1 - node_filesystem_avail_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"} / node_filesystem_size_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"})",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"} / node_filesystem_size_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"})",
           "refId": "A",
           "range": false,
           "instant": true,
@@ -1501,7 +1519,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_filesystem_avail_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}",
+          "expr": "node_filesystem_avail_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}",
           "refId": "B",
           "range": false,
           "instant": true,
@@ -1514,7 +1532,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "node_filesystem_size_bytes{job=~\"$job\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}",
+          "expr": "node_filesystem_size_bytes{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",fstype!~\"tmpfs|ramfs|squashfs|overlay|nsfs|devtmpfs\"}",
           "refId": "C",
           "range": false,
           "instant": true,
@@ -1634,7 +1652,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_read_bytes_total{job=~\"$job\",instance=~\"$instance\"}[5m])",
+          "expr": "rate(node_disk_read_bytes_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}[5m])",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1646,7 +1664,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_written_bytes_total{job=~\"$job\",instance=~\"$instance\"}[5m])",
+          "expr": "rate(node_disk_written_bytes_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}[5m])",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -1732,7 +1750,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_io_time_seconds_total{job=~\"$job\",instance=~\"$instance\"}[5m]) * 100",
+          "expr": "rate(node_disk_io_time_seconds_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\"}[5m]) * 100",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1831,7 +1849,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_receive_bytes_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m]) * 8",
+          "expr": "rate(node_network_receive_bytes_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m]) * 8",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -1917,7 +1935,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_transmit_bytes_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m]) * 8",
+          "expr": "rate(node_network_transmit_bytes_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m]) * 8",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -2003,7 +2021,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_receive_errs_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
+          "expr": "rate(node_network_receive_errs_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
           "refId": "A",
           "range": true,
           "instant": false,
@@ -2015,7 +2033,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_transmit_errs_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
+          "expr": "rate(node_network_transmit_errs_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
           "refId": "B",
           "range": true,
           "instant": false,
@@ -2027,7 +2045,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_receive_drop_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
+          "expr": "rate(node_network_receive_drop_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
           "refId": "C",
           "range": true,
           "instant": false,
@@ -2039,7 +2057,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_network_transmit_drop_total{job=~\"$job\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
+          "expr": "rate(node_network_transmit_drop_total{job=~\"$job\",nodeclass=~\"$nodeclass\",instance=~\"$instance\",device!~\"lo|veth.*|docker.*|cali.*|vxlan.*|tap.*|fw.*\"}[5m])",
           "refId": "D",
           "range": true,
           "instant": false,

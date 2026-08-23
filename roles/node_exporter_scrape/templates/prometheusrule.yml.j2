@@ -12,14 +12,24 @@ metadata:
     release: kube-prometheus-stack
 spec:
   groups:
-    # Every rule below is scoped to job="{{ node_exporter_scrape_service_name }}".
-    # The chart ships its own node-exporter rules for its DaemonSet's
-    # job="node-exporter", and those selectors do not match these targets --
-    # so these hosts get no alerting at all unless it is written here.
+    # Every rule below is scoped to nodeclass="{{ node_exporter_scrape_nodeclass }}",
+    # not to a job. These targets share job="node-exporter" with the chart's own
+    # DaemonSet so that the upstream mixin's dashboards and rules cover them,
+    # which means the job label no longer distinguishes the two sets of hosts
+    # and nodeclass does.
+    #
+    # The mixin's ~21 node rules therefore also apply to these hosts, and
+    # several overlap with what is below: NodeFilesystemAlmostOutOfSpace
+    # against NodeFilesystemAlmostFull, NodeMemoryHighUtilization against
+    # NodeMemoryPressure, NodeSystemdServiceFailed against
+    # NodeSystemdUnitFailed, NodeSystemSaturation against NodeLoadHigh. That
+    # duplication is deliberate -- these thresholds are ours to tune -- but it
+    # does mean two alerts for one problem. Drop the local one if the mixin's
+    # turns out to say it better.
     - name: node-exporter-external
       rules:
         - alert: NodeDown
-          expr: up{job="{{ node_exporter_scrape_service_name }}"} == 0
+          expr: up{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
           for: 5m
           labels:
             severity: critical
@@ -34,10 +44,10 @@ spec:
           # readonly filesystems are excluded: squashfs snaps on the kube
           # nodes and the like are 100% full by construction.
           expr: >-
-            node_filesystem_avail_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
-            / node_filesystem_size_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
             < {{ node_exporter_fs_warning_ratio }}
-            and node_filesystem_readonly{job="{{ node_exporter_scrape_service_name }}"} == 0
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
           for: 1h
           labels:
             severity: warning
@@ -49,10 +59,10 @@ spec:
 
         - alert: NodeFilesystemAlmostFull
           expr: >-
-            node_filesystem_avail_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
-            / node_filesystem_size_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
             < {{ node_exporter_fs_critical_ratio }}
-            and node_filesystem_readonly{job="{{ node_exporter_scrape_service_name }}"} == 0
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
           for: 15m
           labels:
             severity: critical
@@ -66,10 +76,10 @@ spec:
           # The rate-of-change rule that catches a runaway log or an
           # unpruned backup directory long before either threshold above.
           expr: >-
-            predict_linear(node_filesystem_avail_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}[6h], 24*3600) < 0
-            and node_filesystem_avail_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
-                / node_filesystem_size_bytes{job="{{ node_exporter_scrape_service_name }}",fstype!~"tmpfs|ramfs|squashfs|overlay"} < 0.30
-            and node_filesystem_readonly{job="{{ node_exporter_scrape_service_name }}"} == 0
+            predict_linear(node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}[6h], 24*3600) < 0
+            and node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+                / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"} < 0.30
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
           for: 1h
           labels:
             severity: warning
@@ -82,8 +92,8 @@ spec:
         - alert: NodeMemoryPressure
           # Available, not free: Linux is supposed to use the rest for cache.
           expr: >-
-            node_memory_MemAvailable_bytes{job="{{ node_exporter_scrape_service_name }}"}
-            / node_memory_MemTotal_bytes{job="{{ node_exporter_scrape_service_name }}"} < 0.10
+            node_memory_MemAvailable_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"}
+            / node_memory_MemTotal_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"} < 0.10
           for: 30m
           labels:
             severity: warning
@@ -97,9 +107,9 @@ spec:
           # Per-core, so this means the same thing on a 4-core VM and a
           # 24-core hypervisor.
           expr: >-
-            node_load15{job="{{ node_exporter_scrape_service_name }}"}
+            node_load15{nodeclass="{{ node_exporter_scrape_nodeclass }}"}
             / on(instance) group_left()
-            count by(instance) (node_cpu_seconds_total{job="{{ node_exporter_scrape_service_name }}",mode="idle"}) > 2
+            count by(instance) (node_cpu_seconds_total{nodeclass="{{ node_exporter_scrape_nodeclass }}",mode="idle"}) > 2
           for: 1h
           labels:
             severity: warning
@@ -111,7 +121,7 @@ spec:
 
         - alert: NodeRebooted
           expr: >-
-            time() - node_boot_time_seconds{job="{{ node_exporter_scrape_service_name }}"} < 600
+            time() - node_boot_time_seconds{nodeclass="{{ node_exporter_scrape_nodeclass }}"} < 600
           labels:
             severity: info
           annotations:
@@ -121,7 +131,7 @@ spec:
               otherwise.
 
         - alert: NodeSystemdUnitFailed
-          expr: node_systemd_unit_state{job="{{ node_exporter_scrape_service_name }}",state="failed"} == 1
+          expr: node_systemd_unit_state{nodeclass="{{ node_exporter_scrape_nodeclass }}",state="failed"} == 1
           for: 15m
           labels:
             severity: warning
@@ -247,7 +257,7 @@ spec:
           # possible failure mode for the thing this whole role exists to
           # watch.
           expr: >-
-            time() - node_textfile_mtime_seconds{job="{{ node_exporter_scrape_service_name }}",file="zfs.prom"} > 900
+            time() - node_textfile_mtime_seconds{nodeclass="{{ node_exporter_scrape_nodeclass }}",file="zfs.prom"} > 900
           for: 15m
           labels:
             severity: warning

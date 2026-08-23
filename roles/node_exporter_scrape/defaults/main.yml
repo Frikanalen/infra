@@ -26,14 +26,32 @@ node_exporter_scrape_group: node_exporter_hosts
 
 node_exporter_port: 9100
 
-# Name of the Service, and therefore the Prometheus job label, since the
-# ServiceMonitor sets no jobLabel. Deliberately not "node-exporter": the
-# kube-prometheus-stack chart's own DaemonSet already owns that job name on
-# this cluster, and the chart's bundled node-exporter alerting rules are
-# written against it. Keeping these targets in a separate job is what stops
-# the two sets of hosts being averaged together in a dashboard and what makes
-# this role's own rules (below) necessary rather than duplicative.
+# Name of the Kubernetes objects this role creates. Only an object name -- it
+# is no longer the Prometheus job label, see below.
 node_exporter_scrape_service_name: node-exporter-external
+
+# The Prometheus job label these targets carry.
+#
+# Deliberately the *same* job as the kube-prometheus-stack chart's own
+# node-exporter DaemonSet, which is the opposite of what this role did
+# originally. The upstream node-exporter mixin that the chart ships -- the
+# "Node Exporter / Nodes" dashboard and its ~21 alerting rules -- hardcodes
+# job="node-exporter" in every query and in its instance dropdown. A target
+# under any other job name is invisible to all of it. Sharing the job is the
+# only way in, and it is worth it: the mixin's rules are better tested and
+# broader than anything hand-written here.
+#
+# Set the way the chart sets it, via the Service's jobLabel label plus
+# spec.jobLabel on the ServiceMonitor, rather than by a relabeling -- that is
+# a first-class ServiceMonitor field and does not depend on where the operator
+# happens to order user relabelings relative to its own.
+node_exporter_scrape_job: node-exporter
+
+# What distinguishes these hosts from the kube nodes now that the job no
+# longer does. Copied onto every target via the ServiceMonitor's targetLabels,
+# and what this role's own alerting rules select on, so they stay scoped to
+# these six hosts instead of firing a second time for every kube node.
+node_exporter_scrape_nodeclass: external
 
 # Scrape pacing. node_exporter is cheap and local; this is the chart's own
 # default rather than anything tuned.

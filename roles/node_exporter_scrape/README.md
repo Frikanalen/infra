@@ -39,12 +39,31 @@ The role asserts that rather than rendering a broken Endpoints object.
 
 ## The job name
 
-`node-exporter-external`, not `node-exporter`. The chart's own DaemonSet already
-owns that job on this cluster, and the chart's bundled node-exporter alerting
-rules are written against it. Keeping these targets in their own job is what
-stops the two sets of hosts being averaged together in a dashboard — and it is
-why this role ships its own rules rather than relying on the chart's, whose
-selectors do not match these targets at all.
+`job="node-exporter"` — deliberately the **same** job as the chart's own
+node-exporter DaemonSet.
+
+This role originally used a separate `node-exporter-external`, on the reasoning
+that mixing the two host sets would let a dashboard average them together. That
+was the wrong trade. The upstream node-exporter mixin the chart ships — the
+"Node Exporter / Nodes" and "USE Method" dashboards, and ~21 alerting rules —
+hardcodes `job="node-exporter"` in every query and in its `instance` dropdown.
+Under any other job name these hosts are invisible to all of it, and get none of
+those rules. Sharing the job is the only way in.
+
+It is set the way the chart sets it: a `jobLabel: node-exporter` label on the
+Service plus `spec.jobLabel: jobLabel` on the ServiceMonitor. Both are
+first-class fields, so this does not depend on where the operator happens to
+order user relabelings relative to its own.
+
+What separates the two host sets now is `nodeclass="external"`, a label on the
+Service copied onto every target by the ServiceMonitor's `targetLabels`. This
+role's own alerting rules select on it rather than on a job, so they stay scoped
+to these six hosts instead of firing a second time for every kube node.
+
+Note for anything filtering on it: the kube nodes carry no `nodeclass` label at
+all, so a Grafana variable over it needs `allValue: ".*"` — Grafana's default
+"All" expands to an alternation of known values, which would silently exclude
+every target missing the label.
 
 ## Alerts
 
@@ -52,6 +71,16 @@ A `PrometheusRule` in two groups: general host health (down, filesystems full
 or filling, memory, load, reboots, failed systemd units) and ZFS (pool not
 `ONLINE`, data errors, per-disk error counters, capacity, fragmentation,
 overdue scrubs).
+
+Because the job is now shared, the mixin's ~21 node rules apply to these hosts
+too, and several overlap with the general group here:
+`NodeFilesystemAlmostOutOfSpace` against `NodeFilesystemAlmostFull`,
+`NodeMemoryHighUtilization` against `NodeMemoryPressure`,
+`NodeSystemdServiceFailed` against `NodeSystemdUnitFailed`,
+`NodeSystemSaturation` against `NodeLoadHigh`. That duplication is deliberate —
+these thresholds are ours to tune — but it does mean two alerts for one
+problem. Drop the local rule if the mixin's turns out to say it better. The ZFS
+group has no upstream equivalent and duplicates nothing.
 
 Two of the ZFS rules watch the collector rather than the pools.
 `ZfsMetricsStale` fires on `node_textfile_mtime_seconds` for `zfs.prom` going

@@ -9,6 +9,15 @@ spec:
   # No release label needed: roles/kube_prometheus_stack sets
   # serviceMonitorSelectorNilUsesHelmValues false, so Prometheus selects
   # every ServiceMonitor in the cluster rather than only its own chart's.
+  # Take the job label from the Service's "jobLabel" label rather than from the
+  # Service's name, which is what the operator would otherwise use. Exactly how
+  # the chart wires up its own node-exporter DaemonSet.
+  jobLabel: jobLabel
+  # Copy the Service's nodeclass label onto every target, so this role's own
+  # alerting rules have something to select on now that the job label is shared
+  # with the kube nodes.
+  targetLabels:
+    - nodeclass
   selector:
     matchLabels:
       app: {{ node_exporter_scrape_service_name }}
