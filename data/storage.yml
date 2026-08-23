@@ -1,0 +1,13 @@
+---
+# Shared storage contracts: values that two hosts in different inventory
+# groups both have to agree on, and so cannot live in either one's
+# group_vars.
+
+# Destination for the daily prod Kubegres backup CronJob. file01 exports this
+# path (roles/nfs_server, via nfs_exports in group_vars/storage.yml) and the
+# production cluster mounts it as an NFS PersistentVolume
+# (roles/kubegres_backup, which runs on kubeprod_admin). It used to be
+# defined only in group_vars/storage.yml -- scoped to file01 -- so
+# roles/kubegres_backup failed with "'db_backup_export_path' is undefined"
+# on the only host that actually runs it.
+db_backup_export_path: /util/k8s
