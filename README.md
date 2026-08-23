@@ -58,18 +58,62 @@ ansible-playbook playbooks/k8s_cluster_prod.yml
 ansible-playbook playbooks/k8s_cluster_dev.yml
 ```
 
-Forms MicroK8s clusters and installs base Kubernetes services such as MetalLB,
-Traefik, Kubegres, the CloudNativePG operator, ArgoCD, and ArgoCD Image
-Updater. The dev cluster additionally runs kube-prometheus-stack and, alongside
-it, `junos_exporter` pointed at the `fksw` switch (see `roles/junos_exporter`
-and `playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship
-with it: a generic per-metric one, and `fksw — Frikanalen network`, laid out
-by what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
+Forms the MicroK8s clusters: seeds, joins the remaining nodes, and installs
+the host-level prerequisites (kubectl config, Helm, `nfs-common`). This is the
+once-in-a-cluster's-life part. It is now a no-op against a cluster that is
+already formed — the seed play lists the nodes and skips minting a join token
+when every expected member is present.
+
+```sh
+ansible-playbook playbooks/k8s_platform_prod.yml
+ansible-playbook playbooks/k8s_platform_dev.yml
+```
+
+Installs the platform services: MetalLB, Traefik, external-dns, Kubegres, the
+CloudNativePG operator, ArgoCD, and ArgoCD Image Updater. The dev cluster
+additionally runs kube-prometheus-stack and, alongside it, `junos_exporter`
+pointed at the `fksw` switch (see `roles/junos_exporter` and
+`playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship with
+it: a generic per-metric one, and `fksw — Frikanalen network`, laid out by
+what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
 broadcast chain, management ports).
 
 The dev cluster also carries the scrape configuration, dashboards and alerting
 rules for the hosts that are not Kubernetes nodes -- see
 `roles/node_exporter_scrape` and the `node_exporter` note below.
+
+Only the dev cluster has a Prometheus Operator, so `k8s_monitoring_enabled`
+(see `data/cluster.yml`) is false on prod and the ServiceMonitors, PodMonitors
+and Grafana dashboard ConfigMaps these roles would otherwise create are
+skipped there. Without that gate, installing Traefik on prod would fail:
+the chart renders a kind the API server does not know.
+
+### Tags
+
+Three axes, applied consistently across the Kubernetes playbooks:
+
+| Axis | Tags |
+| --- | --- |
+| Layer, one per play | `bootstrap`, `platform`, `apps` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `schedule`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
+
+So a single component can be advanced on its own, which is the usual way to
+work:
+
+```sh
+ansible-playbook playbooks/k8s_platform_dev.yml --tags traefik
+ansible-playbook playbooks/k8s_platform_prod.yml --tags dns
+ansible-playbook playbooks/k8s_apps_prod.yml --tags frontend
+ansible-playbook playbooks/k8s_platform_dev.yml --skip-tags monitoring
+```
+
+Two things to know. Roles with a `meta/argument_specs.yml` (`traefik`,
+`metallb`, `external_dns`) get an automatic "Validating arguments against arg
+spec" task that Ansible tags `always`, so you will see those role names go
+past even under an unrelated tag — they validate variables and change
+nothing. And `--tags join` on its own will refuse to run: the join play reads
+cluster membership from the seed play, so select `bootstrap` instead.
 
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml
