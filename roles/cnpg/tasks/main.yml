@@ -1,13 +1,15 @@
 ---
 - name: Add CloudNativePG Helm repository
   kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: cnpg
     repo_url: https://cloudnative-pg.github.io/charts
-  become: false
+  become: true
   run_once: true
 
 - name: Install CloudNativePG operator via Helm
   kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: cnpg
     chart_ref: cnpg/cloudnative-pg
     chart_version: "{{ cnpg_chart_version | default(omit, true) }}"
@@ -24,11 +26,12 @@
         podMonitorEnabled: "{{ k8s_monitoring_enabled }}"
         grafanaDashboard:
           create: "{{ k8s_monitoring_enabled }}"
-  become: false
+  become: true
   run_once: true
 
 - name: Wait for CloudNativePG controller to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: cnpg-system
     name: cnpg-cloudnative-pg
@@ -37,5 +40,5 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true

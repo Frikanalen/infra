@@ -1,13 +1,15 @@
 ---
 - name: Add external-dns Helm repository
   kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: external-dns
     repo_url: https://kubernetes-sigs.github.io/external-dns/
-  become: false
+  become: true
   run_once: true
 
 - name: Ensure IngressClass exists for external_dns_ingress_class
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: networking.k8s.io/v1
@@ -17,11 +19,12 @@
       spec:
         controller: traefik.io/ingress-controller
   when: external_dns_manage_ingress_class
-  become: false
+  become: true
   run_once: true
 
 - name: Install external-dns via Helm
   kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: "{{ external_dns_release_name }}"
     chart_ref: external-dns/external-dns
     chart_version: "{{ external_dns_chart_version | default(omit, true) }}"
@@ -49,12 +52,13 @@
         - --rfc2136-tsig-secret-alg={{ external_dns_rfc2136_tsig_secret_alg }}
         - --rfc2136-tsig-axfr
         - --rfc2136-tsig-secret={{ external_dns_rfc2136_tsig_secret }}
-  become: false
+  become: true
   run_once: true
   no_log: true
 
 - name: Wait for external-dns to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: "{{ external_dns_namespace }}"
     name: "{{ external_dns_release_name }}"
@@ -63,5 +67,5 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true

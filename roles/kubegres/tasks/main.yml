@@ -1,13 +1,15 @@
 ---
 - name: Install Kubegres operator
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     src: "{{ kubegres_manifest_url }}"
-  become: false
+  become: true
   run_once: true
 
 - name: Wait for Kubegres controller to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: kubegres-system
     name: kubegres-controller-manager
@@ -16,5 +18,5 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true

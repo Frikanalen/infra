@@ -1,13 +1,15 @@
 ---
 - name: Add MetalLB Helm repository
   kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: metallb
     repo_url: https://metallb.github.io/metallb
-  become: false
+  become: true
   run_once: true
 
 - name: Install MetalLB via Helm
   kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: metallb
     chart_ref: metallb/metallb
     chart_version: "{{ metallb_chart_version | default(omit, true) }}"
@@ -26,11 +28,12 @@
         rbacPrometheus: false
         serviceMonitor:
           enabled: "{{ k8s_monitoring_enabled }}"
-  become: false
+  become: true
   run_once: true
 
 - name: Wait for MetalLB controller to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: "{{ metallb_namespace }}"
     name: metallb-controller
@@ -39,11 +42,12 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true
 
 - name: Create MetalLB Grafana dashboard ConfigMap
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: v1
@@ -55,12 +59,13 @@
           grafana_dashboard: "1"
       data:
         metallb-dashboard.json: "{{ lookup('file', 'metallb-dashboard.json') }}"
-  become: false
+  become: true
   run_once: true
   when: k8s_monitoring_enabled | bool
 
 - name: Configure MetalLB L2 advertisement
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: metallb.io/v1beta1
@@ -69,11 +74,12 @@
         name: default
         namespace: "{{ metallb_namespace }}"
       spec: {}
-  become: false
+  become: true
   run_once: true
 
 - name: Configure MetalLB IP address pool
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: metallb.io/v1beta1
@@ -84,5 +90,5 @@
       spec:
         addresses:
           - "{{ metallb_ingress_ip }}"
-  become: false
+  become: true
   run_once: true

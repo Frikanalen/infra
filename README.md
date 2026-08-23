@@ -51,6 +51,15 @@ ansible-lint
 for pb in playbooks/*.yml playbooks/*/*.yml; do ansible-playbook --syntax-check "$pb"; done
 ```
 
+Roles that talk to the cluster all do it the same way: `become: true` plus an
+explicit `kubeconfig: "{{ k8s_kubeconfig }}"`, which is MicroK8s's own
+credential file and readable only by root. The alternative — running
+unprivileged against the connecting user's `~/.kube/config` — works, but only
+once `microk8s_kubectl` has written that file for the `ansible` user, which
+made the platform playbooks quietly depend on the cluster playbook having run
+first. Helm tasks additionally carry `run_once: true`, since a Helm release
+should be installed once per cluster and not once per node.
+
 `.ansible-lint` sets the `production` profile and skips three rules, each
 with its reasoning in the file — chiefly `var-naming[no-role-prefix]`, which
 would fight the cross-role variable sharing this repo relies on.
