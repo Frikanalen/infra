@@ -24,6 +24,26 @@
   tags:
     - common
     - qemu_guest
+- name: Install node_exporter on the hosts outside the Kubernetes clusters
+  # file01 and the Proxmox hypervisors. The kube nodes are excluded from the
+  # inventory group on purpose -- kube-prometheus-stack already runs a
+  # node-exporter DaemonSet on those. The Prometheus side of this is
+  # roles/node_exporter_scrape, run by playbooks/k8s_cluster_dev.yml; an
+  # exporter installed here is scraped by nothing until that has run.
+  #
+  # Its own play rather than another role on the "all" play above: the role
+  # flushes handlers partway through, so that the ZFS collector's systemd
+  # timer is enabled against units systemd has actually reloaded, and that
+  # would flush other roles' handlers early if it shared a play with them.
+  hosts: node_exporter_hosts
+  become: true
+  gather_facts: true
+  roles:
+    - node_exporter
+  tags:
+    - monitoring
+    - node_exporter
+
 - name: Configure DNS server
   hosts: util
   roles:

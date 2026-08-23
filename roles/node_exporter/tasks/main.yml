@@ -1,0 +1,126 @@
+---
+# Installs node_exporter on the hosts the kube-prometheus-stack DaemonSet
+# cannot reach -- see this role's defaults and README.
+#
+# The scrape side is roles/node_exporter_scrape, which runs against the dev
+# cluster. Installing here without running that leaves an exporter nothing
+# reads; running that without this leaves Prometheus with targets that refuse
+# connections. They are separate roles because they run on different hosts,
+# not because either is optional.
+
+- name: Install node_exporter
+  ansible.builtin.apt:
+    name: "{{ node_exporter_package }}"
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Configure node_exporter flags
+  ansible.builtin.template:
+    src: default.j2
+    dest: /etc/default/{{ node_exporter_service }}
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart node_exporter
+
+- name: Ensure the node_exporter systemd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/{{ node_exporter_service }}.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Take node_exporter's flags out of the packaged unit
+  ansible.builtin.template:
+    src: systemd-override.conf.j2
+    dest: /etc/systemd/system/{{ node_exporter_service }}.service.d/override.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd
+    - Restart node_exporter
+
+- name: Ensure the textfile collector directory exists
+  # Package-created, but the ZFS collector below writes into it and this role
+  # does not depend on the package having got there first.
+  ansible.builtin.file:
+    path: "{{ node_exporter_textfile_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+
+- name: Ensure node_exporter is started and enabled
+  ansible.builtin.service:
+    name: "{{ node_exporter_service }}"
+    state: started
+    enabled: yes
+  become: true
+
+# --- ZFS textfile collector -------------------------------------------------
+#
+# Conditional on zpool(8) actually being present rather than on the host being
+# file01: the Proxmox hosts have local pools too, and a host that grows one
+# later starts being watched on the next run without an inventory edit.
+
+- name: Check whether this host has ZFS
+  ansible.builtin.stat:
+    path: /sbin/zpool
+  register: node_exporter_zpool_bin
+
+- name: Install the ZFS textfile collector
+  ansible.builtin.copy:
+    src: zfs-textfile-collector.sh
+    dest: "{{ node_exporter_zfs_script_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+  when: node_exporter_zfs_collector and node_exporter_zpool_bin.stat.exists
+
+- name: Install the ZFS textfile collector service and timer
+  ansible.builtin.template:
+    src: "zfs-collector.{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ node_exporter_zfs_timer_name }}.{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - service
+    - timer
+  become: true
+  when: node_exporter_zfs_collector and node_exporter_zpool_bin.stat.exists
+  notify: Reload systemd
+
+- name: Flush handlers so the timer below starts against the units just written
+  # Without this the enable/start task below runs before the daemon-reload
+  # handler, and systemd starts whatever it had cached -- on a first run, that
+  # is nothing at all.
+  ansible.builtin.meta: flush_handlers
+
+- name: Run the ZFS textfile collector once now
+  # So the first Prometheus scrape after provisioning has metrics rather than
+  # waiting out OnBootSec. Also fails the play here, loudly, if the script
+  # cannot run on this host at all.
+  ansible.builtin.command:
+    cmd: "{{ node_exporter_zfs_script_path }} {{ node_exporter_textfile_directory }}"
+  become: true
+  when: node_exporter_zfs_collector and node_exporter_zpool_bin.stat.exists
+  # Writing metrics is not a change to the host's configuration, and reporting
+  # it as one would make every run of playbooks/site.yml look non-idempotent.
+  changed_when: false
+
+- name: Ensure the ZFS textfile collector timer is started and enabled
+  ansible.builtin.systemd_service:
+    name: "{{ node_exporter_zfs_timer_name }}.timer"
+    state: started
+    enabled: yes
+  become: true
+  when: node_exporter_zfs_collector and node_exporter_zpool_bin.stat.exists

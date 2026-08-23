@@ -1,0 +1,64 @@
+---
+# defaults for node_exporter role
+#
+# Installs Prometheus's node_exporter on the hosts that are not Kubernetes
+# nodes -- the Proxmox hypervisors and file01. The kube nodes already run one,
+# as a DaemonSet from the kube-prometheus-stack chart (see
+# roles/kube_prometheus_stack); this role is for everything the chart cannot
+# reach.
+#
+# The scrape side lives in roles/node_exporter_scrape, which runs against the
+# dev cluster and points that chart's Prometheus at the hosts this role
+# installs on. Nothing here talks to Prometheus.
+
+# Debian's package rather than an upstream tarball: it ships the systemd unit,
+# a system user and an unattended-upgrades path, none of which is worth
+# reimplementing here. The version lag (node_exporter is stable and its metric
+# names have not moved in years) costs us nothing that matters.
+node_exporter_package: prometheus-node-exporter
+node_exporter_service: prometheus-node-exporter
+node_exporter_port: 9100
+
+# Listen on every interface. These hosts are all on 192.168.3.0/24, which is
+# not routed from outside the VPN (see roles/util_fw), and the exporter has to
+# be reachable from pods on the kube nodes, so binding to loopback would defeat
+# the point. node_exporter serves nothing but metrics and has no write paths.
+node_exporter_listen_address: "0.0.0.0:{{ node_exporter_port }}"
+
+# Where the textfile collector reads .prom files from. Package-owned directory;
+# the ZFS collector below writes into it.
+node_exporter_textfile_directory: /var/lib/prometheus/node-exporter
+
+# Collectors enabled on top of node_exporter's own defaults.
+#
+# The default set already includes cpu, diskstats, filesystem, meminfo,
+# netdev, textfile and -- the reason this role exists at all on file01 -- zfs,
+# which reads ARC and per-pool kstats out of /proc/spl/kstat/zfs.
+node_exporter_extra_collectors:
+  # Per-unit state for the units systemd considers failed. Cheap, and it is
+  # the difference between "the host is up" and "the host is up and the thing
+  # it exists to run is not".
+  - systemd
+
+node_exporter_extra_args: []
+
+# --- ZFS textfile collector -------------------------------------------------
+#
+# node_exporter's built-in zfs collector gives you the ARC and the per-pool io
+# kstats, and nothing else: no capacity, no fragmentation, no scrub history,
+# no per-device error counters, no per-dataset usage. Those are exactly the
+# numbers that tell you a pool is in trouble, and they only exist in the output
+# of zpool(8)/zfs(8). This script runs those and writes the result into the
+# textfile directory above.
+#
+# Installed on any host that has zpool(8), not on a hard-coded list: file01 is
+# the pool that matters, but the Proxmox hosts boot off ZFS too and there is no
+# reason to leave those unwatched.
+node_exporter_zfs_collector: true
+node_exporter_zfs_script_path: /usr/local/bin/zfs-textfile-collector
+node_exporter_zfs_timer_name: zfs-textfile-collector
+
+# How often to re-run it. Matched to the scrape interval in
+# roles/node_exporter_scrape -- running it faster only produces samples nothing
+# reads, and every run forks a handful of zpool/zfs commands.
+node_exporter_zfs_interval: 60s

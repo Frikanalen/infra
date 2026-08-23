@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Refresh ZFS metrics for node_exporter every {{ node_exporter_zfs_interval }}
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ node_exporter_zfs_interval }}
+# The metrics are gauges read at whatever moment Prometheus scrapes; there is
+# nothing to gain from every host in the estate running zpool status on the
+# same second.
+AccuracySec=10s
+RandomizedDelaySec=10s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,281 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ node_exporter_scrape_service_name }}
+  namespace: {{ node_exporter_scrape_namespace }}
+  labels:
+    app: {{ node_exporter_scrape_service_name }}
+    # kube-prometheus-stack's Prometheus selects PrometheusRules by this
+    # label (ruleSelector defaults to matchLabels release: <release name>),
+    # and unlike the ServiceMonitor selectors the chart's values leave that
+    # one alone. Without it these rules are simply never loaded.
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # Every rule below is scoped to nodeclass="{{ node_exporter_scrape_nodeclass }}",
+    # not to a job. These targets share job="node-exporter" with the chart's own
+    # DaemonSet so that the upstream mixin's dashboards and rules cover them,
+    # which means the job label no longer distinguishes the two sets of hosts
+    # and nodeclass does.
+    #
+    # The mixin's ~21 node rules therefore also apply to these hosts, and
+    # several overlap with what is below: NodeFilesystemAlmostOutOfSpace
+    # against NodeFilesystemAlmostFull, NodeMemoryHighUtilization against
+    # NodeMemoryPressure, NodeSystemdServiceFailed against
+    # NodeSystemdUnitFailed, NodeSystemSaturation against NodeLoadHigh. That
+    # duplication is deliberate -- these thresholds are ours to tune -- but it
+    # does mean two alerts for one problem. Drop the local one if the mixin's
+    # turns out to say it better.
+    - name: node-exporter-external
+      rules:
+        - alert: NodeDown
+          expr: up{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ '{{ $labels.instance }}' }} is not answering scrapes"
+            description: >-
+              Prometheus has been unable to scrape node_exporter on
+              {{ '{{ $labels.instance }}' }} for 5 minutes. Either the host is
+              down or prometheus-node-exporter is not running on it.
+
+        - alert: NodeFilesystemLowOnSpace
+          # readonly filesystems are excluded: squashfs snaps on the kube
+          # nodes and the like are 100% full by construction.
+          expr: >-
+            node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            < {{ node_exporter_fs_warning_ratio }}
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.mountpoint }}' }} on {{ '{{ $labels.instance }}' }} has under {{ (node_exporter_fs_warning_ratio * 100) | int }}% free"
+            description: >-
+              {{ '{{ $labels.mountpoint }}' }} has
+              {{ '{{ $value | humanizePercentage }}' }} of its space left.
+
+        - alert: NodeFilesystemAlmostFull
+          expr: >-
+            node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+            < {{ node_exporter_fs_critical_ratio }}
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ '{{ $labels.mountpoint }}' }} on {{ '{{ $labels.instance }}' }} is nearly full"
+            description: >-
+              {{ '{{ $labels.mountpoint }}' }} has
+              {{ '{{ $value | humanizePercentage }}' }} of its space left.
+
+        - alert: NodeFilesystemFillingUp
+          # The rate-of-change rule that catches a runaway log or an
+          # unpruned backup directory long before either threshold above.
+          expr: >-
+            predict_linear(node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}[6h], 24*3600) < 0
+            and node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
+                / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"} < 0.30
+            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.mountpoint }}' }} on {{ '{{ $labels.instance }}' }} will fill within a day"
+            description: >-
+              Extrapolating the last 6 hours, {{ '{{ $labels.mountpoint }}' }}
+              runs out of space within 24 hours.
+
+        - alert: NodeMemoryPressure
+          # Available, not free: Linux is supposed to use the rest for cache.
+          expr: >-
+            node_memory_MemAvailable_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"}
+            / node_memory_MemTotal_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"} < 0.10
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.instance }}' }} is low on memory"
+            description: >-
+              Only {{ '{{ $value | humanizePercentage }}' }} of memory is
+              available.
+
+        - alert: NodeLoadHigh
+          # Per-core, so this means the same thing on a 4-core VM and a
+          # 24-core hypervisor.
+          expr: >-
+            node_load15{nodeclass="{{ node_exporter_scrape_nodeclass }}"}
+            / on(instance) group_left()
+            count by(instance) (node_cpu_seconds_total{nodeclass="{{ node_exporter_scrape_nodeclass }}",mode="idle"}) > 2
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.instance }}' }} has been loaded for an hour"
+            description: >-
+              15-minute load average is {{ '{{ $value | printf "%.1f" }}' }}
+              per core.
+
+        - alert: NodeRebooted
+          expr: >-
+            time() - node_boot_time_seconds{nodeclass="{{ node_exporter_scrape_nodeclass }}"} < 600
+          labels:
+            severity: info
+          annotations:
+            summary: "{{ '{{ $labels.instance }}' }} has just rebooted"
+            description: >-
+              Uptime is under ten minutes. Expected after maintenance; not
+              otherwise.
+
+        - alert: NodeSystemdUnitFailed
+          expr: node_systemd_unit_state{nodeclass="{{ node_exporter_scrape_nodeclass }}",state="failed"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.name }}' }} has failed on {{ '{{ $labels.instance }}' }}"
+            description: >-
+              systemd reports {{ '{{ $labels.name }}' }} in the failed state.
+
+    - name: node-exporter-external-zfs
+      # These come from the textfile collector that roles/node_exporter
+      # installs, except the ARC series, which are node_exporter's own zfs
+      # collector. See roles/node_exporter/files/zfs-textfile-collector.sh.
+      rules:
+        - alert: ZfsPoolNotOnline
+          # The one that matters. Anything other than ONLINE means the pool
+          # has lost redundancy, is losing data, or has stopped serving.
+          expr: zfs_pool_health{health!="ONLINE"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} is {{ '{{ $labels.health }}' }}"
+            description: >-
+              Run "zpool status -v {{ '{{ $labels.pool }}' }}" on
+              {{ '{{ $labels.instance }}' }}.
+
+        - alert: ZfsPoolDataErrors
+          expr: zfs_pool_data_errors > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} has data errors"
+            description: >-
+              {{ '{{ $value }}' }} known data errors. These are files ZFS
+              could not reconstruct; "zpool status -v" names them.
+
+        - alert: ZfsDeviceErrors
+          # Per-device read/write/checksum counters. A disk that starts
+          # accumulating checksum errors is on its way out well before the
+          # pool leaves ONLINE, and this is the only warning you get.
+          expr: increase(zfs_pool_device_errors_total[6h]) > 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ '{{ $labels.device }}' }} in pool {{ '{{ $labels.pool }}' }} is logging {{ '{{ $labels.type }}' }} errors"
+            description: >-
+              {{ '{{ $value | printf "%.0f" }}' }} new {{ '{{ $labels.type }}' }}
+              errors on {{ '{{ $labels.device }}' }} ({{ '{{ $labels.instance }}' }})
+              in the last 6 hours.
+
+        - alert: ZfsDeviceNotOnline
+          expr: zfs_pool_device_state{state!~"ONLINE|AVAIL|INUSE"} == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ '{{ $labels.device }}' }} in pool {{ '{{ $labels.pool }}' }} is {{ '{{ $labels.state }}' }}"
+            description: >-
+              A vdev or disk in {{ '{{ $labels.pool }}' }} on
+              {{ '{{ $labels.instance }}' }} is not ONLINE.
+
+        - alert: ZfsPoolCapacityHigh
+          expr: zfs_pool_capacity_ratio > {{ node_exporter_zfs_capacity_warning_ratio }}
+          for: 6h
+          labels:
+            severity: warning
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} is {{ '{{ $value | humanizePercentage }}' }} full"
+            description: >-
+              A copy-on-write pool starts fragmenting and slowing down well
+              before it is actually full; the usual advice is to keep 20%
+              free.
+
+        - alert: ZfsPoolCapacityCritical
+          expr: zfs_pool_capacity_ratio > {{ node_exporter_zfs_capacity_critical_ratio }}
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} is {{ '{{ $value | humanizePercentage }}' }} full"
+            description: >-
+              Free space or delete snapshots. Write performance degrades
+              sharply from here, and a pool with no free space cannot even
+              delete files without one.
+
+        - alert: ZfsScrubOverdue
+          # zfs_pool_last_scrub_timestamp_seconds is 0 for a pool that has
+          # never completed a scrub, which makes this expression true and is
+          # the intended behaviour -- never scrubbed and scrubbed far too long
+          # ago are the same problem.
+          expr: >-
+            time() - zfs_pool_last_scrub_timestamp_seconds
+            > {{ node_exporter_zfs_scrub_max_age_days }} * 86400
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} has not been scrubbed recently"
+            description: >-
+              No scrub has completed in
+              {{ node_exporter_zfs_scrub_max_age_days }} days. Debian's
+              zfsutils-linux cron job scrubs monthly; if that is running, this
+              means the scrubs are failing or being cancelled. Silent
+              corruption is only found by scrubbing.
+
+        - alert: ZfsPoolFragmentationHigh
+          expr: zfs_pool_fragmentation_ratio > 0.50
+          for: 24h
+          labels:
+            severity: info
+          annotations:
+            summary: "ZFS pool {{ '{{ $labels.pool }}' }} on {{ '{{ $labels.instance }}' }} is {{ '{{ $value | humanizePercentage }}' }} fragmented"
+            description: >-
+              Free-space fragmentation. Not fixable in place -- the way out is
+              more free space -- but it explains write performance falling off.
+
+        - alert: ZfsMetricsStale
+          # The collector is a systemd timer on the host, entirely separate
+          # from node_exporter itself. If it stops, every ZFS alert above goes
+          # quiet on stale data rather than firing, which is the worst
+          # possible failure mode for the thing this whole role exists to
+          # watch.
+          expr: >-
+            time() - node_textfile_mtime_seconds{nodeclass="{{ node_exporter_scrape_nodeclass }}",file="zfs.prom"} > 900
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ZFS metrics from {{ '{{ $labels.instance }}' }} are stale"
+            description: >-
+              zfs-textfile-collector.timer has not written zfs.prom in 15
+              minutes. Until it does, every ZFS alert for this host is
+              evaluating data that has stopped moving.
+
+        - alert: ZfsCollectorFailing
+          expr: zfs_scrape_success == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "The ZFS collector on {{ '{{ $labels.instance }}' }} is failing"
+            description: >-
+              zfs-textfile-collector ran but zpool or zfs returned an error,
+              so some of the metrics below are missing rather than merely
+              unchanged.

@@ -35,6 +35,18 @@ ansible-playbook playbooks/site.yml
 Applies broad host setup: users, common packages, QEMU guest tools, DNS, utility
 host networking, and MicroK8s installation.
 
+It also installs `node_exporter` on the hosts outside the Kubernetes clusters
+-- `file01` and the Proxmox hypervisors, i.e. the inventory group
+`node_exporter_hosts` (see `roles/node_exporter`). The kube nodes are excluded
+on purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
+those. On any host with ZFS -- `file01` above all, which holds the media
+archive -- a systemd timer additionally feeds pool capacity, scrub history,
+per-disk error counters and per-dataset usage into node_exporter's textfile
+collector, none of which node_exporter can see by itself. The Prometheus that
+reads all of this, its two Grafana dashboards and its alerting rules are set up
+by `playbooks/k8s_cluster_dev.yml` via `roles/node_exporter_scrape`; installing
+the exporter without running that leaves it scraped by nobody.
+
 ```sh
 ansible-playbook playbooks/firewall.yml
 ```
@@ -54,6 +66,10 @@ and `playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship
 with it: a generic per-metric one, and `fksw — Frikanalen network`, laid out
 by what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
 broadcast chain, management ports).
+
+The dev cluster also carries the scrape configuration, dashboards and alerting
+rules for the hosts that are not Kubernetes nodes -- see
+`roles/node_exporter_scrape` and the `node_exporter` note below.
 
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml
