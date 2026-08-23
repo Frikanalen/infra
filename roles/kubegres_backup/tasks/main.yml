@@ -1,13 +1,13 @@
 ---
 - name: Create PersistentVolume for Kubegres backups on file01
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'pv.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Create PersistentVolumeClaim binding the backup PV
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'pvc.yml.j2') }}"
     state: present
@@ -18,7 +18,7 @@
   # playbooks/k8s_apps_prod.yml, but ArgoCD's sync of the Application it
   # just created is async -- the Kubegres CR this task patches next may not
   # exist yet.
-  become: yes
+  become: true
   kubernetes.core.k8s_info:
     api_version: kubegres.reactive-tech.io/v1
     kind: Kubegres
@@ -41,7 +41,7 @@
   # ArgoCD's selfHeal would otherwise revert this on the next sync, since
   # its rendered manifest still doesn't know about spec.backup; see the
   # matching ignoreDifferences entry in roles/argocd_django's Application.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     state: present
     merge_type: merge

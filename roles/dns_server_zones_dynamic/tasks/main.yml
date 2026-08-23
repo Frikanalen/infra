@@ -1,7 +1,7 @@
 ---
 
 - name: Ensure zone directory exists with correct ownership
-  become: yes
+  become: true
   ansible.builtin.file:
     path: "{{ dns_zone_dir }}"
     state: directory
@@ -23,7 +23,7 @@
 # definition if the new name and the stale one ever collide -- which is
 # exactly what happened renaming the old per-zone naming scheme to this one.
 - name: Remove TSIG key files for keys no longer in dns_dynamic_tsig_keys
-  become: yes
+  become: true
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: absent
@@ -37,7 +37,7 @@
   notify: reload named
 
 - name: Render TSIG key configuration
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "tsig-key.conf.j2"
     dest: "{{ dns_named_conf_d }}/tsig-key-{{ item.name }}.conf"
@@ -51,7 +51,7 @@
   notify: reload named
 
 - name: Render zone configuration
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "zones.conf.j2"
     dest: "{{ dns_named_conf_d }}/zones-dynamic.conf"
@@ -61,7 +61,7 @@
   notify: reload named
 
 - name: Render forward zone files
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "db.zone.j2"
     dest: "{{ dns_zone_dir }}/db.{{ zone.name }}"

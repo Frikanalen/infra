@@ -6,7 +6,7 @@
     name: dc1_hosts
 
 - name: Ensure zone directory exists with correct ownership
-  become: yes
+  become: true
   ansible.builtin.file:
     path: "{{ dns_zone_dir }}"
     state: directory
@@ -15,7 +15,7 @@
     mode: "0755"
 
 - name: Render zone configuration
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "zones.conf.j2"
     dest: "{{ dns_named_conf_d }}/zones-static.conf"
@@ -25,7 +25,7 @@
   notify: reload named
 
 - name: Render forward zone for {{ dns_zone_name }}
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "db.dc1.frikanalen.no.j2"
     dest: "{{ dns_zone_dir }}/db.{{ dns_zone_name }}"
@@ -37,7 +37,7 @@
   notify: reload named
 
 - name: Render reverse zones
-  become: yes
+  become: true
   ansible.builtin.template:
     src: "db.{{ item }}.j2"
     dest: "{{ dns_zone_dir }}/db.{{ item }}"

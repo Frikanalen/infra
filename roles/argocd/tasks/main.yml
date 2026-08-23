@@ -1,6 +1,6 @@
 ---
 - name: Add Argo CD Helm repo
-  become: yes
+  become: true
   kubernetes.core.helm_repository:
     repo_name: "{{ argocd_chart_repo_name }}"
     repo_url: "{{ argocd_chart_repo_url }}"
@@ -8,7 +8,7 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Install or upgrade Argo CD via Helm
-  become: yes
+  become: true
   kubernetes.core.helm:
     release_name: argocd
     chart_ref: "{{ argocd_chart_name }}"
@@ -22,7 +22,7 @@
     state: present
 
 - name: Create Argo CD Grafana dashboard ConfigMap
-  become: yes
+  become: true
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"

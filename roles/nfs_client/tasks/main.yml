@@ -3,7 +3,7 @@
   ansible.builtin.apt:
     name: nfs-common
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 # No task to create the mount points: ansible.posix.mount's `state: mounted`

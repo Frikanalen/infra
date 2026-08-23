@@ -11,7 +11,7 @@
 # Debian-specific tasks
 - name: Update apt cache
   ansible.builtin.apt:
-    update_cache: yes
+    update_cache: true
   when: ansible_os_family == "Debian"
 
 - name: Install zsh
@@ -21,21 +21,21 @@
 
 # FreeBSD-specific tasks
 - name: Ensure sudo group exists
-  become: yes
+  become: true
   ansible.builtin.group:
     name: sudo
     state: present
   when: ansible_os_family == "FreeBSD"
 
 - name: Ensure bash is installed
-  become: yes
+  become: true
   ansible.builtin.pkgng:
     name: bash
     state: present
   when: ansible_os_family == "FreeBSD"
 
 - name: Link bash to /bin/bash
-  become: yes
+  become: true
   ansible.builtin.file:
     src: /usr/local/bin/bash
     dest: /bin/bash
@@ -43,19 +43,19 @@
     group: wheel
     mode: 0755
     state: link
-    force: yes
-    follow: no
+    force: true
+    follow: false
   when: ansible_os_family == "FreeBSD"
 
 - name: Ensure zsh is installed
-  become: yes
+  become: true
   ansible.builtin.pkgng:
     name: zsh
     state: present
   when: ansible_os_family == "FreeBSD"
 
 - name: Link zsh to /bin/zsh
-  become: yes
+  become: true
   ansible.builtin.file:
     src: /usr/local/bin/zsh
     dest: /bin/zsh
@@ -63,6 +63,6 @@
     group: wheel
     mode: 0755
     state: link
-    force: yes
-    follow: no
+    force: true
+    follow: false
   when: ansible_os_family == "FreeBSD"

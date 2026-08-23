@@ -1,6 +1,6 @@
 ---
 - name: Ensure Django namespace exists
-  become: yes
+  become: true
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
@@ -9,7 +9,7 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Create Postgres passwords secret
-  become: yes
+  become: true
   # Renders four vault passwords into stringData, one of them twice (it is
   # also embedded in DATABASE_URL).
   no_log: true
@@ -19,14 +19,14 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy Django API via ArgoCD Application
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'application.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy Django API Argo CD Image Updater tracking
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'image-updater.yml.j2') }}"
     state: present

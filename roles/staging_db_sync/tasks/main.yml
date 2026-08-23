@@ -3,7 +3,7 @@
   ansible.builtin.apt:
     name: postgresql-client
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Fetch prod cluster admin kubeconfig

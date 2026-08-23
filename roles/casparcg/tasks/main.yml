@@ -3,30 +3,30 @@
   user:
     name: "{{ casparcg_user }}"
     shell: /usr/sbin/nologin
-    system: yes
+    system: true
   become: true
 
 - name: Install nodm package
   apt:
     name: nodm
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Install CasparCG CEF package from URL
   apt:
     deb: "{{ casparcg_cef_url }}"
     state: present
-    update_cache: no
-    install_recommends: no
+    update_cache: false
+    install_recommends: false
   become: true
 
 - name: Install CasparCG Server package from URL
   apt:
     deb: "{{ casparcg_server_url }}"
     state: present
-    update_cache: no
-    install_recommends: no
+    update_cache: false
+    install_recommends: false
   become: true
 
 - name: Configure nodm
@@ -52,5 +52,5 @@
   service:
     name: nodm
     state: started
-    enabled: yes
+    enabled: true
   become: true
