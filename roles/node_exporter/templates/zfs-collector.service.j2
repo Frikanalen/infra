@@ -17,5 +17,9 @@ TimeoutStartSec=120
 Nice=10
 IOSchedulingClass=idle
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section on purpose. This unit is started by
+# zfs-collector.timer and by nothing else, so it has no business being
+# enabled -- "systemctl status" reporting it as "disabled" is the correct
+# resting state for a timer-driven oneshot, not something to fix. Run it by
+# hand with "systemctl start zfs-textfile-collector.service", which is
+# exactly what the timer does.

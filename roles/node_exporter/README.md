@@ -67,6 +67,21 @@ Installation is conditional on `zpool(8)` being present, not on the host being
 `file01`. The Proxmox hosts can have local pools too, and a host that grows one
 later starts being watched on the next Ansible run without an inventory edit.
 
+### The other textfile collectors
+
+Debian's `prometheus-node-exporter` recommends
+`prometheus-node-exporter-collectors`, so installing the exporter also pulls in
+that package's own timers — `smartmon`, `nvme`, `ipmitool-sensor` and `apt` —
+which write into the same textfile directory and are picked up automatically.
+Nothing in this role asks for them.
+
+That is mostly a gift: on `file01`, `smartmon.prom` carries SMART attributes for
+every disk under the `archive` pool, which is the one thing that can warn you
+about a disk *before* ZFS starts logging checksum errors against it. It is also
+by far the biggest thing in the scrape — about 1700 series, roughly a quarter of
+`file01`'s total. Neither the dashboards nor the alerting rules in
+`roles/node_exporter_scrape` use it yet.
+
 ### Editing the script
 
 It is deliberately defensive: it never uses `set -e`, it reports
