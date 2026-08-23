@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Collect ZFS pool and dataset metrics for node_exporter
+Documentation=file://{{ node_exporter_zfs_script_path }}
+# Nothing to collect before the pools are imported.
+After=zfs.target
+ConditionPathIsDirectory={{ node_exporter_textfile_directory }}
+
+[Service]
+Type=oneshot
+ExecStart={{ node_exporter_zfs_script_path }} {{ node_exporter_textfile_directory }}
+# zpool(8) blocks indefinitely on a suspended pool -- the exact situation this
+# is meant to report on. Bounded so a wedged run cannot sit there forever;
+# Type=oneshot means the timer will not stack a second run on top of it either
+# way, and node_textfile_mtime_seconds going stale is what surfaces it.
+TimeoutStartSec=120
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

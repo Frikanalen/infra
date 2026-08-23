@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ node_exporter_scrape_service_name }}
+  namespace: {{ node_exporter_scrape_namespace }}
+  labels:
+    app: {{ node_exporter_scrape_service_name }}
+spec:
+  # No selector, and no cluster IP: this Service exists only to give the
+  # ServiceMonitor below something to select and to name the job. Its
+  # Endpoints are written by hand (see endpoints.yml.j2) because the things
+  # being scraped are not pods -- they are hosts outside the cluster
+  # altogether. A selector here would hand the Service to the endpoints
+  # controller, which would immediately delete those hand-written Endpoints.
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: {{ node_exporter_port }}
+      targetPort: {{ node_exporter_port }}
+      protocol: TCP

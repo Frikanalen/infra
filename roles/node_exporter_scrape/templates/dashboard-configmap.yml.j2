@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-exporter-dashboards
+  namespace: {{ node_exporter_scrape_namespace }}
+  labels:
+    app: {{ node_exporter_scrape_service_name }}
+    # What makes Grafana pick these up: kube-prometheus-stack runs the
+    # kiwigrid k8s-sidecar next to Grafana watching for ConfigMaps carrying
+    # this label and drops their contents into Grafana's provisioning
+    # directory. labelValue is "1" in the chart, so the value is matched too
+    # and this is not merely convention. Same mechanism as
+    # roles/junos_exporter's dashboards.
+    grafana_dashboard: "1"
+data:
+  # Two dashboards, one ConfigMap -- the sidecar treats each key as its own
+  # dashboard. The split is by what you are looking for: "is a host unwell"
+  # versus "is the archive's storage unwell".
+  node-exporter.json: |
+{{ lookup('file', 'node-exporter-dashboard.json') | indent(4, first=True) }}
+  zfs.json: |
+{{ lookup('file', 'zfs-dashboard.json') | indent(4, first=True) }}

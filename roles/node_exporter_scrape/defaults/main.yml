@@ -1,0 +1,63 @@
+---
+# defaults for node_exporter_scrape role
+#
+# The cluster half of node_exporter monitoring: points the Prometheus that
+# roles/kube_prometheus_stack installs at the node_exporters that
+# roles/node_exporter installs on the hosts outside the cluster, and ships the
+# dashboards and alerting rules that go with them.
+#
+# Runs against the dev cluster, because that is where the only Prometheus in
+# the estate lives. The hosts it scrapes are not dev hosts -- file01 and the
+# Proxmox hypervisors are production infrastructure. That asymmetry is a
+# property of where the monitoring stack happens to be installed, not a
+# statement about the hosts.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Same namespace as the rest of the monitoring stack. Literal rather than a
+# reference to kube_prometheus_stack_namespace: that is another role's default,
+# and role defaults are not in scope across roles.
+node_exporter_scrape_namespace: monitoring
+
+# The inventory group whose members get scraped. One source of truth with
+# roles/node_exporter, which installs the exporter on the same group -- adding
+# a host to it in inventory.yaml is the whole change needed at both ends.
+node_exporter_scrape_group: node_exporter_hosts
+
+node_exporter_port: 9100
+
+# Name of the Service, and therefore the Prometheus job label, since the
+# ServiceMonitor sets no jobLabel. Deliberately not "node-exporter": the
+# kube-prometheus-stack chart's own DaemonSet already owns that job name on
+# this cluster, and the chart's bundled node-exporter alerting rules are
+# written against it. Keeping these targets in a separate job is what stops
+# the two sets of hosts being averaged together in a dashboard and what makes
+# this role's own rules (below) necessary rather than duplicative.
+node_exporter_scrape_service_name: node-exporter-external
+
+# Scrape pacing. node_exporter is cheap and local; this is the chart's own
+# default rather than anything tuned.
+node_exporter_scrape_interval: 30s
+node_exporter_scrape_timeout: 10s
+
+# --- alerting thresholds ----------------------------------------------------
+#
+# All of these fire into the Alertmanager installed by
+# roles/kube_prometheus_stack, which at the time of writing has no receiver
+# configured -- they show up in its UI and in Grafana, and nowhere else. That
+# is worth fixing, and is not this role's job.
+
+# Filesystem space. Two levels: one to notice, one to act on.
+node_exporter_fs_warning_ratio: 0.15
+node_exporter_fs_critical_ratio: 0.05
+
+# ZFS pool capacity. Lower than the filesystem thresholds on purpose: a
+# copy-on-write pool degrades badly on allocation well before it is actually
+# full, and the usual advice is to keep 20% free.
+node_exporter_zfs_capacity_warning_ratio: 0.80
+node_exporter_zfs_capacity_critical_ratio: 0.90
+
+# How long a pool may go unscrubbed before it is a problem. Debian's
+# zfsutils-linux ships a cron job that scrubs on the second Sunday of each
+# month, so anything past ~5 weeks means those scrubs are not happening.
+node_exporter_zfs_scrub_max_age_days: 35

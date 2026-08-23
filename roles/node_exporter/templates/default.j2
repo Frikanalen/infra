@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# Flags for node_exporter, read by prometheus-node-exporter.service. Managed by
+# roles/node_exporter -- local edits are overwritten on the next Ansible run.
+#
+# Debian's package ships this file with ARGS="" and puts its own flags in the
+# unit's ExecStart. This role's drop-in strips those and re-forms ExecStart as
+# "prometheus-node-exporter $ARGS", so everything the exporter is told is on
+# the line below and nowhere else.
+ARGS="--web.listen-address={{ node_exporter_listen_address }} --collector.textfile.directory={{ node_exporter_textfile_directory }}{% for c in node_exporter_extra_collectors %} --collector.{{ c }}{% endfor %}{% for a in node_exporter_extra_args %} {{ a }}{% endfor %}"

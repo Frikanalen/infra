@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+#
+# Debian bakes its own flags into prometheus-node-exporter.service's ExecStart
+# and leaves ARGS empty, which makes the flag set depend on the packaged unit
+# and turns any flag we add into a possible duplicate -- node_exporter's flag
+# parser rejects a repeated --collector.textfile.directory outright rather than
+# letting the last one win. The empty ExecStart= below clears the packaged
+# line (systemd's documented way of replacing rather than appending to it) so
+# the whole command comes from /etc/default/prometheus-node-exporter.
+[Service]
+ExecStart=
+ExecStart=/usr/bin/{{ node_exporter_service }} $ARGS
