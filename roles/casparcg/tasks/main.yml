@@ -1,20 +1,20 @@
 ---
 - name: Ensure casparcg user exists
-  user:
+  ansible.builtin.user:
     name: "{{ casparcg_user }}"
     shell: /usr/sbin/nologin
     system: true
   become: true
 
 - name: Install nodm package
-  apt:
+  ansible.builtin.apt:
     name: nodm
     state: present
     update_cache: true
   become: true
 
 - name: Install CasparCG CEF package from URL
-  apt:
+  ansible.builtin.apt:
     deb: "{{ casparcg_cef_url }}"
     state: present
     update_cache: false
@@ -22,7 +22,7 @@
   become: true
 
 - name: Install CasparCG Server package from URL
-  apt:
+  ansible.builtin.apt:
     deb: "{{ casparcg_server_url }}"
     state: present
     update_cache: false
@@ -30,7 +30,7 @@
   become: true
 
 - name: Configure nodm
-  template:
+  ansible.builtin.template:
     src: nodm.conf.j2
     dest: "/etc/default/nodm"
     owner: root
@@ -39,7 +39,7 @@
   become: true
 
 - name: Render casparcg.config to /etc
-  template:
+  ansible.builtin.template:
     src: "casparcg.config.j2"
     dest: "/etc/casparcg.config"
     owner: root
@@ -49,7 +49,7 @@
 
 
 - name: Ensure nodm service is started and enabled
-  service:
+  ansible.builtin.service:
     name: nodm
     state: started
     enabled: true
