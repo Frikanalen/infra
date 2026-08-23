@@ -1,0 +1,7 @@
+---
+django_db_secret_namespace: "{{ frikanalen_app_namespace }}"
+
+# Passwords must be set by the caller, from the vault.
+django_db_secret_super_password: ""
+django_db_secret_replication_password: ""
+django_db_secret_django_password: ""

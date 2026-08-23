@@ -1,0 +1,37 @@
+---
+# Ingest needs two credentials in place before Argo CD syncs its
+# Application: the archive SSH key (roles/ingest_archive_account, which must
+# run first) and the Django API token created here.
+- name: Ensure the archive credentials were provisioned
+  ansible.builtin.assert:
+    that:
+      - ingest_archive_private_key is defined
+      - ingest_archive_private_key | length > 0
+    fail_msg: >-
+      No archive credentials found. Run the ingest_archive_account role first;
+      it generates the key and stores it in the Kubernetes secret ingest reads.
+
+- name: Ensure the Django API token was supplied
+  ansible.builtin.assert:
+    that:
+      - ingest_api_token | length > 0
+    fail_msg: >-
+      ingest_api_token must be set, normally from data/vault.yml. Ingest
+      cannot talk to the API without it.
+
+- name: Ensure the app namespace exists
+  become: true
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ ingest_api_secret_namespace }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Create Django API credentials secret
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'api-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"

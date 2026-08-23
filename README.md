@@ -163,8 +163,13 @@ ansible-playbook playbooks/k8s_apps_prod.yml
 ansible-playbook playbooks/k8s_apps_staging.yml
 ```
 
-Deploys ArgoCD application definitions for Django, frontend, graphics, schedule,
-playout, and stream components. Also deploys a CloudNativePG `Cluster` named
+Deploys Argo CD Application definitions for the Django API, frontend,
+graphics, schedule, playout, stream and ingest components. Every one of them
+is declared in `data/apps.yml` (`frikanalen_apps`) and rendered by the single
+`argocd_app` role, invoked once per app; adding an app is an entry in that
+file plus three lines in the playbook. Two apps need a credential in place
+before Argo CD syncs them, so they keep a small role of their own:
+`django_db_secret` and `ingest_api_secret`. Also deploys a CloudNativePG `Cluster` named
 `pgcluster` (see `roles/cnpg_cluster`) as a migration target alongside the
 existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
 storage class, `fkweb` db/user, and the same credentials as Kubegres's

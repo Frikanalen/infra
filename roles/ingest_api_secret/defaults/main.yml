@@ -1,0 +1,9 @@
+---
+ingest_api_secret_namespace: "{{ frikanalen_app_namespace }}"
+
+# A token rather than a login: ingest would otherwise exchange credentials
+# for one at startup, and could not boot unless the API were already
+# reachable. Must be set by the caller, from the vault.
+# The Secret's name is ingest_api_secret_name, in data/apps.yml -- the ingest
+# app definition there reads it too.
+ingest_api_token: ""
