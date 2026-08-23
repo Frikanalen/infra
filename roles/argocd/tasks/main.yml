@@ -36,4 +36,5 @@
           grafana_dashboard: "1"
       data:
         argocd-dashboard.json: "{{ lookup('file', 'argocd-dashboard.json') }}"
+  when: k8s_monitoring_enabled | bool
 

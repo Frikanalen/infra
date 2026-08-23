@@ -1,0 +1,19 @@
+---
+# Cluster-wide capability flags. Loaded for every host via the
+# group_vars/all -> ../data symlink.
+
+# Does this cluster have a Prometheus Operator?
+#
+# Several roles here install a component *and* wire it into monitoring:
+# Traefik, MetalLB, Argo CD and CloudNativePG all render a ServiceMonitor or
+# PodMonitor from their chart, and roles/argocd_django creates one directly.
+# Those are monitoring.coreos.com CRDs, which only exist where
+# roles/kube_prometheus_stack has run -- the dev cluster. On a cluster
+# without it the API server rejects the kind and the whole Helm release
+# fails, so installing Traefik would require a Prometheus Operator, which is
+# backwards.
+#
+# False here, true in group_vars/staging.yml. Set it true on any cluster
+# that gains kube_prometheus_stack. It also gates the Grafana dashboard
+# ConfigMaps, which are inert without a Grafana to read them.
+k8s_monitoring_enabled: false

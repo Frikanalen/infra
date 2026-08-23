@@ -70,7 +70,7 @@
       metrics:
         prometheus:
           serviceMonitor:
-            enabled: true
+            enabled: "{{ k8s_monitoring_enabled }}"
 
       ingressClass:
         enabled: true
@@ -178,6 +178,7 @@
         traefik-dashboard.json: "{{ lookup('file', 'traefik-dashboard.json') }}"
   become: false
   run_once: true
+  when: k8s_monitoring_enabled | bool
 
 - name: Wait for Traefik to be ready
   kubernetes.core.k8s_info:

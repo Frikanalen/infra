@@ -21,9 +21,9 @@
         # spec.monitoring.enablePodMonitor for that. Picked up by Prometheus
         # regardless of label thanks to roles/kube_prometheus_stack's
         # podMonitorSelectorNilUsesHelmValues: false.
-        podMonitorEnabled: true
+        podMonitorEnabled: "{{ k8s_monitoring_enabled }}"
         grafanaDashboard:
-          create: true
+          create: "{{ k8s_monitoring_enabled }}"
   become: false
   run_once: true
 
