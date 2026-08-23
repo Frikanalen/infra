@@ -1,0 +1,56 @@
+name: lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible and lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible-core ansible-lint
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml
+
+      # group_vars/all is a symlink to data/, so data/vault.yml is loaded for
+      # every host and both checks below fail at parse time without the
+      # password -- even for a playbook that reads no secrets. Neither check
+      # prints variable values.
+      #
+      # One-time setup: Settings > Secrets and variables > Actions > New
+      # repository secret, named ANSIBLE_VAULT_PASSWORD, holding the same
+      # string as ~/.vault_pass_frikanalen.
+      - name: Provide the vault password
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          if [ -z "$VAULT_PASSWORD" ]; then
+            echo "::error::ANSIBLE_VAULT_PASSWORD secret is not set. See the comment in .github/workflows/lint.yml."
+            exit 1
+          fi
+          printf '%s' "$VAULT_PASSWORD" > "$HOME/.vault_pass_frikanalen"
+          chmod 0600 "$HOME/.vault_pass_frikanalen"
+
+      - name: ansible-lint
+        run: ansible-lint
+
+      - name: Syntax-check every playbook
+        run: |
+          status=0
+          for pb in playbooks/*.yml playbooks/*/*.yml; do
+            echo "::group::$pb"
+            ansible-playbook --syntax-check "$pb" || status=1
+            echo "::endgroup::"
+          done
+          exit $status

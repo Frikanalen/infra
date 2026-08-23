@@ -1,7 +1,8 @@
+---
 - name: Install resolv.conf
   ansible.builtin.copy:
     dest: /etc/resolv.conf
-    mode: '0644'
+    mode: "0644"
     content: |
       search dc1.frikanalen.no frikanalen.no
       nameserver 192.168.3.2
@@ -29,7 +30,7 @@
 
 - name: Ensure bash is installed
   become: true
-  ansible.builtin.pkgng:
+  community.general.pkgng:
     name: bash
     state: present
   when: ansible_os_family == "FreeBSD"
@@ -41,7 +42,7 @@
     dest: /bin/bash
     owner: root
     group: wheel
-    mode: 0755
+    mode: "0755"
     state: link
     force: true
     follow: false
@@ -49,7 +50,7 @@
 
 - name: Ensure zsh is installed
   become: true
-  ansible.builtin.pkgng:
+  community.general.pkgng:
     name: zsh
     state: present
   when: ansible_os_family == "FreeBSD"
@@ -61,7 +62,7 @@
     dest: /bin/zsh
     owner: root
     group: wheel
-    mode: 0755
+    mode: "0755"
     state: link
     force: true
     follow: false

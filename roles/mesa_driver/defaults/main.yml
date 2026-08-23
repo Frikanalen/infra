@@ -1,3 +1,4 @@
+---
 # Software-rendering counterpart to the nvidia_driver role: an Xorg server
 # plus Mesa's llvmpipe software rasterizer, for CasparCG hosts with no GPU
 # passed through (see caspar_sw in inventory.yaml).

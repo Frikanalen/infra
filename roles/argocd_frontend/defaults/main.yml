@@ -22,6 +22,6 @@ argocd_frontend_values:
   ingress:
     className: "{{ frikanalen_public_ingress_class }}"
     hostname: "{{ frikanalen_domain }}"
-  
+
   image:
     tag: "{{ argocd_frontend_version }}"

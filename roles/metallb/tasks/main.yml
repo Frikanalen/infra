@@ -1,3 +1,4 @@
+---
 - name: Add MetalLB Helm repository
   kubernetes.core.helm_repository:
     name: metallb

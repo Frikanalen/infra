@@ -1,3 +1,4 @@
+---
 # List of NFS shares to mount. Each entry:
 #   src:  "host:/export/path"
 #   path: local mount point

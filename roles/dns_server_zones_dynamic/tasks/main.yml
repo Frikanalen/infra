@@ -1,5 +1,4 @@
 ---
-
 - name: Ensure zone directory exists with correct ownership
   become: true
   ansible.builtin.file:
@@ -34,8 +33,7 @@
   loop_control:
     label: "{{ item.path }}"
   when: (item.path | basename) not in dns_dynamic_expected_tsig_files
-  notify: reload named
-
+  notify: Reload named
 - name: Render TSIG key configuration
   become: true
   ansible.builtin.template:
@@ -48,8 +46,7 @@
   loop_control:
     label: "{{ item.name }}"
   no_log: true
-  notify: reload named
-
+  notify: Reload named
 - name: Render zone configuration
   become: true
   ansible.builtin.template:
@@ -58,8 +55,7 @@
     owner: bind
     group: bind
     mode: "0644"
-  notify: reload named
-
+  notify: Reload named
 - name: Render forward zone files
   become: true
   ansible.builtin.template:
@@ -68,9 +64,9 @@
     owner: bind
     group: bind
     mode: "0644"
-    force: no  # Don't overwrite if the zone has been updated dynamically
+    force: false # Don't overwrite if the zone has been updated dynamically
   loop: "{{ dns_dynamic_zones }}"
   loop_control:
     loop_var: zone
     label: "{{ zone.name }}"
-  notify: reload named
+  notify: Reload named

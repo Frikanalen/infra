@@ -1,3 +1,4 @@
+---
 - name: Check for an already-loaded NVIDIA driver
   ansible.builtin.command: nvidia-smi --query-gpu=driver_version --format=csv,noheader
   register: nvidia_smi_check
@@ -11,7 +12,10 @@
   register: nvidia_driver_install
   when: nvidia_smi_check.rc != 0
 
-- name: Reboot to load the new NVIDIA kernel module
+# noqa no-handler -- deliberately not a handler. Handlers run at the end of
+# the play; the verification task below has to see the new module, so the
+# reboot must happen here, in order.
+- name: Reboot to load the new NVIDIA kernel module # noqa no-handler
   ansible.builtin.reboot:
     reboot_timeout: 300
   when: nvidia_driver_install is changed

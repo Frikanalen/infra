@@ -31,6 +31,5 @@ argocd_chart_values:
       enabled: true
       serviceMonitor:
         enabled: "{{ k8s_monitoring_enabled }}"
-  # override in playbook if needed (e.g. `argocd_chart_values | combine(..., recursive=true)`)
+# override in playbook if needed (e.g. `argocd_chart_values | combine(..., recursive=true)`)
 argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
-

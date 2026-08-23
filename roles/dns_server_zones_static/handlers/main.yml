@@ -1,6 +1,5 @@
 ---
-
-- name: reload named
+- name: Reload named
   become: true
   ansible.builtin.service:
     name: named

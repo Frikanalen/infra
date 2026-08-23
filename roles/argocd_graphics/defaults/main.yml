@@ -22,6 +22,6 @@ argocd_graphics_values:
     hostname: "{{ frikanalen_domain }}"
     path: /graphics
     certResolver: letsencrypt
-  
+
   image:
     tag: "{{ argocd_graphics_version }}"

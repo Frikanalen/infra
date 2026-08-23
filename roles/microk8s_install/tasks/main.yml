@@ -1,3 +1,4 @@
+---
 # roles/microk8s_install/tasks/main.yml
 - name: Ensure snapd is installed
   ansible.builtin.apt:
@@ -57,6 +58,9 @@
 
 - name: Enable requested MicroK8s addons
   ansible.builtin.command: "microk8s enable {{ item }}"
+  # Guarded on the addon not already being enabled, so reaching this is a
+  # change.
+  changed_when: true
   loop: "{{ microk8s_addons }}"
   when: item not in microk8s_enabled_addons
   environment:

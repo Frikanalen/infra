@@ -35,7 +35,7 @@
     dest: "/etc/default/nodm"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
 
 - name: Render casparcg.config to /etc
@@ -44,9 +44,8 @@
     dest: "/etc/casparcg.config"
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
-
 
 - name: Ensure nodm service is started and enabled
   ansible.builtin.service:

@@ -1,2 +1,3 @@
+---
 local_ssd_mount_path: /mnt/localssd
 local_ssd_mount_fstype: ext4

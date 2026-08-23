@@ -40,4 +40,3 @@ traefik_internal_rfc2136_port: "53"
 traefik_internal_rfc2136_tsig_keyname: ""
 traefik_internal_rfc2136_tsig_algorithm: "hmac-sha256"
 traefik_internal_rfc2136_tsig_secret: ""
-

@@ -1,3 +1,4 @@
+---
 # Mount file01's live media archive read-only; see roles/nfs_client and
 # roles/nfs_server, and group_vars/storage.yml for the export side. caspar_hw
 # is the production hardware playout host, so it watches the real archive --

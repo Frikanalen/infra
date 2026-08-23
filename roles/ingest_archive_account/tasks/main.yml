@@ -115,13 +115,13 @@
         state: directory
         owner: "{{ ingest_archive_user }}"
         group: "{{ ingest_archive_user }}"
-        mode: '2775'
+        mode: "2775"
       when: not ingest_archive_dir_stat.stat.exists
 
     - name: Authorise the archive key
       # exclusive: the account exists only for ingest, so this drops any key
       # this role did not put there and makes rotation self-cleaning.
-      ansible.builtin.authorized_key:
+      ansible.posix.authorized_key:
         user: "{{ ingest_archive_user }}"
         key: "{{ ingest_archive_public_key }}"
         key_options: "{{ ingest_archive_key_options }}"

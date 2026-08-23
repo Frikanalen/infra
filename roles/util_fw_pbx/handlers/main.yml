@@ -1,3 +1,4 @@
 ---
-- name: reload pf
+- name: Reload pf
   ansible.builtin.command: pfctl -f /etc/pf.conf
+  changed_when: true

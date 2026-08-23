@@ -1,5 +1,4 @@
 ---
-galaxy_info:
-  role_name: k8s_python_deps
-  description: Python prerequisites for roles that use kubernetes.core on the target host.
+# Not a Galaxy role -- this only exists so the seven roles that use
+# kubernetes.core can depend on it and have it run once per play.
 dependencies: []

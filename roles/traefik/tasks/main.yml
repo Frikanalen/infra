@@ -76,7 +76,7 @@
         enabled: true
         isDefaultClass: true
         name: "{{ traefik_ingress_class }}"
-      
+
       ports:
         web:
           redirections:

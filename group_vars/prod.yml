@@ -68,4 +68,3 @@ helm_chart_versions:
   # CloudNativePG Helm chart version, not the operator's app version (chart
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"
-

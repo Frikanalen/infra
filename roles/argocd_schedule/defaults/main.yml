@@ -19,8 +19,8 @@ argocd_image_updater_enabled: false
 argocd_schedule_values:
   image:
     tag: "{{ argocd_schedule_version }}"
-  
+
   timezone: "{{ timezone_region }}"
-  
+
   database:
     secret: "{{ django_db_secret_name }}"

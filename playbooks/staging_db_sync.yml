@@ -1,3 +1,4 @@
+---
 #
 # Host-specific provisioning for dev-kube-1 (the staging cluster): a weekly
 # cron job that refreshes the staging Django database from production. See

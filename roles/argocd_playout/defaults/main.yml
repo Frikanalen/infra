@@ -20,7 +20,7 @@ argocd_playout_values:
   image:
     repository: "{{ argocd_playout_image_repository }}"
     tag: "{{ argocd_playout_version }}"
-  
+
   env:
     - name: USE_ORIGINAL
       value: "true"
@@ -30,7 +30,7 @@ argocd_playout_values:
       value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
     - name: GRAPHICS_URL
       value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/graphics/"
-  
+
   timezone:
     enabled: true
     path: "/usr/share/zoneinfo/{{ timezone_region }}"

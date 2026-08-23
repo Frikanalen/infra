@@ -36,6 +36,30 @@ definitions.
   and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
 
+## Development
+
+Install the collections this repo depends on:
+
+```sh
+ansible-galaxy collection install -r requirements.yml
+```
+
+Lint before pushing — CI runs the same two checks on every pull request:
+
+```sh
+ansible-lint
+for pb in playbooks/*.yml playbooks/*/*.yml; do ansible-playbook --syntax-check "$pb"; done
+```
+
+`.ansible-lint` sets the `production` profile and skips three rules, each
+with its reasoning in the file — chiefly `var-naming[no-role-prefix]`, which
+would fight the cross-role variable sharing this repo relies on.
+
+CI needs the vault password to parse anything at all, since `group_vars/all`
+is a symlink to `data/` and `data/vault.yml` is loaded for every host. Store
+it as a repository secret named `ANSIBLE_VAULT_PASSWORD` (Settings → Secrets
+and variables → Actions), matching `~/.vault_pass_frikanalen`.
+
 ## Common Playbooks
 
 ```sh

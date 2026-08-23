@@ -1,0 +1,28 @@
+---
+profile: production
+
+exclude_paths:
+  - .github/
+  - terraform/
+
+skip_list:
+  # var-naming[no-role-prefix] wants every variable a role defines to be
+  # prefixed with that role's name. That is right for a Galaxy role, and
+  # wrong here: variables are shared across roles on purpose. argocd_gitops
+  # and argocd_image_updater both read argocd_namespace; five roles that
+  # have nothing to do with Argo CD read argocd_kubeconfig; frikanalen_domain
+  # and app_versions are read by seven. Renaming them per-role would defeat
+  # the sharing, and 129 of the 177 findings in the first run were this one
+  # rule objecting to it.
+  #
+  # The other var-naming subrules stay on -- no-reserved in particular.
+  - var-naming[no-role-prefix]
+
+  # Roles here are internal to this repository and are never published, so
+  # they carry no galaxy_info and need no standalone README.
+  - meta-no-info
+  - meta-runtime
+
+# Rules that are warnings rather than failures.
+warn_list:
+  - experimental
