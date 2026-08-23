@@ -14,7 +14,8 @@
     cnpg_cluster_app_password: "{{ vault_prod_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_prod_django_postgres_super_password }}"
   roles:
-    - argocd_django
+    - role: argocd_django
+      tags: [django]
     # Waits for ArgoCD to sync the Kubegres resource argocd_django just
     # declared, then patches on the backup config -- must follow
     # argocd_django directly, not just be somewhere after it.
