@@ -14,6 +14,13 @@ argocd_django_image_repository: ghcr.io/frikanalen/django-api
 # Version - controls both repo revision and image tag
 argocd_django_version: "{{ app_versions.django | default('staging') }}"
 
+# Prometheus scrape of django-prometheus's /metrics, via the ServiceMonitor
+# in templates/servicemonitor.yml.j2. The port is the Django container's own
+# (the nginx sidecar on 80 only serves collected static files).
+argocd_django_metrics_port: "8080"
+argocd_django_metrics_interval: "30s"
+argocd_django_metrics_scrape_timeout: "10s"
+
 # Set true (e.g. in group_vars/staging.yml) to have Argo CD Image Updater
 # track new pushes to the argocd_django_version tag and roll the deployment.
 argocd_image_updater_enabled: false
@@ -38,7 +45,14 @@ argocd_django_values:
       tag: "{{ argocd_django_version }}"
 
   env:
-    ALLOWED_HOSTS: "{{ frikanalen_domain }}"
+    # .pod.cluster.local is what makes the Prometheus scrape work: Django
+    # rejects any Host it does not recognise with a 400 before routing, and
+    # the ServiceMonitor addresses the pod by its CoreDNS pod-zone name
+    # rather than its bare IP precisely so this one suffix entry is enough.
+    # A leading dot is Django's subdomain wildcard, so this admits
+    # <ip-with-dashes>.<namespace>.pod.cluster.local and nothing outside the
+    # cluster. See roles/argocd_django/templates/servicemonitor.yml.j2.
+    ALLOWED_HOSTS: "{{ frikanalen_domain }},.pod.cluster.local"
     CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
     # Handed to the frontend as a video's uploadUrl. Must resolve to the tusd
     # ingress that roles/argocd_ingest creates.

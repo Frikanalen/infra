@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ argocd_django_app_name }}
+  namespace: {{ argocd_django_namespace }}
+  labels:
+    app: {{ argocd_django_app_name }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ argocd_django_app_name }}
+  namespaceSelector:
+    matchNames:
+      - {{ argocd_django_namespace }}
+  endpoints:
+    # django-prometheus serves /metrics from Django itself (fkweb/urls.py
+    # includes django_prometheus.urls), so this is the app port, not the nginx
+    # sidecar's static port. The Ingress does not route /metrics, so the
+    # endpoint is cluster-internal only.
+    - port: http-api
+      path: /metrics
+      interval: {{ argocd_django_metrics_interval }}
+      scrapeTimeout: {{ argocd_django_metrics_scrape_timeout }}
+      relabelings:
+        # Django validates the Host header against ALLOWED_HOSTS before any
+        # URL routing, so a scrape addressed to the bare pod IP gets a 400
+        # and never reaches /metrics. Prometheus sends __address__ as the
+        # Host header, and CoreDNS resolves per-pod names in the
+        # <ip-with-dashes>.<namespace>.pod.cluster.local zone ("pods insecure"
+        # in the microk8s Corefile), so rewriting the address to that name
+        # keeps the scrape pointed at this exact pod while giving Django a
+        # host it can match -- see the .pod.cluster.local entry in
+        # argocd_django_values.env.ALLOWED_HOSTS. The alternative is
+        # ALLOWED_HOSTS: "*", which switches host validation off for every
+        # request, not just the scrape.
+        - sourceLabels: [__meta_kubernetes_pod_ip, __meta_kubernetes_namespace]
+          separator: ";"
+          regex: (\d+)\.(\d+)\.(\d+)\.(\d+);(.+)
+          replacement: $1-$2-$3-$4.$5.pod.cluster.local:{{ argocd_django_metrics_port }}
+          targetLabel: __address__
