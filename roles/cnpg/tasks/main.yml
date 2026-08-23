@@ -40,17 +40,12 @@
     wait: true
     values:
       monitoring:
+        # Scrapes the operator's own controller-manager metrics, not the
+        # Postgres instances -- see roles/cnpg_cluster's
+        # spec.monitoring.enablePodMonitor for that. Picked up by Prometheus
+        # regardless of label thanks to roles/kube_prometheus_stack's
+        # podMonitorSelectorNilUsesHelmValues: false.
         podMonitorEnabled: true
-        # kube-prometheus-stack's Prometheus only has
-        # podMonitorSelectorNilUsesHelmValues left at its chart default
-        # (true), which pins its podMonitorSelector to
-        # matchLabels: {release: <that chart's Helm release name>} --
-        # roles/kube_prometheus_stack installs it as "kube-prometheus-stack".
-        # Without this label, Prometheus's selector never matches CNPG's
-        # PodMonitor and no cnpg_* metrics ever reach it, even though
-        # podMonitorEnabled above did create the PodMonitor object.
-        podMonitorAdditionalLabels:
-          release: kube-prometheus-stack
         grafanaDashboard:
           create: true
   become: false
