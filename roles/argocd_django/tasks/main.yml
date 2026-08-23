@@ -10,6 +10,9 @@
 
 - name: Create Postgres passwords secret
   become: yes
+  # Renders four vault passwords into stringData, one of them twice (it is
+  # also embedded in DATABASE_URL).
+  no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'postgres-secret.yml.j2') }}"
     state: present
