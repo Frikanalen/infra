@@ -1,0 +1,5 @@
+---
+galaxy_info:
+  role_name: k8s_python_deps
+  description: Python prerequisites for roles that use kubernetes.core on the target host.
+dependencies: []
