@@ -67,6 +67,19 @@
             - hosts:
                 - "{{ kube_prometheus_stack_grafana_hostname }}"
       prometheus:
+        prometheusSpec:
+          # Chart default (true) pins podMonitorSelector/serviceMonitorSelector
+          # to matchLabels: {release: kube-prometheus-stack} -- this chart's
+          # own Helm release name -- so only PodMonitors/ServiceMonitors
+          # carrying that exact label get scraped. That excludes anything
+          # created by another operator's own chart (e.g. roles/cnpg's
+          # CloudNativePG PodMonitor, and the per-Cluster PodMonitor the CNPG
+          # operator creates for spec.monitoring.enablePodMonitor -- which
+          # hard-codes its own labels with no way to add this one). Setting
+          # these false makes Prometheus select every PodMonitor/ServiceMonitor
+          # in the cluster instead, regardless of label.
+          podMonitorSelectorNilUsesHelmValues: false
+          serviceMonitorSelectorNilUsesHelmValues: false
         ingress:
           enabled: true
           ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"
