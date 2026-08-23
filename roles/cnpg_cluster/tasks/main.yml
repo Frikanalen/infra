@@ -6,7 +6,7 @@
     kind: Namespace
     name: "{{ cnpg_cluster_namespace }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create app user secret
   become: true
@@ -14,7 +14,7 @@
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'app-secret.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create superuser secret
   become: true
@@ -22,11 +22,11 @@
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'superuser-secret.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy CloudNativePG Cluster
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'cluster.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"

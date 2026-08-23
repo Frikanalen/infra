@@ -2,7 +2,6 @@
 # defaults for argocd_ingest role
 
 # Kubernetes config
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # Ingest app settings
 argocd_ingest_app_name: ingest

@@ -6,32 +6,32 @@
     kind: Namespace
     name: "{{ media_server_namespace }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy media-server nginx config
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'configmap.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy media-server Deployment
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'deployment.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy media-server Service
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy media-server Ingress
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'ingress.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"

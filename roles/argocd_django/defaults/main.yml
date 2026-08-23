@@ -2,7 +2,6 @@
 # defaults for argocd_django role
 
 # Kubernetes config
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # Django app settings
 argocd_django_app_name: django-api

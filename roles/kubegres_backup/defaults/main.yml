@@ -10,7 +10,6 @@
 # roles/media_server already uses for the media archive, just wrapped in a
 # PV/PVC because that's what spec.backup.pvcName requires.
 
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 kubegres_backup_namespace: "{{ frikanalen_app_namespace }}"
 

@@ -10,7 +10,6 @@
 # DATABASE_URL over later is just a hostname change, not a credential
 # rotation. Data migration itself is manual and out of scope for this role.
 
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 cnpg_cluster_namespace: "{{ frikanalen_app_namespace }}"
 cnpg_cluster_name: pgcluster

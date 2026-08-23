@@ -23,7 +23,7 @@
     kind: Namespace
     name: "{{ argocd_ingest_namespace }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create Django API credentials secret
   become: true
@@ -31,19 +31,19 @@
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'api-secret.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy Ingest via ArgoCD Application
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'application.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy Ingest Argo CD Image Updater tracking
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'image-updater.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
   when: argocd_image_updater_enabled | bool

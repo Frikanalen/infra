@@ -17,3 +17,10 @@
 # that gains kube_prometheus_stack. It also gates the Grafana dashboard
 # ConfigMaps, which are inert without a Grafana to read them.
 k8s_monitoring_enabled: false
+
+# Where roles that talk to the cluster find their credentials. One definition
+# rather than the eleven that used to carry this literal path around: it was
+# called argocd_kubeconfig, and five of the roles reading it -- cnpg_cluster,
+# ingest_archive_account, junos_exporter, kubegres_backup, media_server --
+# have nothing to do with Argo CD.
+k8s_kubeconfig: /var/snap/microk8s/current/credentials/client.config

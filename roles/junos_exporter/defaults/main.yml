@@ -8,7 +8,6 @@
 # environment", ...) with "| display xml", so this needs a real login user on
 # fksw -- see this role's README for the switch-side configuration.
 
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # Lives with the rest of the monitoring stack so the ServiceMonitor below and
 # roles/kube_prometheus_stack's Prometheus are in one namespace.

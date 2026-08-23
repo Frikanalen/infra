@@ -5,7 +5,7 @@
     repo_name: "{{ argocd_chart_repo_name }}"
     repo_url: "{{ argocd_chart_repo_url }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Install or upgrade Argo CD via Helm
   become: true
@@ -18,14 +18,14 @@
     values: "{{ argocd_chart_values }}"
     update_repo_cache: true
     wait: true
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
 
 - name: Create Argo CD Grafana dashboard ConfigMap
   become: true
   kubernetes.core.k8s:
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
     definition:
       apiVersion: v1
       kind: ConfigMap

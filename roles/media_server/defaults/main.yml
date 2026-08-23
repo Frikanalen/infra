@@ -7,7 +7,6 @@
 # archive export -- see group_vars/prod.yml and group_vars/staging.yml, and
 # group_vars/storage.yml for the export side.
 
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 media_server_namespace: "{{ frikanalen_app_namespace }}"
 media_server_replicas: 2
