@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: d9036-exporter
+  namespace: {{ d9036_exporter_namespace }}
+  labels:
+    app: d9036-exporter
+    # Lifted onto the scraped series by the ServiceMonitor's targetLabels, so
+    # the dashboard can name the encoder rather than show a pod IP.
+    device: {{ d9036_exporter_device_name }}
+spec:
+  selector:
+    app: d9036-exporter
+  ports:
+    - name: metrics
+      port: {{ d9036_exporter_port }}
+      targetPort: metrics

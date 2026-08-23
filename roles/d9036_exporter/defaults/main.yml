@@ -1,0 +1,68 @@
+---
+# defaults for d9036_exporter role
+#
+# Scrapes the Cisco D9036 Modular Encoding Platform -- the box that turns the
+# playout SDI feed into the transport stream -- and feeds it to the Prometheus
+# installed by roles/kube_prometheus_stack.
+#
+# The exporter is github.com/Frikanalen/d9036_exporter, written here rather
+# than found upstream: the D9036's only machine interfaces are an EMI XML
+# endpoint and a web-to-IIOP bridge that answers in omniORB's Python
+# repr syntax, and nothing off the shelf speaks either.
+
+argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+
+# Same namespace as the rest of the monitoring stack, for the same reason as
+# roles/junos_exporter: the ServiceMonitor below and kube_prometheus_stack's
+# Prometheus want to be in one place. Literal rather than a reference to
+# kube_prometheus_stack_namespace -- role defaults are not in scope across
+# roles.
+d9036_exporter_namespace: monitoring
+
+d9036_exporter_image_repository: ghcr.io/frikanalen/d9036_exporter
+# Pinned to a commit build rather than :latest. There is no semver tag yet --
+# release-please's first release PR (0.1.0) is still open -- so this is the
+# sha- tag from the newest main build. Move it to "v0.1.0" once that PR
+# merges and the tagged image exists.
+d9036_exporter_image_tag: "sha-7cbc18e"
+# Empty because the GHCR package is public, like every other
+# ghcr.io/frikanalen image this repo pulls -- it did not start out that way,
+# since the repository behind it is private and GHCR inherits that. If it goes
+# back to private, set this to the name of a kubernetes.io/dockerconfigjson
+# Secret in {{ d9036_exporter_namespace }}. See this role's README.
+d9036_exporter_image_pull_secret: ""
+
+# The encoder. enc-sec-mgmt in data/hosts.yml -- "Secondary D9036 mgmt MAIN",
+# hanging off fksw ge-0/0/32. Plain HTTP: the appliance's certificate story
+# predates anything a modern client will accept, and this is a management
+# VLAN. See the security note in the exporter's README.
+d9036_exporter_target: "http://{{ host_config['enc-sec-mgmt'].ip_cidr.split('/')[0] }}"
+
+# The appliance's automation account. Read-only as far as this exporter is
+# concerned -- the exporter hardcodes an allowlist of read-only IIOP methods --
+# but note that the D9036's iiop bridge evaluates its arguments as Python, so
+# this credential is worth treating as privileged even so.
+d9036_exporter_username: Api
+
+# Copied onto every series as the "device" label, via a label on the Service
+# and targetLabels on the ServiceMonitor. Without it the only thing telling
+# two encoders apart in Grafana would be the exporter pod's IP, which changes
+# every time the pod restarts.
+d9036_exporter_device_name: enc-sec-mgmt
+d9036_exporter_password: "{{ vault_d9036_exporter_password }}"
+
+d9036_exporter_secret_name: d9036-exporter-credentials
+d9036_exporter_port: 9816
+
+# Per-request and whole-collection timeouts handed to the exporter. A
+# collection is a series of synchronous HTTP round trips to a controller card
+# that thinks about each one; measured at ~3s in total, so 25s is slack rather
+# than an estimate.
+d9036_exporter_request_timeout: 10s
+d9036_exporter_collection_timeout: 25s
+
+# Scrape pacing. Every scrape hits the appliance -- the collector serialises
+# them, so a shorter interval than the collection takes would simply queue --
+# and card inventory, alarm state and NTP offsets are none of them fast-moving.
+d9036_exporter_scrape_interval: 60s
+d9036_exporter_scrape_timeout: 30s

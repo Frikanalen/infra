@@ -1,0 +1,63 @@
+---
+# Deploys d9036_exporter against the secondary D9036 and points
+# roles/kube_prometheus_stack's Prometheus at it.
+
+- name: Verify the D9036 automation password is in the vault
+  # Fails here with something actionable rather than several tasks later with
+  # a Jinja undefined-variable error.
+  ansible.builtin.assert:
+    that:
+      - vault_d9036_exporter_password is defined
+      - vault_d9036_exporter_password | length > 0
+    fail_msg: >-
+      vault_d9036_exporter_password is not in data/vault.yml. Add the D9036
+      automation account's password with `ansible-vault edit data/vault.yml`.
+
+- name: Ensure the monitoring namespace exists
+  # kube_prometheus_stack creates this, but this role does not depend on
+  # having run after it in the same play.
+  become: yes
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ d9036_exporter_namespace }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the D9036 automation credential
+  become: yes
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the d9036_exporter Deployment
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'deployment.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the d9036_exporter Service
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'service.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the d9036_exporter Grafana dashboard
+  # Picked up by the Grafana sidecar via the grafana_dashboard label rather
+  # than by anything here talking to Grafana -- see the template.
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+
+- name: Deploy the d9036_exporter ServiceMonitor
+  become: yes
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"

@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: d9036-exporter
+  namespace: {{ d9036_exporter_namespace }}
+  labels:
+    app: d9036-exporter
+spec:
+  # Deliberately one. The collector serialises its own scrapes so that
+  # overlapping ones cannot burst requests at the appliance, and a second
+  # replica would defeat that from outside as well as double every series.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: d9036-exporter
+  template:
+    metadata:
+      labels:
+        app: d9036-exporter
+      annotations:
+        # Rolls the pod when the credential changes -- the Deployment does not
+        # otherwise watch the Secret it mounts. Hashed, never rendered.
+        checksum/credentials: "{{ d9036_exporter_password | hash('sha256') }}"
+    spec:
+{% if d9036_exporter_image_pull_secret %}
+      imagePullSecrets:
+        - name: {{ d9036_exporter_image_pull_secret }}
+{% endif %}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        # Makes the mounted password readable by the user the container runs
+        # as; a Secret volume is otherwise root-owned.
+        fsGroup: 65532
+      containers:
+        - name: d9036-exporter
+          image: "{{ d9036_exporter_image_repository }}:{{ d9036_exporter_image_tag }}"
+          args:
+            - "--d9036.url={{ d9036_exporter_target }}"
+            - "--d9036.username={{ d9036_exporter_username }}"
+            - "--d9036.password-file=/var/run/secrets/d9036/password"
+            - "--d9036.timeout={{ d9036_exporter_request_timeout }}"
+            - "--d9036.scrape-timeout={{ d9036_exporter_collection_timeout }}"
+            - "--web.listen-address=:{{ d9036_exporter_port }}"
+          ports:
+            - name: metrics
+              containerPort: {{ d9036_exporter_port }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          # /healthz, not /metrics: the exporter answers /healthz from the
+          # process alone, while every /metrics request goes and talks to the
+          # encoder. Probing the latter would double the load on it.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            initialDelaySeconds: 30
+          volumeMounts:
+            - name: credentials
+              mountPath: /var/run/secrets/d9036
+              readOnly: true
+      volumes:
+        - name: credentials
+          secret:
+            secretName: {{ d9036_exporter_secret_name }}
+            items:
+              - key: password
+                path: password
+            # 0440 rather than 0400: fsGroup above is what makes it readable,
+            # and the group bit is the half that does it.
+            defaultMode: 0440

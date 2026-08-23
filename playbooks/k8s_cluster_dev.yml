@@ -64,6 +64,11 @@
     # only a human can configure -- see roles/junos_exporter/README.md.
     - role: junos_exporter
       tags: [junos_exporter]
+    # Scrapes the secondary Cisco D9036, the encoder between playout and the
+    # transport stream. Needs the appliance's automation password in the
+    # vault -- see roles/d9036_exporter/README.md.
+    - role: d9036_exporter
+      tags: [d9036_exporter]
     - kubegres
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see
