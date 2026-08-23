@@ -35,6 +35,18 @@
     release_namespace: "{{ metallb_namespace }}"
     create_namespace: true
     wait: true
+    values:
+      prometheus:
+        # kube-prometheus-stack's Prometheus already has a ClusterRole/
+        # ClusterRoleBinding covering endpoints/services/pods across all
+        # namespaces, so this chart's own namespace-scoped Role/RoleBinding
+        # (rbacPrometheus, on by default) is redundant -- and it hard-requires
+        # prometheus.serviceAccount/namespace to be set when serviceMonitor.
+        # enabled is true, which would otherwise tie this role to
+        # kube-prometheus-stack's exact release naming.
+        rbacPrometheus: false
+        serviceMonitor:
+          enabled: true
   become: false
   run_once: true
 
@@ -48,6 +60,22 @@
       type: Available
       status: "True"
     wait_timeout: 120
+  become: false
+  run_once: true
+
+- name: Create MetalLB Grafana dashboard ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: metallb-grafana-dashboard
+        namespace: "{{ metallb_namespace }}"
+        labels:
+          grafana_dashboard: "1"
+      data:
+        metallb-dashboard.json: "{{ lookup('file', 'metallb-dashboard.json') }}"
   become: false
   run_once: true
 

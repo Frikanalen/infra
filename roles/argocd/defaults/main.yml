@@ -7,6 +7,27 @@ argocd_chart_repo_name: argo
 argocd_chart_repo_url: https://argoproj.github.io/argo-helm
 argocd_chart_name: argo/argo-cd
 argocd_chart_version: "{{ helm_chart_versions.argocd }}"
-argocd_chart_values: {}             # override in playbook if needed
+argocd_chart_values:
+  server:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  controller:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  repoServer:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  applicationSet:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+  # override in playbook if needed (e.g. `argocd_chart_values | combine(..., recursive=true)`)
 argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
