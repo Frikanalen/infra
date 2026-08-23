@@ -21,3 +21,19 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
     state: present
 
+- name: Create Argo CD Grafana dashboard ConfigMap
+  become: yes
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ argocd_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-grafana-dashboard
+        namespace: "{{ argocd_namespace }}"
+        labels:
+          grafana_dashboard: "1"
+      data:
+        argocd-dashboard.json: "{{ lookup('file', 'argocd-dashboard.json') }}"
+
