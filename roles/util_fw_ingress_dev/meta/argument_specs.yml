@@ -1,0 +1,36 @@
+---
+argument_specs:
+  main:
+    short_description: pf redirects for the dev/staging cluster ingress
+    options:
+      dev_ingress_ext_ip:
+        type: str
+        required: true
+        description: Public address traffic arrives on.
+      dev_ingress_web_int_ip:
+        type: str
+        required: true
+        description: >-
+          Internal address of the cluster's web ingress -- Traefik's
+          LoadBalancer IP (traefik_loadbalancer_ip in k8s_platform_dev.yml).
+      dev_ingress_live_int_ip:
+        type: str
+        required: true
+        description: >-
+          Internal address of the live stream ingest
+          (argocd_stream_cubemap_ip in group_vars/staging.yml).
+      fw_int_if:
+        type: str
+        required: false
+        default: vtnet0
+        description: Internal interface on the utility host.
+      fw_ext_if:
+        type: str
+        required: false
+        default: vtnet1
+        description: External interface on the utility host.
+      fw_lan_net:
+        type: str
+        required: false
+        default: 192.168.3.0/24
+        description: Internal network, in CIDR form.

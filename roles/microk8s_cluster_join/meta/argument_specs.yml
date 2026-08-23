@@ -1,0 +1,12 @@
+---
+argument_specs:
+  main:
+    short_description: Join a node to an existing MicroK8s cluster
+    options:
+      microk8s_seed_host:
+        type: str
+        required: true
+        description: >-
+          Inventory hostname of the seed. Read via hostvars for the join
+          token and the pending-member list the seed play worked out, so it
+          must be a host in the same run, not a group or an address.
