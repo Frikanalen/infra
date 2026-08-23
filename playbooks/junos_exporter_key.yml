@@ -1,0 +1,176 @@
+---
+# Generates junos_exporter's SSH credential for fksw and stores the private
+# half in data/vault.yml.
+#
+#   ansible-playbook playbooks/junos_exporter_key.yml
+#
+# Run once, by hand. It is not part of any cluster playbook: the public half
+# it prints has to be pasted into fksw's configuration by a human, because
+# Ansible has no login on the switch to push it with. roles/junos_exporter
+# consumes the private half from the vault on every run after that.
+#
+# Refuses to overwrite an existing key. To rotate, remove both
+# vault_junos_exporter_ssh_* vars with `ansible-vault edit data/vault.yml`,
+# re-run this, and replace the key on the switch -- in that order, since the
+# switch keeps working on the old key until you replace it.
+
+- name: Generate junos_exporter's SSH credential for fksw
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    junos_exporter_repo_root: "{{ playbook_dir | dirname }}"
+    junos_exporter_vault_file: "{{ junos_exporter_repo_root }}/data/vault.yml"
+    junos_exporter_ssh_user: junos_exporter
+    # Not "junos-exporter-ro": Junos reserves the junos- prefix for its own
+    # system-defined classes and rejects the name. The user keeps its name --
+    # the reservation is on the hyphen form, not the underscore one.
+    junos_exporter_login_class: exporter-ro
+    # RSA, not ed25519: "authentication ssh-ed25519" only exists from Junos
+    # 15.1, and fksw is EX-class hardware old enough that assuming it is
+    # unwise. If fksw turns out to be newer, change this and
+    # junos_exporter_ssh_key_filename in roles/junos_exporter/defaults.
+    junos_exporter_key_type: rsa
+    junos_exporter_key_bits: 4096
+    junos_exporter_key_comment: "junos_exporter@frikanalen"
+
+  tasks:
+    # Read the vault explicitly rather than relying on group_vars: the
+    # implicit localhost does not pick group_vars/all up.
+    - name: Read the current vault
+      ansible.builtin.include_vars:
+        file: "{{ junos_exporter_vault_file }}"
+        name: junos_exporter_vault_contents
+
+    - name: Refuse to overwrite an existing key
+      ansible.builtin.assert:
+        that:
+          - "'vault_junos_exporter_ssh_private_key' not in junos_exporter_vault_contents"
+        fail_msg: >-
+          data/vault.yml already holds vault_junos_exporter_ssh_private_key.
+          Generating a new one here would strand the key currently authorised
+          on fksw. To rotate deliberately, remove both
+          vault_junos_exporter_ssh_* vars with
+          `ansible-vault edit data/vault.yml` and run this again.
+
+    - name: Generate the keypair and store it in the vault
+      block:
+        - name: Create a temporary directory for key generation
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: junos-exporter-key
+          register: junos_exporter_keydir
+
+        - name: Generate the keypair
+          # No passphrase: nothing can type one in when the pod starts, and
+          # -ssh.keyPassphrase would only move the secret, not remove it.
+          ansible.builtin.command:
+            argv:
+              - ssh-keygen
+              - -t
+              - "{{ junos_exporter_key_type }}"
+              - -b
+              - "{{ junos_exporter_key_bits }}"
+              - -N
+              - ""
+              - -C
+              - "{{ junos_exporter_key_comment }}"
+              - -f
+              - "{{ junos_exporter_keydir.path }}/id_key"
+          changed_when: true
+
+        - name: Read the generated keypair
+          ansible.builtin.slurp:
+            src: "{{ junos_exporter_keydir.path }}/{{ item }}"
+          loop:
+            - id_key
+            - id_key.pub
+          register: junos_exporter_generated
+          no_log: true
+
+        - name: Hold the generated key material
+          no_log: true
+          ansible.builtin.set_fact:
+            junos_exporter_generated_private_key: "{{ junos_exporter_generated.results[0].content | b64decode }}"
+            junos_exporter_generated_public_key: "{{ junos_exporter_generated.results[1].content | b64decode }}"
+
+        # Decrypted to a file under the same temporary directory as the key,
+        # so the "always" below removes both together whatever happens next.
+        - name: Decrypt the vault
+          ansible.builtin.command:
+            argv:
+              - ansible-vault
+              - decrypt
+              - "--output={{ junos_exporter_keydir.path }}/vault-plain.yml"
+              - "{{ junos_exporter_vault_file }}"
+            chdir: "{{ junos_exporter_repo_root }}"
+          changed_when: true
+
+        - name: Read the decrypted vault
+          ansible.builtin.slurp:
+            src: "{{ junos_exporter_keydir.path }}/vault-plain.yml"
+          register: junos_exporter_vault_plain
+          no_log: true
+
+        - name: Append the credential to the decrypted vault
+          no_log: true
+          ansible.builtin.copy:
+            content: >-
+              {{ (junos_exporter_vault_plain.content | b64decode)
+                 ~ lookup('template', 'templates/junos_exporter_vault_block.j2') }}
+            dest: "{{ junos_exporter_keydir.path }}/vault-plain.yml"
+            mode: "0600"
+
+        - name: Re-encrypt the vault
+          ansible.builtin.command:
+            argv:
+              - ansible-vault
+              - encrypt
+              - "--output={{ junos_exporter_keydir.path }}/vault-sealed.yml"
+              - "{{ junos_exporter_keydir.path }}/vault-plain.yml"
+            chdir: "{{ junos_exporter_repo_root }}"
+          changed_when: true
+
+        # Proves the re-encrypted file decrypts and parses, and that the key
+        # survived the round trip, before it replaces the real vault. A
+        # half-written data/vault.yml would take every other secret with it.
+        - name: Verify the re-encrypted vault round-trips
+          ansible.builtin.include_vars:
+            file: "{{ junos_exporter_keydir.path }}/vault-sealed.yml"
+            name: junos_exporter_vault_verify
+
+        - name: Check the verified vault kept every secret
+          ansible.builtin.assert:
+            that:
+              - junos_exporter_vault_verify.vault_junos_exporter_ssh_private_key | trim
+                == junos_exporter_generated_private_key | trim
+              - junos_exporter_vault_verify.keys() | list
+                | difference(junos_exporter_vault_contents.keys() | list)
+                | sort == ['vault_junos_exporter_ssh_private_key', 'vault_junos_exporter_ssh_public_key']
+            fail_msg: >-
+              The re-encrypted vault did not round-trip as expected.
+              data/vault.yml has been left untouched.
+
+        - name: Install the re-encrypted vault
+          ansible.builtin.copy:
+            src: "{{ junos_exporter_keydir.path }}/vault-sealed.yml"
+            dest: "{{ junos_exporter_vault_file }}"
+            mode: "0664"
+            remote_src: true
+
+      always:
+        - name: Remove the generated key material and decrypted vault from disk
+          ansible.builtin.file:
+            path: "{{ junos_exporter_keydir.path }}"
+            state: absent
+          when: junos_exporter_keydir.path is defined
+
+    - name: Show what to configure on fksw
+      ansible.builtin.debug:
+        msg:
+          - "Key stored in data/vault.yml -- commit it."
+          - "Now paste this into fksw. The login class it refers to is in"
+          - "roles/junos_exporter/README.md and has to exist first:"
+          - ""
+          - "  set system login user {{ junos_exporter_ssh_user }} class {{ junos_exporter_login_class }}"
+          - "  set system login user {{ junos_exporter_ssh_user }} authentication ssh-rsa \"{{ junos_exporter_generated_public_key | trim }}\""

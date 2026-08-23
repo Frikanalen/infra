@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: junos-exporter
+  namespace: {{ junos_exporter_namespace }}
+  labels:
+    app: junos-exporter
+spec:
+  # Deliberately one. Each replica holds its own persistent SSH session to
+  # fksw (see -ssh.expire-timeout), and a switch's routing engine is not the
+  # place to put avoidable load. Prometheus would also scrape both and
+  # double every series.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: junos-exporter
+  template:
+    metadata:
+      labels:
+        app: junos-exporter
+      annotations:
+        # Rolls the pod when the feature list or the key changes -- the
+        # Deployment doesn't otherwise watch the ConfigMap and Secret it
+        # mounts. The key is hashed, never rendered into the annotation.
+        checksum/config: "{{ lookup('template', 'configmap.yml.j2') | hash('sha256') }}"
+        checksum/ssh-key: "{{ junos_exporter_ssh_private_key | hash('sha256') }}"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        # Makes the mounted key group-readable by the user the container runs
+        # as; a Secret volume is otherwise root-owned and mode 0400 would
+        # leave it unreadable here.
+        fsGroup: 65534
+      containers:
+        - name: junos-exporter
+          image: "{{ junos_exporter_image_repository }}:{{ junos_exporter_image_tag }}"
+          # command as well as args, and both deliberately. The image sets no
+          # ENTRYPOINT -- its CMD is a shell-form line that interpolates
+          # SSH_KEYFILE/CONFIG_FILE/ALARM_FILTER/CMD_FLAGS environment
+          # variables. Supplying args alone therefore replaces the whole
+          # command rather than appending to it, and the kubelet tries to exec
+          # the first flag as the binary. Naming the binary here drops the
+          # env-var indirection entirely and puts every flag in one place.
+          command: ["/app/junos_exporter"]
+          args:
+            - "-config.file=/etc/junos-exporter/config.yml"
+            - "-ssh.keyfile=/etc/junos-exporter/ssh/{{ junos_exporter_ssh_key_filename }}"
+            - "-ssh.user={{ junos_exporter_ssh_user }}"
+            - "-web.listen-address=:{{ junos_exporter_port }}"
+          ports:
+            - name: metrics
+              containerPort: {{ junos_exporter_port }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          # /metrics is the only handler the exporter serves, and hitting it
+          # talks to the switch, so probing it would double the scrape load.
+          # A TCP check is enough to know the listener is up.
+          readinessProbe:
+            tcpSocket:
+              port: metrics
+          livenessProbe:
+            tcpSocket:
+              port: metrics
+            initialDelaySeconds: 30
+          volumeMounts:
+            - name: config
+              mountPath: /etc/junos-exporter/config.yml
+              subPath: config.yml
+              readOnly: true
+            - name: ssh-key
+              mountPath: /etc/junos-exporter/ssh
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: junos-exporter-config
+        - name: ssh-key
+          secret:
+            secretName: {{ junos_exporter_secret_name }}
+            # 0440 rather than 0400: fsGroup above is what makes it readable,
+            # and the group bit is the half that does it.
+            defaultMode: 0440
