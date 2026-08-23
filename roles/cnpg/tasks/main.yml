@@ -40,6 +40,11 @@
     wait: true
     values:
       monitoring:
+        # Scrapes the operator's own controller-manager metrics, not the
+        # Postgres instances -- see roles/cnpg_cluster's
+        # spec.monitoring.enablePodMonitor for that. Picked up by Prometheus
+        # regardless of label thanks to roles/kube_prometheus_stack's
+        # podMonitorSelectorNilUsesHelmValues: false.
         podMonitorEnabled: true
         grafanaDashboard:
           create: true
