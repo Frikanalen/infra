@@ -1,0 +1,21 @@
+---
+# Collections this repository depends on. Install with:
+#
+#   ansible-galaxy collection install -r requirements.yml
+#
+# Majors are capped rather than left open: kubernetes.core in particular
+# carries most of what this repo does (k8s, k8s_info, helm, helm_repository
+# across 71 tasks), and its major bumps have changed module behaviour before.
+collections:
+  # k8s, k8s_info, helm, helm_repository. 6.x is what this repo is developed
+  # and run against.
+  - name: kubernetes.core
+    version: ">=5.0.0,<7.0.0"
+
+  # filesystem (storage), snap (microk8s), sysrc (the FreeBSD util host).
+  - name: community.general
+    version: ">=8.0.0,<12.0.0"
+
+  # mount (nfs_client), sysctl.
+  - name: ansible.posix
+    version: ">=1.5.0,<3.0.0"
