@@ -69,6 +69,13 @@
     # vault -- see roles/d9036_exporter/README.md.
     - role: d9036_exporter
       tags: [d9036_exporter]
+    # Scrapes the node_exporters that playbooks/site.yml installs on file01
+    # and the Proxmox hypervisors -- hosts this cluster does not run and
+    # cannot discover, so their addresses are written out as a selectorless
+    # Service's Endpoints. Also ships their dashboards and alerting rules,
+    # including the ZFS ones for the media archive on file01.
+    - role: node_exporter_scrape
+      tags: [node_exporter]
     - kubegres
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see

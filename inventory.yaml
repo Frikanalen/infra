@@ -54,6 +54,17 @@ all:
       hosts:
         prod-kube-1:
 
+    # Hosts that get node_exporter installed on them by roles/node_exporter and
+    # scraped by roles/node_exporter_scrape. The Kubernetes nodes are absent on
+    # purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
+    # those, so this group is exactly the hosts that DaemonSet cannot reach.
+    # Read at both ends -- adding a host here installs the exporter and adds the
+    # Prometheus target in one go, provided it has an ip_cidr in data/hosts.yml.
+    node_exporter_hosts:
+      children:
+        proxmox:
+        storage:
+
 microk8s:
   children:
     kubeprod:

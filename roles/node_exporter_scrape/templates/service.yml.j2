@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ node_exporter_scrape_service_name }}
+  namespace: {{ node_exporter_scrape_namespace }}
+  labels:
+    app: {{ node_exporter_scrape_service_name }}
+    # Read by the ServiceMonitor's spec.jobLabel and turned into the targets'
+    # job label. Same mechanism, and same value, as the chart uses for its own
+    # node-exporter DaemonSet -- which is the point: sharing the job is what
+    # puts these hosts in the upstream mixin's dashboards and alerts.
+    jobLabel: {{ node_exporter_scrape_job }}
+    # Copied onto every target by the ServiceMonitor's targetLabels. The job
+    # label no longer separates these hosts from the kube nodes, so this does.
+    nodeclass: {{ node_exporter_scrape_nodeclass }}
+spec:
+  # No selector, and no cluster IP: this Service exists only to give the
+  # ServiceMonitor below something to select and to name the job. Its
+  # Endpoints are written by hand (see endpoints.yml.j2) because the things
+  # being scraped are not pods -- they are hosts outside the cluster
+  # altogether. A selector here would hand the Service to the endpoints
+  # controller, which would immediately delete those hand-written Endpoints.
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: {{ node_exporter_port }}
+      targetPort: {{ node_exporter_port }}
+      protocol: TCP

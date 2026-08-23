@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: {{ node_exporter_scrape_service_name }}
+  namespace: {{ node_exporter_scrape_namespace }}
+  labels:
+    app: {{ node_exporter_scrape_service_name }}
+subsets:
+  - addresses:
+{% for host in groups[node_exporter_scrape_group] | sort %}
+      # {{ host }}
+      - ip: {{ host_config[host].ip_cidr.split('/')[0] }}
+        # Carried through to __meta_kubernetes_endpoint_hostname, which the
+        # ServiceMonitor relabels into "instance". Without it every target
+        # would be an IP address, and reading a dashboard would mean keeping
+        # data/hosts.yml open next to it.
+        hostname: {{ host }}
+{% endfor %}
+    ports:
+      - name: metrics
+        port: {{ node_exporter_port }}
+        protocol: TCP

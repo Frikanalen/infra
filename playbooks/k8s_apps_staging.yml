@@ -13,7 +13,8 @@
     cnpg_cluster_app_password: "{{ vault_dev_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_dev_django_postgres_super_password }}"
   roles:
-    - argocd_django
+    - role: argocd_django
+      tags: [django]
     # Stands up the CloudNativePG "pgcluster" Cluster as a migration target
     # alongside the existing Kubegres database. Data migration itself is
     # manual; see roles/cnpg_cluster.
