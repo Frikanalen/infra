@@ -12,7 +12,7 @@
 # a single run of everything.
 
 - name: Install platform services on the kubeprod cluster
-  hosts: prod-kube-1
+  hosts: kubeprod_admin
   tags: [platform]
   vars:
     metallb_ingress_ip: "192.168.3.104/30"

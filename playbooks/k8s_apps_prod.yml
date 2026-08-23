@@ -7,7 +7,7 @@
 # Tags: apps (everything here), plus one per component. Versions come from
 # app_versions in group_vars/prod.yml.
 - name: Deploy applications to the production cluster
-  hosts: prod
+  hosts: kubeprod_admin
   tags: [apps]
   vars:
     argocd_django_db_super_password: "{{ vault_prod_django_postgres_super_password }}"

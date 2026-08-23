@@ -9,7 +9,7 @@
 # or deploying an app -- it's a recurring maintenance job that happens to
 # also need read access to prod's cluster.
 - name: Provision the staging database refresh cron job
-  hosts: staging
+  hosts: kubedev_admin
   become: true
   gather_facts: true
   roles:

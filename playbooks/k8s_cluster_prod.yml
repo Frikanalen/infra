@@ -9,7 +9,7 @@
 # Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs.
 
 - name: Seed the kubeprod cluster
-  hosts: prod-kube-1
+  hosts: kubeprod_admin
   become: true
   tags: [bootstrap, seed]
   vars:
@@ -18,7 +18,7 @@
     - microk8s_cluster_seed
 
 - name: Join the remaining kubeprod nodes
-  hosts: kubeprod:!prod-kube-1
+  hosts: kubeprod:!kubeprod_admin
   become: true
   tags: [bootstrap, join]
   vars:

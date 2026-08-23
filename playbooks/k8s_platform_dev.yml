@@ -11,7 +11,7 @@
 #   ansible-playbook playbooks/k8s_platform_dev.yml --skip-tags monitoring
 
 - name: Install platform services on the kubedev cluster
-  hosts: dev-kube-1
+  hosts: kubedev_admin
   tags: [platform]
   vars:
     metallb_ingress_ip: "192.168.3.90/30"

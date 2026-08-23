@@ -14,7 +14,7 @@
 # extend the cluster rather than "join" on its own.
 
 - name: Seed the kubedev cluster
-  hosts: dev-kube-1
+  hosts: kubedev_admin
   become: true
   tags: [bootstrap, seed]
   vars:
@@ -23,7 +23,7 @@
     - microk8s_cluster_seed
 
 - name: Join the remaining kubedev nodes
-  hosts: kubedev:!dev-kube-1
+  hosts: kubedev:!kubedev_admin
   become: true
   tags: [bootstrap, join]
   vars:

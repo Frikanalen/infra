@@ -7,7 +7,7 @@
 # Tags: apps (everything here), plus one per component. Versions come from
 # app_versions in group_vars/staging.yml.
 - name: Deploy applications to the staging cluster
-  hosts: staging
+  hosts: kubedev_admin
   tags: [apps]
   vars:
     argocd_django_db_super_password: "{{ vault_dev_django_postgres_super_password }}"
