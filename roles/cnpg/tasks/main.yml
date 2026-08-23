@@ -41,6 +41,16 @@
     values:
       monitoring:
         podMonitorEnabled: true
+        # kube-prometheus-stack's Prometheus only has
+        # podMonitorSelectorNilUsesHelmValues left at its chart default
+        # (true), which pins its podMonitorSelector to
+        # matchLabels: {release: <that chart's Helm release name>} --
+        # roles/kube_prometheus_stack installs it as "kube-prometheus-stack".
+        # Without this label, Prometheus's selector never matches CNPG's
+        # PodMonitor and no cnpg_* metrics ever reach it, even though
+        # podMonitorEnabled above did create the PodMonitor object.
+        podMonitorAdditionalLabels:
+          release: kube-prometheus-stack
         grafanaDashboard:
           create: true
   become: false
