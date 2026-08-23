@@ -40,12 +40,14 @@ argocd_stream_cubemap_ip: "192.168.3.91"
 # floating tag (see argocd_image_updater role and each argocd_* app role).
 argocd_image_updater_enabled: true
 
+# Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
   graphics: main
   playout: main
   frontend: main
   django: main
   stream: main
+  schedule: main
   ingest: main
 
 helm_chart_versions:

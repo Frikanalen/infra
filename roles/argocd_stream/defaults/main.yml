@@ -8,7 +8,7 @@ argocd_stream_repo_url: https://github.com/Frikanalen/live-stream-packager.git
 argocd_stream_repo_path: "."
 
 # Version - controls both repo revision and image tag
-argocd_stream_version: "{{ app_versions.stream | default('main') }}"
+argocd_stream_version: "{{ app_versions.stream }}"
 
 # When true, ffmpeg reads from the in-cluster cubemap UDP reflector
 # (fed by argocd_stream_cubemap_ip on the udp/5004 LoadBalancer). When

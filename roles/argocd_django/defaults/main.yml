@@ -12,7 +12,7 @@ argocd_django_repo_path: chart
 argocd_django_image_repository: ghcr.io/frikanalen/django-api
 
 # Version - controls both repo revision and image tag
-argocd_django_version: "{{ app_versions.django | default('staging') }}"
+argocd_django_version: "{{ app_versions.django }}"
 
 # Prometheus scrape of django-prometheus's /metrics, via the chart's own
 # ServiceMonitor (see argocd_django_values.monitoring below).
