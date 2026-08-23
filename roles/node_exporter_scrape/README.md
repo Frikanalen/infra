@@ -81,9 +81,14 @@ Two, in one ConfigMap, picked up by the Grafana sidecar via the
   `node_uname_info`, so it also works against the kube nodes' DaemonSet if you
   switch the job.
 - **ZFS** — pools, disks and vdevs with their error counters, capacity and
-  fragmentation, datasets, and the ARC. Panels are annotated with what a healthy
-  shape looks like, since most of these are numbers you only ever look at when
-  something is already wrong.
+  fragmentation, datasets, throughput, and the ARC. Panels are annotated with
+  what a healthy shape looks like, since most of these are numbers you only ever
+  look at when something is already wrong.
+
+Both make heavy use of table panels, whose Prometheus targets must carry
+`"format": "table"` (and `instant`). Without it the datasource returns a
+time-series frame, the label columns the `joinByField`/`organize` transforms
+expect are not there, and the panel renders an unhelpful "No data".
 
 Both are generated files. Edits made in Grafana's UI are overwritten on the next
 Ansible run.

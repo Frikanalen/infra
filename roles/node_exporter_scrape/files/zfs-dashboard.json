@@ -1,7 +1,7 @@
 {
   "title": "ZFS",
   "uid": "zfs-pools",
-  "description": "ZFS pools, disks and datasets -- principally file01, which holds the media archive. Pool, scrub, error and dataset numbers come from the textfile collector installed by roles/node_exporter; ARC and pool I/O come from node_exporter's built-in zfs collector. Provisioned by roles/node_exporter_scrape; edits made in the UI are overwritten on the next Ansible run.",
+  "description": "ZFS pools, disks and datasets -- principally file01, which holds the media archive. Everything here except the ARC comes from the textfile collector installed by roles/node_exporter; node_exporter's built-in zfs collector only sees the ARC, and its per-pool I/O series do not exist on OpenZFS 2.2 or newer. Provisioned by roles/node_exporter_scrape; edits made in the UI are overwritten on the next Ansible run.",
   "tags": [
     "zfs",
     "storage",
@@ -958,7 +958,8 @@
           "refId": "A",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -970,7 +971,8 @@
           "refId": "B",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -982,7 +984,8 @@
           "refId": "C",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -994,7 +997,8 @@
           "refId": "D",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1006,7 +1010,8 @@
           "refId": "E",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1018,7 +1023,8 @@
           "refId": "F",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1030,7 +1036,8 @@
           "refId": "G",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1042,7 +1049,8 @@
           "refId": "H",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1054,7 +1062,8 @@
           "refId": "I",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         }
       ],
       "options": {
@@ -1329,7 +1338,8 @@
           "refId": "A",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1341,7 +1351,8 @@
           "refId": "B",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1353,7 +1364,8 @@
           "refId": "C",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1365,7 +1377,8 @@
           "refId": "D",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         }
       ],
       "options": {
@@ -1997,7 +2010,8 @@
           "refId": "A",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -2009,7 +2023,8 @@
           "refId": "B",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -2021,7 +2036,8 @@
           "refId": "C",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -2033,7 +2049,8 @@
           "refId": "D",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -2045,7 +2062,8 @@
           "refId": "E",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         }
       ],
       "options": {
@@ -2326,7 +2344,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Pool read/write throughput",
+      "title": "Pool throughput",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -2387,11 +2405,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_zfs_zpool_nread{job=~\"$job\",instance=~\"$instance\"}[5m])",
+          "expr": "sum by(instance,pool) (rate(zfs_pool_read_bytes_total{instance=~\"$instance\",pool=~\"$pool\"}[5m]))",
           "refId": "A",
           "range": true,
           "instant": false,
-          "legendFormat": "{{instance}} {{zpool}} read"
+          "legendFormat": "{{instance}} {{pool}} read"
         },
         {
           "datasource": {
@@ -2399,11 +2417,11 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(node_zfs_zpool_nwritten{job=~\"$job\",instance=~\"$instance\"}[5m])",
+          "expr": "sum by(instance,pool) (rate(zfs_pool_written_bytes_total{instance=~\"$instance\",pool=~\"$pool\"}[5m]))",
           "refId": "B",
           "range": true,
           "instant": false,
-          "legendFormat": "{{instance}} {{zpool}} written"
+          "legendFormat": "{{instance}} {{pool}} written"
         }
       ],
       "options": {
@@ -2421,7 +2439,7 @@
           "sort": "desc"
         }
       },
-      "description": "From the per-pool io kstat. Some OpenZFS versions no longer publish that kstat, in which case this panel stays empty and the disk throughput panel on the Hosts dashboard is the thing to read instead."
+      "description": "Per-pool logical throughput, summed over the ARC and O_DIRECT paths. This comes from the textfile collector, not from node_exporter's zfs collector: that one reads the per-pool \"io\" kstat, which OpenZFS 2.2 removed in favour of \"iostats\", so its node_zfs_zpool_nread/nwritten series do not exist on a modern pool at all."
     },
     {
       "type": "timeseries",

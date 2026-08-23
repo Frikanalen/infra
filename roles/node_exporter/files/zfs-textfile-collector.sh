@@ -177,6 +177,46 @@ for pool in "${pools[@]:-}"; do
     done
 done
 
+# --- pool I/O ---------------------------------------------------------------
+#
+# node_exporter's own zfs collector publishes per-pool throughput from the
+# /proc/spl/kstat/zfs/<pool>/io kstat. OpenZFS 2.2 removed that file and
+# replaced it with "iostats", which the collector does not know about -- so on
+# anything modern node_zfs_zpool_nread and friends simply never appear. These
+# read the new file directly. When node_exporter learns about iostats, this
+# section becomes redundant and should go.
+#
+# arc and direct are the two paths a request can take (the ARC, or O_DIRECT
+# straight past it); they are kept as separate series rather than summed here,
+# because a workload switching between them is worth being able to see.
+
+emit '# HELP zfs_pool_read_bytes_total Bytes read from the pool, by I/O path.'
+emit '# TYPE zfs_pool_read_bytes_total counter'
+emit '# HELP zfs_pool_written_bytes_total Bytes written to the pool, by I/O path.'
+emit '# TYPE zfs_pool_written_bytes_total counter'
+emit '# HELP zfs_pool_reads_total Read requests served by the pool, by I/O path.'
+emit '# TYPE zfs_pool_reads_total counter'
+emit '# HELP zfs_pool_writes_total Write requests served by the pool, by I/O path.'
+emit '# TYPE zfs_pool_writes_total counter'
+
+for pool in "${pools[@]:-}"; do
+    [ -n "${pool}" ] || continue
+    n="$(esc "${pool}")"
+    kstat="/proc/spl/kstat/zfs/${pool}/iostats"
+    [ -r "${kstat}" ] || continue
+    # Lines are "name type value", after two header lines.
+    awk -v pool="${n}" '
+        $1 == "arc_read_bytes"     { printf "zfs_pool_read_bytes_total{pool=\"%s\",path=\"arc\"} %s\n", pool, $3 }
+        $1 == "direct_read_bytes"  { printf "zfs_pool_read_bytes_total{pool=\"%s\",path=\"direct\"} %s\n", pool, $3 }
+        $1 == "arc_write_bytes"    { printf "zfs_pool_written_bytes_total{pool=\"%s\",path=\"arc\"} %s\n", pool, $3 }
+        $1 == "direct_write_bytes" { printf "zfs_pool_written_bytes_total{pool=\"%s\",path=\"direct\"} %s\n", pool, $3 }
+        $1 == "arc_read_count"     { printf "zfs_pool_reads_total{pool=\"%s\",path=\"arc\"} %s\n", pool, $3 }
+        $1 == "direct_read_count"  { printf "zfs_pool_reads_total{pool=\"%s\",path=\"direct\"} %s\n", pool, $3 }
+        $1 == "arc_write_count"    { printf "zfs_pool_writes_total{pool=\"%s\",path=\"arc\"} %s\n", pool, $3 }
+        $1 == "direct_write_count" { printf "zfs_pool_writes_total{pool=\"%s\",path=\"direct\"} %s\n", pool, $3 }
+    ' "${kstat}" >>"${TMP}"
+done
+
 # --- datasets ---------------------------------------------------------------
 #
 # compressratio is deliberately absent: its parsable form has changed shape

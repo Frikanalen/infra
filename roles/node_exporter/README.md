@@ -33,11 +33,18 @@ So there is a systemd drop-in that clears `ExecStart` and re-forms it as
 "the disks are fine" is worth more than a guess.
 
 `node_exporter` has a built-in `zfs` collector and it is enabled — but all it
-can see is `/proc/spl/kstat/zfs`, which carries the ARC counters and per-pool
-I/O and nothing else. **Pool capacity, fragmentation, scrub history, per-disk
-error counters and per-dataset usage are not in kstat at all.** They exist only
-in the output of `zpool(8)` and `zfs(8)`. There is no collector flag that turns
-them on, because there is nothing there to turn on.
+can see is `/proc/spl/kstat/zfs`, which in practice means the ARC and little
+else. **Pool capacity, fragmentation, scrub history, per-disk error counters and
+per-dataset usage are not in kstat at all.** They exist only in the output of
+`zpool(8)` and `zfs(8)`. There is no collector flag that turns them on, because
+there is nothing there to turn on.
+
+Per-pool throughput is a third case: it *is* in kstat, but the collector reads
+`/proc/spl/kstat/zfs/<pool>/io`, which OpenZFS 2.2 removed in favour of
+`iostats`. On anything modern — `file01` runs 2.3.2 — `node_zfs_zpool_nread`
+and its siblings therefore never appear at all. The script reads `iostats`
+directly instead. When `node_exporter` learns about that file, that section
+becomes redundant and should go.
 
 Filling that gap means either a second daemon (`zfs_exporter`, not packaged in
 Debian) or `node_exporter`'s textfile collector, which is the mechanism
@@ -56,6 +63,7 @@ What it adds, none of which the built-in collector can produce:
 | `zfs_pool_health`, `zfs_pool_{size,allocated,free}_bytes`, `zfs_pool_capacity_ratio`, `zfs_pool_fragmentation_ratio`, `zfs_pool_dedup_ratio` | `zpool list` |
 | `zfs_pool_last_scrub_timestamp_seconds`, `zfs_pool_last_scrub_errors`, `zfs_pool_{scrub,resilver}_in_progress`, `zfs_pool_data_errors`, `zfs_pool_device_errors_total`, `zfs_pool_device_state` | `zpool status` |
 | `zfs_dataset_{used,available,referenced,logical_used,used_by_snapshots,quota}_bytes` | `zfs list` |
+| `zfs_pool_{read,written}_bytes_total`, `zfs_pool_{reads,writes}_total` | `/proc/spl/kstat/zfs/<pool>/iostats` |
 | `zfs_scrape_success`, `zfs_scrape_duration_seconds` | the script itself |
 
 `zfs_pool_last_scrub_timestamp_seconds` is `0` for a pool that has never

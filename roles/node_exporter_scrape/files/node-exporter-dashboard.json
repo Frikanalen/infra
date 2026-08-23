@@ -862,7 +862,8 @@
           "refId": "A",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -874,7 +875,8 @@
           "refId": "B",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -886,7 +888,8 @@
           "refId": "C",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -898,7 +901,8 @@
           "refId": "D",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -910,7 +914,8 @@
           "refId": "E",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -922,7 +927,8 @@
           "refId": "F",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         }
       ],
       "options": {
@@ -1486,7 +1492,8 @@
           "refId": "A",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1498,7 +1505,8 @@
           "refId": "B",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         },
         {
           "datasource": {
@@ -1510,7 +1518,8 @@
           "refId": "C",
           "range": false,
           "instant": true,
-          "legendFormat": ""
+          "legendFormat": "",
+          "format": "table"
         }
       ],
       "options": {
