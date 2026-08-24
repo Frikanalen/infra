@@ -20,8 +20,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install ansible-core ansible-lint
 
+      # Into .ansible/collections specifically, not the default
+      # ~/.ansible/collections: ansible-lint sets ANSIBLE_HOME to the project
+      # directory and resolves collections from there, so installing to the
+      # user default leaves every kubernetes.core task unresolvable and the
+      # lint fails with syntax-check[unknown-module] on 19 files.
+      # .ansible/ is gitignored -- requirements.yml is the source of truth.
       - name: Install collections
-        run: ansible-galaxy collection install -r requirements.yml
+        run: ansible-galaxy collection install -r requirements.yml -p .ansible/collections
 
       # group_vars/all is a symlink to data/, so data/vault.yml is loaded for
       # every host and both checks below fail at parse time without the
