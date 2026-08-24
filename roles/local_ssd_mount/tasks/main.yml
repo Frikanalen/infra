@@ -1,3 +1,4 @@
+---
 - name: Find local SSD disk by serial
   ansible.builtin.find:
     paths: /dev/disk/by-id

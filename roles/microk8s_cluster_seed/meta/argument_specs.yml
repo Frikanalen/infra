@@ -1,0 +1,17 @@
+---
+argument_specs:
+  main:
+    short_description: Form a MicroK8s cluster from its seed node
+    options:
+      microk8s_cluster_expected_members:
+        type: list
+        elements: str
+        required: false
+        default: []
+        description: >-
+          Every host that belongs in this cluster, seed included -- normally
+          groups['kubedev'] or groups['kubeprod']. Names must match what
+          `microk8s kubectl get nodes` reports, i.e. hostnames. The role
+          asserts this is non-empty, which a spec cannot express: a wrong
+          value either re-forms a healthy cluster or declines to form a new
+          one.

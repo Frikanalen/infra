@@ -1,7 +1,7 @@
 ---
 - name: Bootstrap Argo CD with App-of-Apps
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'app-of-apps.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"

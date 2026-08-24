@@ -1,3 +1,4 @@
+---
 # Default URLs for CasparCG .deb packages. noble (24.04) builds, matching
 # caspar1; switch to the jammy1 asset if this role is ever applied to a
 # 22.04 host.

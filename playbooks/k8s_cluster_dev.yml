@@ -1,90 +1,48 @@
-# Form HA cluster for kubedev
-- hosts: dev-kube-1
+---
+# Forms the kubedev MicroK8s cluster and installs the host-level
+# prerequisites every node needs.
+#
+# This is the part that happens once in a cluster's life. The platform
+# services that get re-run routinely -- ingress, DNS, monitoring, database
+# operators, Argo CD -- live in playbooks/k8s_platform_dev.yml, so changing
+# one of those no longer walks cluster formation first.
+#
+#   ansible-playbook playbooks/k8s_cluster_dev.yml
+#
+# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs.
+# "join" needs the seed play's facts, so select "bootstrap" to re-form or
+# extend the cluster rather than "join" on its own.
+
+- name: Seed the kubedev cluster
+  hosts: kubedev_admin
   become: true
-  tags: [cluster, seed]
+  tags: [bootstrap, seed]
+  vars:
+    microk8s_cluster_expected_members: "{{ groups['kubedev'] }}"
   roles:
     - microk8s_cluster_seed
 
-- hosts: kubedev:!dev-kube-1
+- name: Join the remaining kubedev nodes
+  hosts: kubedev:!kubedev_admin
   become: true
-  tags: [cluster, join]
+  tags: [bootstrap, join]
   vars:
     microk8s_seed_host: dev-kube-1
   roles:
     - microk8s_cluster_join
 
-- hosts: kubedev
+- name: Install node prerequisites across kubedev
+  hosts: kubedev
   become: true
-  tags: [cluster, kubectl]
+  tags: [bootstrap]
   roles:
-    - microk8s_kubectl
-    - k8s_base_helm
+    - role: microk8s_kubectl
+      tags: [kubectl]
+    - role: k8s_base_helm
+      tags: [helm]
     # nfs-common only -- nfs_client_mounts is deliberately left unset here.
     # roles/media_server mounts the archive as a raw k8s NFS volume, which
     # kubelet mounts per-pod on whichever node it lands on; it just needs
     # mount.nfs present on every node, not a host-level fstab entry.
-    - nfs_client
-
-- hosts: dev-kube-1
-  tags: [ingress]
-  vars:
-    metallb_ingress_ip: "192.168.3.90/30"
-    traefik_loadbalancer_ip: "192.168.3.90"
-    traefik_public_ip: "158.36.191.229"
-    traefik_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
-    external_dns_default_target: "158.36.191.229"
-    argocd_gitops_application_name: rook-ceph
-    argocd_gitops_repo_path: apps/rook-ceph
-  roles:
-    - metallb
-    - traefik
-    - external_dns
-    # Second external-dns instance: watches ingressClassName: internal and
-    # writes to intern.dev.frikanalen.no instead of staging.frikanalen.no,
-    # targeting the cluster's internal ingress IP rather than the public
-    # one. Reuses staging-update-key (role default), which
-    # roles/dns_server_zones_dynamic also authorizes on this zone.
-    - role: external_dns
-      vars:
-        external_dns_release_name: external-dns-internal
-        external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
-        external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
-        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
-        external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
-        external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
-        external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
-        external_dns_manage_ingress_class: true
-    # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
-    # on intern.dev.frikanalen.no via the internal ingress class/external-dns
-    # instance above -- not reachable outside the VPN.
-    - role: kube_prometheus_stack
-      tags: [kube_prometheus_stack]
-    # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
-    # hands it to the Prometheus above. Needs a login user on the switch that
-    # only a human can configure -- see roles/junos_exporter/README.md.
-    - role: junos_exporter
-      tags: [junos_exporter]
-    # Scrapes the secondary Cisco D9036, the encoder between playout and the
-    # transport stream. Needs the appliance's automation password in the
-    # vault -- see roles/d9036_exporter/README.md.
-    - role: d9036_exporter
-      tags: [d9036_exporter]
-    # Scrapes the node_exporters that playbooks/site.yml installs on file01
-    # and the Proxmox hypervisors -- hosts this cluster does not run and
-    # cannot discover, so their addresses are written out as a selectorless
-    # Service's Endpoints. Also ships their dashboards and alerting rules,
-    # including the ZFS ones for the media archive on file01.
-    - role: node_exporter_scrape
-      tags: [node_exporter]
-    - kubegres
-    # CloudNativePG operator -- stands up alongside Kubegres as the
-    # migration target for roles/cnpg_cluster's pgcluster; see
-    # playbooks/k8s_apps_staging.yml.
-    - cnpg
-    - argocd
-    - argocd_gitops
-    - role: argocd_gitops
-      vars:
-        argocd_gitops_application_name: local-path-provisioner
-        argocd_gitops_repo_path: apps/local-path-provisioner
-    - argocd_image_updater
+    - role: nfs_client
+      tags: [nfs]

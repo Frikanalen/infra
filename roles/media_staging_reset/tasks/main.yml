@@ -18,6 +18,9 @@
 - name: Bootstrap the staging media dataset
   ansible.builtin.command: "{{ archive_media_staging_script_path }}"
   become: true
+  # Only reached when the dataset is absent (the check above), and creating
+  # it is exactly what this does.
+  changed_when: true
   when: archive_media_staging_check.rc != 0
 
 - name: Install weekly staging media reset cron job

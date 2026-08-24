@@ -48,4 +48,6 @@ terraform.rc
 # Vim temporary files
 *.swp
 
+# ansible-galaxy / ansible-lint drop installed collections here when
+# ANSIBLE_HOME or the collections path resolves inside the repo.
 .ansible/

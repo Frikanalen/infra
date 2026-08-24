@@ -1,0 +1,49 @@
+---
+- name: Ensure the app definition has what the templates need
+  ansible.builtin.assert:
+    that:
+      - argocd_app.name is defined
+      - argocd_app.repo_url is defined
+      - argocd_app.version is defined
+    fail_msg: >-
+      argocd_app needs at least name, repo_url and version. Got:
+      {{ argocd_app.keys() | list | sort }}. App definitions live in
+      frikanalen_apps, in data/apps.yml.
+
+# Optional keys defaulted in one visible place rather than with a | default()
+# on each use in the templates -- the templates then read the same way for
+# every app, and an app that wants something non-standard says so in
+# data/apps.yml.
+- name: Fill in the parts of the app definition that have defaults
+  ansible.builtin.set_fact:
+    _app: >-
+      {{ {
+           'repo_path': 'chart',
+           'namespace': frikanalen_app_namespace,
+           'helm_values': {},
+           'ignore_differences': [],
+           'image_repository': '',
+           'helm_image_key': 'image',
+           'image_updater': argocd_image_updater_enabled | default(false),
+         } | combine(argocd_app) }}
+
+- name: "Deploy Argo CD Application {{ _app.name }}"
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'application.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+# Argo CD Image Updater watches the tag named in the Application and rolls
+# the deployment when a new digest is pushed to it. Off by default; on for
+# staging (group_vars/staging.yml). An app with no image_repository -- one
+# deployed straight from a git revision -- cannot be tracked this way.
+- name: "Deploy Argo CD Image Updater tracking for {{ _app.name }}"
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'image-updater.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  when:
+    - _app.image_updater | bool
+    - _app.image_repository | length > 0

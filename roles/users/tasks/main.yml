@@ -16,7 +16,7 @@
   become: true
 
 - name: Add authorized keys for users
-  ansible.builtin.authorized_key:
+  ansible.posix.authorized_key:
     user: "{{ item.0.username }}"
     key: "{{ item.1 }}"
     state: present
@@ -35,7 +35,7 @@
     path: "{{ sudoers_d_path }}"
     state: directory
     owner: root
-    mode: '0750'
+    mode: "0750"
 
 - name: Enable passwordless sudo for group sudo
   ansible.builtin.copy:
@@ -43,6 +43,6 @@
     content: |
       %sudo ALL=(ALL) NOPASSWD: ALL
     owner: root
-    mode: '0440'
+    mode: "0440"
     validate: "visudo -cf %s"
   become: true

@@ -1,0 +1,222 @@
+---
+# Every Argo CD Application the cluster runs, in one place.
+#
+# These were seven near-identical roles (argocd_frontend, argocd_graphics,
+# argocd_schedule, argocd_playout, argocd_stream, plus the Application halves
+# of argocd_django and argocd_ingest). Six of the seven application.yml.j2
+# templates were byte-identical once the variable prefix was normalised, and
+# five of six image-updater.yml.j2. Only two things actually varied -- the
+# Helm key the image updater writes to, and Django's ignoreDifferences -- so
+# the manifests now come from roles/argocd_app and the differences live here.
+#
+# Required per app: name, repo_url, version.
+# Optional: repo_path (chart), namespace (frikanalen_app_namespace),
+# helm_values ({}), ignore_differences ([]), image_repository (''),
+# helm_image_key (image), image_updater (argocd_image_updater_enabled).
+#
+# The Helm values key is helm_values, not values: Jinja resolves
+# `_app.values` to the dict's own .values() method rather than to the
+# key, and to_nice_yaml then fails with "cannot represent an object".
+#
+# Values are Jinja and resolve per environment, so the same definition serves
+# prod and staging; anything that must differ references a variable from
+# group_vars/{prod,staging}.yml rather than being duplicated here.
+
+# Name of the Secret holding the Django API token ingest authenticates with.
+# Read by the ingest app definition below and created by
+# roles/ingest_api_secret, so it belongs to neither and sits here.
+ingest_api_secret_name: ingest-api
+
+frikanalen_apps:
+
+  django:
+    name: django-api
+    repo_url: https://github.com/Frikanalen/django-api.git
+    image_repository: ghcr.io/frikanalen/django-api
+    version: "{{ app_versions.django }}"
+    # The chart nests its image under a "django" key rather than at the top
+    # level, so the updater has to write there. This is the only app that
+    # differs.
+    helm_image_key: django.image
+    ignore_differences:
+      - group: ""
+        kind: Secret
+        name: django-secret
+        namespace: "{{ frikanalen_app_namespace }}"
+        jsonPointers:
+          - /data
+      # roles/kubegres_backup patches spec.backup onto this Application's own
+      # Kubegres resource directly, since the chart's Kubegres template
+      # doesn't render that stanza and so never sets it itself. Without this,
+      # selfHeal would prune it back out on the next sync.
+      - group: kubegres.reactive-tech.io
+        kind: Kubegres
+        name: "{{ django_db_host }}"
+        namespace: "{{ frikanalen_app_namespace }}"
+        jsonPointers:
+          - /spec/backup
+    helm_values:
+      django:
+        image:
+          repository: ghcr.io/frikanalen/django-api
+          tag: "{{ app_versions.django }}"
+      env:
+        # .pod.cluster.local is what makes the Prometheus scrape work: Django
+        # rejects any Host it does not recognise with a 400 before routing,
+        # and the chart's ServiceMonitor addresses the pod by its CoreDNS
+        # pod-zone name rather than its bare IP precisely so this one suffix
+        # entry is enough. A leading dot is Django's subdomain wildcard, so
+        # this admits <ip-with-dashes>.<namespace>.pod.cluster.local and
+        # nothing outside the cluster. See chart/templates/servicemonitor.yaml
+        # in django-api.
+        ALLOWED_HOSTS: "{{ frikanalen_domain }},.pod.cluster.local"
+        CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
+        # Handed to the frontend as a video's uploadUrl. Must resolve to the
+        # tusd ingress that the ingest app creates.
+        FK_UPLOAD_URL: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}{{ ingest_upload_path }}"
+        # Prefix every video file URL is built from. Must resolve to the
+        # ingress roles/media_server creates, and match its export --
+        # staging's archive is a separate directory from prod's (see
+        # group_vars/staging.yml), so this deliberately varies by
+        # frikanalen_domain rather than pointing both environments at the
+        # same media host.
+        FK_MEDIA_URLPREFIX: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}{{ ingest_media_path }}/"
+      ingress:
+        enabled: true
+        className: "{{ frikanalen_public_ingress_class }}"
+        hostname: "{{ frikanalen_domain }}"
+      # django-api's chart ships its own ServiceMonitor for
+      # django-prometheus's /metrics. Gated like every other ServiceMonitor
+      # here: it is a monitoring.coreos.com kind, so on a cluster without the
+      # Prometheus Operator Argo CD could not sync this Application at all.
+      # See data/cluster.yml.
+      monitoring:
+        enabled: "{{ k8s_monitoring_enabled }}"
+        interval: 30s
+        scrapeTimeout: 10s
+
+  frontend:
+    name: frontend
+    repo_url: https://github.com/Frikanalen/frontend.git
+    image_repository: ghcr.io/frikanalen/frontend
+    version: "{{ app_versions.frontend }}"
+    helm_values:
+      djangoUrl: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
+      ingress:
+        className: "{{ frikanalen_public_ingress_class }}"
+        hostname: "{{ frikanalen_domain }}"
+      image:
+        tag: "{{ app_versions.frontend }}"
+
+  graphics:
+    name: graphics
+    repo_url: https://github.com/Frikanalen/on-air-graphics.git
+    image_repository: ghcr.io/frikanalen/graphics
+    version: "{{ app_versions.graphics }}"
+    helm_values:
+      ingress:
+        className: "{{ frikanalen_public_ingress_class }}"
+        hostname: "{{ frikanalen_domain }}"
+        path: /graphics
+        certResolver: letsencrypt
+      image:
+        tag: "{{ app_versions.graphics }}"
+
+  schedule:
+    name: schedule-service
+    repo_url: https://github.com/Frikanalen/schedule-service.git
+    image_repository: ghcr.io/frikanalen/schedule-service
+    version: "{{ app_versions.schedule }}"
+    helm_values:
+      image:
+        tag: "{{ app_versions.schedule }}"
+      timezone: "{{ timezone_region }}"
+      database:
+        secret: "{{ django_db_secret_name }}"
+
+  playout:
+    name: playout
+    repo_url: https://github.com/Frikanalen/playout.git
+    image_repository: ghcr.io/frikanalen/playout
+    version: "{{ app_versions.playout }}"
+    helm_values:
+      image:
+        repository: ghcr.io/frikanalen/playout
+        tag: "{{ app_versions.playout }}"
+      env:
+        - name: USE_ORIGINAL
+          value: "true"
+        - name: CASPAR_HOST
+          value: "{{ caspar_host }}"
+        - name: API_URL
+          value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
+        - name: GRAPHICS_URL
+          value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/graphics/"
+      timezone:
+        enabled: true
+        path: "/usr/share/zoneinfo/{{ timezone_region }}"
+
+  stream:
+    name: stream
+    repo_url: https://github.com/Frikanalen/live-stream-packager.git
+    # Chart at the repository root, not under chart/.
+    repo_path: "."
+    # No image_repository, so no image updater: this one is deployed from a
+    # git revision and has no tag for the updater to follow.
+    version: "{{ app_versions.stream }}"
+    helm_values:
+      cubemap:
+        # True in staging, where ffmpeg reads from the in-cluster cubemap UDP
+        # reflector. False in prod, where the feed is already served as
+        # MPEG-TS over HTTP by simula and ffmpeg pulls it directly. See
+        # group_vars/prod.yml.
+        enabled: "{{ argocd_stream_cubemap_enabled | default(true) }}"
+        loadBalancerIP: "{{ argocd_stream_cubemap_ip }}"
+      ffmpeg:
+        inputSourceUrl: "{{ argocd_stream_input_source_url | default('http://192.168.3.1:9094/frikanalen.ts') }}"
+      ingress:
+        host: "{{ frikanalen_domain }}"
+
+  ingest:
+    name: ingest
+    repo_url: https://github.com/Frikanalen/ingest.git
+    image_repository: ghcr.io/frikanalen/ingest
+    version: "{{ app_versions.ingest }}"
+    helm_values:
+      image:
+        repository: ghcr.io/frikanalen/ingest
+        tag: "{{ app_versions.ingest }}"
+      api:
+        url: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
+        secretName: "{{ ingest_api_secret_name }}"
+      ingress:
+        enabled: true
+        className: "{{ frikanalen_public_ingress_class }}"
+        # Served at /upload on the main site rather than its own subdomain,
+        # so staging needs no extra DNS record. Must agree with
+        # FK_UPLOAD_URL in the Django settings: that is what the frontend is
+        # handed as a video's uploadUrl.
+        hostname: "{{ frikanalen_domain }}"
+        certResolver: letsencrypt
+      tusd:
+        # Shared with the django app, which advertises this path as
+        # FK_UPLOAD_URL.
+        basePath: "{{ ingest_upload_path }}"
+      uploads:
+        existingClaim: "{{ ingest_uploads_claim | default('') }}"
+        persistence:
+          size: "{{ ingest_uploads_size }}"
+      archive:
+        dir: "{{ ingest_archive_dir }}"
+        ssh:
+          enabled: true
+          host: "{{ ingest_archive_host }}"
+          port: "{{ ingest_archive_port | default(22) }}"
+          username: "{{ ingest_archive_user }}"
+          secretName: "{{ ingest_archive_secret_name | default('ingest-archive-ssh') }}"
+          # Losing files is worse than failing to start, so never let ingest
+          # fall back to archiving into the pod's scratch space here.
+          required: true
+          # Rolls the deployment when the key is rotated; Helm cannot watch a
+          # secret it does not own.
+          secretChecksum: "{{ ingest_archive_private_key | default('') | hash('sha256') }}"

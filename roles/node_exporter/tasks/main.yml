@@ -12,7 +12,7 @@
   ansible.builtin.apt:
     name: "{{ node_exporter_package }}"
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Configure node_exporter flags
@@ -61,7 +61,7 @@
   ansible.builtin.service:
     name: "{{ node_exporter_service }}"
     state: started
-    enabled: yes
+    enabled: true
   become: true
 
 # --- ZFS textfile collector -------------------------------------------------
@@ -121,6 +121,6 @@
   ansible.builtin.systemd_service:
     name: "{{ node_exporter_zfs_timer_name }}.timer"
     state: started
-    enabled: yes
+    enabled: true
   become: true
   when: node_exporter_zfs_collector and node_exporter_zpool_bin.stat.exists

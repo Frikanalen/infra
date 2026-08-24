@@ -1,7 +1,6 @@
 ---
 # Shared ArgoCD/Kubernetes infrastructure settings
 argocd_namespace: argocd
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 argocd_default_app_namespace: default
 
 # Shared settings

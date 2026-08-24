@@ -1,0 +1,63 @@
+---
+# The Python-side prerequisites every role that talks to the cluster through
+# kubernetes.core needs on the target host.
+#
+# Declared as a dependency (meta/main.yml) rather than pasted into each
+# consumer: Ansible runs a role once per play unless its parameters differ or
+# allow_duplicates is set, so the seven roles that need this cost one
+# execution between them instead of seven. See roles/*/meta/main.yml.
+
+- name: Check for a kubernetes Python library in the supported range
+  # Cheap probe so the steady state costs one interpreter start rather than a
+  # pip resolve against PyPI. ansible.builtin.pip cannot do this itself: with
+  # a version range (rather than an == pin) it always shells out to
+  # `pip install` and only then decides "changed" from the output.
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import sys
+        try:
+            import kubernetes
+        except ImportError:
+            sys.exit(1)
+        try:
+            version = tuple(int(part) for part in kubernetes.__version__.split('.')[:2])
+        except (AttributeError, ValueError):
+            sys.exit(1)
+        sys.exit(0 if (24, 2) <= version < (36, 0) else 1)
+  register: k8s_python_deps_probe
+  changed_when: false
+  failed_when: false
+  # Without this the probe is skipped under --check and the two tasks below
+  # would both report a change against a host that already has the library.
+  check_mode: false
+
+- name: Install pip
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+  become: true
+  when: k8s_python_deps_probe.rc != 0
+
+# Debian's python3-kubernetes predates a 2022 upstream fix for CRDs with a
+# property literally named "self" (kubernetes-client/python#1715), which
+# breaks kubernetes.core.k8s on any such CRD -- CloudNativePG's Cluster CRD
+# has spec.replica.self, which trips it with "ResourceField.__init__() got
+# multiple values for argument 'self'". Pip installs to /usr/local/lib, which
+# takes priority over apt's /usr/lib on sys.path, so this shadows it.
+# Pinned below 36.0.0, which bumped its PyYAML requirement to >=6.0.3 --
+# the apt-installed PyYAML 6.0.1 has no RECORD file (dpkg-owned), so pip
+# can't uninstall it to satisfy that, and fails ("Cannot uninstall PyYAML
+# 6.0.1, RECORD file not found"). Versions below 36.0.0 only need
+# pyyaml>=5.4.1, which 6.0.1 already satisfies, so pip never touches it.
+#
+# The range here and the bounds in the probe above must stay in step.
+- name: Install a kubernetes Python library new enough to handle CRDs with a "self" field
+  ansible.builtin.pip:
+    name: "kubernetes>=24.2.0,<36.0.0"
+    state: present
+    extra_args: --break-system-packages
+  become: true
+  when: k8s_python_deps_probe.rc != 0

@@ -3,7 +3,7 @@
   ansible.builtin.apt:
     name: nfs-kernel-server
     state: present
-    update_cache: yes
+    update_cache: true
   become: true
 
 - name: Configure NFS exports
@@ -12,7 +12,7 @@
     dest: /etc/exports
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   become: true
   notify: Reload NFS exports
 
@@ -20,5 +20,5 @@
   ansible.builtin.service:
     name: nfs-kernel-server
     state: started
-    enabled: yes
+    enabled: true
   become: true

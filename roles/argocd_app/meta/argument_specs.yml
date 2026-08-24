@@ -1,0 +1,13 @@
+---
+argument_specs:
+  main:
+    short_description: Declare one Argo CD Application, and optionally track its image
+    options:
+      argocd_app:
+        type: dict
+        required: true
+        description: >-
+          One entry from frikanalen_apps (data/apps.yml). Requires name,
+          repo_url and version; repo_path, namespace, values,
+          ignore_differences, image_repository, helm_image_key and
+          image_updater all have defaults.

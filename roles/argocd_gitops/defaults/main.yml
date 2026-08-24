@@ -1,7 +1,6 @@
 ---
 # defaults for argocd_gitops role
 argocd_namespace: argocd
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # GitOps repo settings
 argocd_gitops_application_name: apps

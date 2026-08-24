@@ -1,11 +1,61 @@
+# Every group nests under all.children. microk8s and qemu_guest used to be
+# declared as top-level siblings of `all`, which parses to the same thing but
+# left the file looking like two different conventions had been applied.
 all:
   children:
+
+    # ---- environments -------------------------------------------------
+    # These carry the per-environment settings in group_vars/{prod,staging}
+    # -- domains, app versions, chart versions, k8s_monitoring_enabled --
+    # and cover every node in the cluster, not just the one we drive it
+    # from. See the *_admin groups below for that.
+    prod:
+      children:
+        kubeprod:
+
+    staging:
+      children:
+        kubedev:
+
+    # ---- Kubernetes clusters -------------------------------------------
+    kubeprod:
+      hosts:
+        prod-kube-1:
+        prod-kube-2:
+        prod-kube-3:
+
+    kubedev:
+      hosts:
+        dev-kube-1:
+        dev-kube-2:
+        dev-kube-3:
+
+    # The single node each cluster is driven from: it holds the kubeconfig,
+    # and the platform and application playbooks run their kubernetes.core
+    # tasks there rather than once per node. Previously these were called
+    # "prod" and "staging", which read like the whole environment.
+    kubeprod_admin:
+      hosts:
+        prod-kube-1:
+
+    kubedev_admin:
+      hosts:
+        dev-kube-1:
+
+    microk8s:
+      children:
+        kubeprod:
+        kubedev:
+
+    # ---- everything else ------------------------------------------------
     util:
       hosts:
         util1:
+
     simula_group:
       hosts:
         simula:
+
     tx:
       hosts:
         tx1:
@@ -34,26 +84,6 @@ all:
       hosts:
         file01:
 
-    kubeprod:
-      hosts:
-        prod-kube-1:
-        prod-kube-2:
-        prod-kube-3:
-
-    kubedev:
-      hosts:
-        dev-kube-1:
-        dev-kube-2:
-        dev-kube-3:
-
-    staging:
-      hosts:
-        dev-kube-1:
-
-    prod:
-      hosts:
-        prod-kube-1:
-
     # Hosts that get node_exporter installed on them by roles/node_exporter and
     # scraped by roles/node_exporter_scrape. The Kubernetes nodes are absent on
     # purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
@@ -65,13 +95,8 @@ all:
         proxmox:
         storage:
 
-microk8s:
-  children:
-    kubeprod:
-    kubedev:
-
-qemu_guest:
-  children:
-    kubeprod:
-    kubedev:
-    caspar:
+    qemu_guest:
+      children:
+        kubeprod:
+        kubedev:
+        caspar:

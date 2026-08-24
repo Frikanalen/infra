@@ -1,0 +1,22 @@
+---
+# The credentials the django-api chart's Kubegres database expects. Kept out
+# of roles/argocd_app because it is the only app with a secret of its own
+# shape, and because it must exist before Argo CD syncs the Application.
+- name: Ensure the app namespace exists
+  become: true
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ django_db_secret_namespace }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Create Postgres passwords secret
+  become: true
+  # Renders four vault passwords into stringData, one of them twice (it is
+  # also embedded in DATABASE_URL).
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'postgres-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"

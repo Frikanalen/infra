@@ -1,0 +1,12 @@
+---
+# Pinned rather than resolved from GitHub's /releases/latest at run time.
+# Tracking "latest" meant the binary silently upgraded under us, the play
+# could not run without an unauthenticated GitHub API call (60/hour/IP,
+# shared) succeeding first, and it could not run offline or in check mode at
+# all. Every chart in helm_chart_versions is pinned; the tool that installs
+# them should be too.
+#
+# This is the version /releases/latest returned when the pin was introduced,
+# so adopting it changed nothing about what the next run would have
+# installed. Bump it deliberately.
+k8s_base_helm_version: v4.2.4

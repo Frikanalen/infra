@@ -1,35 +1,15 @@
 ---
-- name: Install pip
-  ansible.builtin.apt:
-    name: python3-pip
-    state: present
-  become: true
-
-# Debian's python3-kubernetes predates a 2022 upstream fix for CRDs with a
-# property literally named "self" (kubernetes-client/python#1715), which
-# breaks kubernetes.core.k8s on any such CRD. Pip installs to /usr/local/lib,
-# which takes priority over apt's /usr/lib on sys.path, so this shadows it.
-# Pinned below 36.0.0, which bumped its PyYAML requirement to >=6.0.3 --
-# the apt-installed PyYAML 6.0.1 has no RECORD file (dpkg-owned), so pip
-# can't uninstall it to satisfy that, and fails ("Cannot uninstall PyYAML
-# 6.0.1, RECORD file not found"). Versions below 36.0.0 only need
-# pyyaml>=5.4.1, which 6.0.1 already satisfies, so pip never touches it.
-- name: Install a kubernetes Python library new enough to handle CRDs with a "self" field
-  ansible.builtin.pip:
-    name: "kubernetes>=24.2.0,<36.0.0"
-    state: present
-    extra_args: --break-system-packages
-  become: true
-
 - name: Add external-dns Helm repository
   kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: external-dns
     repo_url: https://kubernetes-sigs.github.io/external-dns/
-  become: false
+  become: true
   run_once: true
 
 - name: Ensure IngressClass exists for external_dns_ingress_class
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: networking.k8s.io/v1
@@ -39,11 +19,12 @@
       spec:
         controller: traefik.io/ingress-controller
   when: external_dns_manage_ingress_class
-  become: false
+  become: true
   run_once: true
 
 - name: Install external-dns via Helm
   kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: "{{ external_dns_release_name }}"
     chart_ref: external-dns/external-dns
     chart_version: "{{ external_dns_chart_version | default(omit, true) }}"
@@ -71,12 +52,13 @@
         - --rfc2136-tsig-secret-alg={{ external_dns_rfc2136_tsig_secret_alg }}
         - --rfc2136-tsig-axfr
         - --rfc2136-tsig-secret={{ external_dns_rfc2136_tsig_secret }}
-  become: false
+  become: true
   run_once: true
   no_log: true
 
 - name: Wait for external-dns to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: "{{ external_dns_namespace }}"
     name: "{{ external_dns_release_name }}"
@@ -85,5 +67,5 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true

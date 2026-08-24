@@ -1,7 +1,6 @@
 ---
 # defaults for ingest_archive_account role
 
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 
 # ingest_archive_host, ingest_archive_user and ingest_archive_dir come from
 # group_vars, which is what keeps staging and production pointed at separate

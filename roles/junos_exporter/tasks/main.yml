@@ -33,55 +33,55 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
     name: "{{ junos_exporter_namespace }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter SSH key
-  become: yes
+  become: true
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'ssh-secret.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter config
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'configmap.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Deployment
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'deployment.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Service
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Grafana dashboard
   # Picked up by the Grafana sidecar via the grafana_dashboard label rather
   # than by anything in this role talking to Grafana -- see the template.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter ServiceMonitor
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"

@@ -1,22 +1,65 @@
+---
+- name: Ensure the expected cluster membership was supplied
+  ansible.builtin.assert:
+    that:
+      - microk8s_cluster_expected_members | length > 0
+    fail_msg: >-
+      microk8s_cluster_expected_members must list every host that belongs in
+      this cluster (e.g. "{{ '{{' }} groups['kubedev'] {{ '}}' }}"). Without
+      it this role cannot tell a formed cluster from an unformed one.
+
 - name: Ensure MicroK8s is ready on seed
-  command: microk8s status --wait-ready
+  ansible.builtin.command: microk8s status --wait-ready
   environment:
     PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
   become: true
   changed_when: false
 
-- name: Obtain cluster join token from seed
-  command: microk8s add-node --token-ttl 3600 --format json
+# Everything below used to run unconditionally: `microk8s add-node` minted a
+# fresh join token on every play, and microk8s_cluster_join then ran
+# `microk8s join` on each other node and string-matched "already" in the
+# output to decide that was fine. So re-running the cluster playbook to
+# change something further down did real work against a healthy cluster in
+# order to conclude that nothing was needed.
+- name: List the nodes already in the cluster
+  ansible.builtin.command: microk8s kubectl get nodes -o jsonpath={.items[*].metadata.name}
   environment:
     PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
   become: true
-  register: microk8s_add_node
+  register: microk8s_existing_nodes
   changed_when: false
+  check_mode: false
 
-- name: Parse add-node JSON
-  set_fact:
-    microk8s_add_node_json: "{{ microk8s_add_node.stdout | from_json }}"
+- name: Work out which members still have to join
+  ansible.builtin.set_fact:
+    microk8s_cluster_nodes: "{{ microk8s_existing_nodes.stdout.split() }}"
+    microk8s_pending_members: >-
+      {{ microk8s_cluster_expected_members
+         | difference(microk8s_existing_nodes.stdout.split()) }}
 
-- name: Store join command as host fact
-  set_fact:
-    microk8s_join_command: "microk8s join {{ microk8s_add_node_json.urls[0] }}"
+- name: Report cluster membership
+  ansible.builtin.debug:
+    msg: >-
+      {{ microk8s_cluster_nodes | length }} of
+      {{ microk8s_cluster_expected_members | length }} nodes present.
+      {{ 'Nothing to join.' if microk8s_pending_members | length == 0
+         else 'Still to join: ' ~ (microk8s_pending_members | join(', ')) }}
+
+- name: Form the cluster
+  when: microk8s_pending_members | length > 0
+  block:
+    - name: Obtain cluster join token from seed
+      ansible.builtin.command: microk8s add-node --token-ttl 3600 --format json
+      environment:
+        PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+      become: true
+      register: microk8s_add_node
+      changed_when: false
+
+    - name: Parse add-node JSON
+      ansible.builtin.set_fact:
+        microk8s_add_node_json: "{{ microk8s_add_node.stdout | from_json }}"
+
+    - name: Store join command as host fact
+      ansible.builtin.set_fact:
+        microk8s_join_command: "microk8s join {{ microk8s_add_node_json.urls[0] }}"

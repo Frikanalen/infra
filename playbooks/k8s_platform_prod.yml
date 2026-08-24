@@ -1,0 +1,82 @@
+---
+# Platform services on the kubeprod cluster. Split out of
+# k8s_cluster_prod.yml, which now only forms the cluster.
+#
+#   ansible-playbook playbooks/k8s_platform_prod.yml
+#   ansible-playbook playbooks/k8s_platform_prod.yml --tags traefik
+#
+# Prod runs no kube-prometheus-stack, so k8s_monitoring_enabled stays false
+# here and the ServiceMonitors these roles would otherwise render are
+# skipped -- see data/cluster.yml. Prod is also some way behind this file:
+# advancing it a component at a time with --tags is a good deal calmer than
+# a single run of everything.
+
+- name: Install platform services on the kubeprod cluster
+  hosts: kubeprod_admin
+  tags: [platform]
+  vars:
+    metallb_ingress_ip: "192.168.3.104/30"
+    traefik_loadbalancer_ip: "192.168.3.104"
+    traefik_public_ip: "158.36.191.231"
+    traefik_acme_challenge: http
+    # frikanalen.no stays on HTTP-01 above (unchanged). intern.frikanalen.no
+    # is internal-only, so it needs its own DNS-01 resolver -- see the
+    # conflict assertion in roles/traefik/tasks/main.yml for why this can't
+    # just flip traefik_acme_challenge to dns instead.
+    traefik_internal_acme_enabled: true
+    traefik_internal_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+    traefik_internal_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+  roles:
+    - role: metallb
+      tags: [metallb, ingress]
+
+    - role: traefik
+      tags: [traefik, ingress]
+
+    # external-dns for intern.frikanalen.no: watches ingressClassName:
+    # internal and targets the cluster's internal ingress IP. There is
+    # deliberately no "public" external-dns instance here -- frikanalen.no
+    # is a static record managed outside this repo (see isp7/isp8.imc.as).
+    - role: external_dns
+      tags: [external_dns, dns, internal_dns]
+      vars:
+        external_dns_release_name: external-dns-internal
+        external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
+        external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
+        external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+        external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+        external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
+        external_dns_manage_ingress_class: true
+
+    - role: kubegres
+      tags: [kubegres, database]
+
+    # CloudNativePG operator. This has never run on prod, and it must land
+    # before k8s_apps_prod.yml's cnpg_cluster role -- that creates a
+    # postgresql.cnpg.io/v1 Cluster, a kind that does not exist until the
+    # operator installs its CRDs.
+    - role: cnpg
+      tags: [cnpg, database]
+
+    - role: argocd
+      tags: [argocd]
+
+    # See the note in k8s_platform_dev.yml: both invocations name their
+    # application and path explicitly rather than inheriting the role's
+    # "apps" default.
+    - role: argocd_gitops
+      tags: [argocd_gitops, rook_ceph]
+      vars:
+        argocd_gitops_application_name: rook-ceph
+        argocd_gitops_repo_path: apps/rook-ceph
+
+    - role: argocd_gitops
+      tags: [argocd_gitops, local_path_provisioner]
+      vars:
+        argocd_gitops_application_name: local-path-provisioner
+        argocd_gitops_repo_path: apps/local-path-provisioner
+
+    - role: argocd_image_updater
+      tags: [argocd_image_updater]

@@ -16,7 +16,7 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
@@ -25,7 +25,7 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the D9036 automation credential
-  become: yes
+  become: true
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'secret.yml.j2') }}"
@@ -33,14 +33,14 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter Deployment
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'deployment.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter Service
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
     state: present
@@ -49,14 +49,14 @@
 - name: Deploy the d9036_exporter Grafana dashboard
   # Picked up by the Grafana sidecar via the grafana_dashboard label rather
   # than by anything here talking to Grafana -- see the template.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter ServiceMonitor
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
     state: present

@@ -1,0 +1,4 @@
+---
+# Not a Galaxy role -- this only exists so the seven roles that use
+# kubernetes.core can depend on it and have it run once per play.
+dependencies: []

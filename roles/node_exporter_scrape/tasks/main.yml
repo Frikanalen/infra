@@ -25,7 +25,7 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
@@ -34,7 +34,7 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter Service
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
     state: present
@@ -45,7 +45,7 @@
   # change. Kubernetes leaves these alone because the Service above has no
   # selector; the moment it grows one, the endpoints controller would take
   # ownership and wipe them.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'endpoints.yml.j2') }}"
     state: present
@@ -56,14 +56,14 @@
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter ServiceMonitor
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter alerting rules
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'prometheusrule.yml.j2') }}"
     state: present
@@ -72,7 +72,7 @@
 - name: Deploy the node_exporter Grafana dashboards
   # Picked up by the Grafana sidecar via the grafana_dashboard label rather
   # than by anything here talking to Grafana -- see the template.
-  become: yes
+  become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
     state: present

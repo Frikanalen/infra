@@ -1,3 +1,4 @@
+---
 #
 # Host-specific provisioning for caspar1 and any future CasparCG playout
 # guests: everything here is particular to this class of host and has no

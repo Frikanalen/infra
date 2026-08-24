@@ -1,0 +1,13 @@
+---
+# One app definition, normally taken straight from frikanalen_apps in
+# data/apps.yml:
+#
+#   - role: argocd_app
+#     vars:
+#       argocd_app: "{{ frikanalen_apps.frontend }}"
+#
+# Required keys: name, repo_url, version.
+# Optional keys and their defaults are applied in tasks/main.yml, not here,
+# because they have to be merged into the supplied dict rather than sit
+# beside it.
+argocd_app: {}

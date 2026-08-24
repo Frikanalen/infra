@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ _app.name }}
+  namespace: {{ argocd_namespace }}
+spec:
+  project: default
+{% if _app.ignore_differences %}
+  ignoreDifferences:
+{{ _app.ignore_differences | to_nice_yaml(indent=2) | indent(4, first=True) }}
+{% endif %}
+  source:
+    repoURL: "{{ _app.repo_url }}"
+    targetRevision: "{{ _app.version }}"
+    path: "{{ _app.repo_path }}"
+    helm:
+      values: |
+{{ _app.helm_values | to_nice_yaml(indent=2) | indent(8, first=True) }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ _app.namespace }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

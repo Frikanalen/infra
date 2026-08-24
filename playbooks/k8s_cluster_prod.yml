@@ -1,71 +1,43 @@
-# Form HA cluster for kubeprod
-- hosts: prod-kube-1
+---
+# Forms the kubeprod MicroK8s cluster and installs the host-level
+# prerequisites every node needs. See playbooks/k8s_cluster_dev.yml for the
+# reasoning behind the split; platform services are in
+# playbooks/k8s_platform_prod.yml.
+#
+#   ansible-playbook playbooks/k8s_cluster_prod.yml
+#
+# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs.
+
+- name: Seed the kubeprod cluster
+  hosts: kubeprod_admin
   become: true
+  tags: [bootstrap, seed]
+  vars:
+    microk8s_cluster_expected_members: "{{ groups['kubeprod'] }}"
   roles:
     - microk8s_cluster_seed
 
-- hosts: kubeprod:!prod-kube-1
+- name: Join the remaining kubeprod nodes
+  hosts: kubeprod:!kubeprod_admin
   become: true
+  tags: [bootstrap, join]
   vars:
     microk8s_seed_host: prod-kube-1
   roles:
     - microk8s_cluster_join
 
-- hosts: kubeprod
+- name: Install node prerequisites across kubeprod
+  hosts: kubeprod
   become: true
-  tags: [cluster, kubectl]
+  tags: [bootstrap]
   roles:
-    - microk8s_kubectl
-    - k8s_base_helm
+    - role: microk8s_kubectl
+      tags: [kubectl]
+    - role: k8s_base_helm
+      tags: [helm]
     # nfs-common only -- nfs_client_mounts is deliberately left unset here.
     # roles/media_server mounts the archive as a raw k8s NFS volume, which
     # kubelet mounts per-pod on whichever node it lands on; it just needs
     # mount.nfs present on every node, not a host-level fstab entry.
-    - nfs_client
-
-- hosts: prod-kube-1
-  tags: [ingress]
-  vars:
-    metallb_ingress_ip: "192.168.3.104/30"
-    traefik_loadbalancer_ip: "192.168.3.104"
-    traefik_public_ip: "158.36.191.231"
-    traefik_acme_challenge: http
-    argocd_gitops_application_name: rook-ceph
-    argocd_gitops_repo_path: apps/rook-ceph
-    # frikanalen.no stays on HTTP-01 above (unchanged). intern.frikanalen.no
-    # is internal-only, so it needs its own DNS-01 resolver -- see the
-    # conflict assertion in roles/traefik/tasks/main.yml for why this can't
-    # just flip traefik_acme_challenge to dns instead.
-    traefik_internal_acme_enabled: true
-    traefik_internal_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
-    traefik_internal_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
-  roles:
-    - metallb
-    - traefik
-    # external-dns for intern.frikanalen.no: watches ingressClassName:
-    # internal and targets the cluster's internal ingress IP. There is
-    # deliberately no "public" external-dns instance here -- frikanalen.no
-    # is a static record managed outside this repo (see isp7/isp8.imc.as).
-    - role: external_dns
-      vars:
-        external_dns_release_name: external-dns-internal
-        external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
-        external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
-        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
-        external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
-        external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
-        external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
-        external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
-        external_dns_manage_ingress_class: true
-    - kubegres
-    # CloudNativePG operator -- stands up alongside Kubegres as the
-    # migration target for roles/cnpg_cluster's pgcluster; see
-    # playbooks/k8s_apps_prod.yml.
-    - cnpg
-    - argocd
-    - argocd_gitops
-    - role: argocd_gitops
-      vars:
-        argocd_gitops_application_name: local-path-provisioner
-        argocd_gitops_repo_path: apps/local-path-provisioner
-    - argocd_image_updater
+    - role: nfs_client
+      tags: [nfs]

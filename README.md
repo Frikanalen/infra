@@ -13,11 +13,21 @@ definitions.
   Kubernetes nodes, staging, and production.
 - `ansible.cfg` - local Ansible defaults, including inventory, role path,
   vault-password file, remote user, and SSH key.
-- `data/users.yml` - user database and SSH keys. Submit changes here to request
-  or update developer/admin accounts.
-- `data/hosts.yml` - host/IP definitions used by infrastructure automation.
-- `data/argocd.yml` - ArgoCD application configuration data.
-- `data/vault.yml` - encrypted or sensitive values consumed by playbooks.
+- `data/` - the shared source of truth, and **also `group_vars/all`**, which is
+  a symlink to it. Everything in this directory is therefore loaded as
+  variables for every host in the inventory, at group_vars precedence — adding
+  a file here adds variables everywhere. It is a symlink rather than a copy so
+  that Terraform can read the same files: `terraform/main.tf` builds its VM
+  definitions straight out of `../data/hosts.yml`, so a host is defined once
+  and both tools agree.
+  - `data/users.yml` - user database and SSH keys. Submit changes here to
+    request or update developer/admin accounts.
+  - `data/hosts.yml` - host/IP definitions, and the VM specs Terraform clones
+    from. Exposed to playbooks as `host_config`.
+  - `data/argocd.yml` - ArgoCD and other cluster-wide application settings.
+  - `data/cluster.yml` - cluster capability flags, currently
+    `k8s_monitoring_enabled`.
+  - `data/vault.yml` - encrypted or sensitive values consumed by playbooks.
 - `group_vars/prod.yml` and `group_vars/staging.yml` - environment-specific
   application versions, domains, ingress settings, and Helm chart versions.
 - `playbooks/` - entry points for applying infrastructure state.
@@ -25,6 +35,39 @@ definitions.
   MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CloudNativePG, CasparCG, NFS,
   and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
+
+## Development
+
+Install the collections this repo depends on:
+
+```sh
+ansible-galaxy collection install -r requirements.yml
+```
+
+Lint before pushing — CI runs the same two checks on every pull request:
+
+```sh
+ansible-lint
+for pb in playbooks/*.yml playbooks/*/*.yml; do ansible-playbook --syntax-check "$pb"; done
+```
+
+Roles that talk to the cluster all do it the same way: `become: true` plus an
+explicit `kubeconfig: "{{ k8s_kubeconfig }}"`, which is MicroK8s's own
+credential file and readable only by root. The alternative — running
+unprivileged against the connecting user's `~/.kube/config` — works, but only
+once `microk8s_kubectl` has written that file for the `ansible` user, which
+made the platform playbooks quietly depend on the cluster playbook having run
+first. Helm tasks additionally carry `run_once: true`, since a Helm release
+should be installed once per cluster and not once per node.
+
+`.ansible-lint` sets the `production` profile and skips three rules, each
+with its reasoning in the file — chiefly `var-naming[no-role-prefix]`, which
+would fight the cross-role variable sharing this repo relies on.
+
+CI needs the vault password to parse anything at all, since `group_vars/all`
+is a symlink to `data/` and `data/vault.yml` is loaded for every host. Store
+it as a repository secret named `ANSIBLE_VAULT_PASSWORD` (Settings → Secrets
+and variables → Actions), matching `~/.vault_pass_frikanalen`.
 
 ## Common Playbooks
 
@@ -58,26 +101,75 @@ ansible-playbook playbooks/k8s_cluster_prod.yml
 ansible-playbook playbooks/k8s_cluster_dev.yml
 ```
 
-Forms MicroK8s clusters and installs base Kubernetes services such as MetalLB,
-Traefik, Kubegres, the CloudNativePG operator, ArgoCD, and ArgoCD Image
-Updater. The dev cluster additionally runs kube-prometheus-stack and, alongside
-it, `junos_exporter` pointed at the `fksw` switch (see `roles/junos_exporter`
-and `playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship
-with it: a generic per-metric one, and `fksw — Frikanalen network`, laid out
-by what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
+Forms the MicroK8s clusters: seeds, joins the remaining nodes, and installs
+the host-level prerequisites (kubectl config, Helm, `nfs-common`). This is the
+once-in-a-cluster's-life part. It is now a no-op against a cluster that is
+already formed — the seed play lists the nodes and skips minting a join token
+when every expected member is present.
+
+```sh
+ansible-playbook playbooks/k8s_platform_prod.yml
+ansible-playbook playbooks/k8s_platform_dev.yml
+```
+
+Installs the platform services: MetalLB, Traefik, external-dns, Kubegres, the
+CloudNativePG operator, ArgoCD, and ArgoCD Image Updater. The dev cluster
+additionally runs kube-prometheus-stack and, alongside it, `junos_exporter`
+pointed at the `fksw` switch (see `roles/junos_exporter` and
+`playbooks/junos_exporter_key.yml` below). Two Grafana dashboards ship with
+it: a generic per-metric one, and `fksw — Frikanalen network`, laid out by
+what is actually plugged into the switch (WAN uplink, LACP bundles by peer,
 broadcast chain, management ports).
 
 The dev cluster also carries the scrape configuration, dashboards and alerting
 rules for the hosts that are not Kubernetes nodes -- see
 `roles/node_exporter_scrape` and the `node_exporter` note below.
 
+Only the dev cluster has a Prometheus Operator, so `k8s_monitoring_enabled`
+(see `data/cluster.yml`) is false on prod and the ServiceMonitors, PodMonitors
+and Grafana dashboard ConfigMaps these roles would otherwise create are
+skipped there. Without that gate, installing Traefik on prod would fail:
+the chart renders a kind the API server does not know.
+
+### Tags
+
+Three axes, applied consistently across the Kubernetes playbooks:
+
+| Axis | Tags |
+| --- | --- |
+| Layer, one per play | `bootstrap`, `platform`, `apps` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `schedule`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
+
+So a single component can be advanced on its own, which is the usual way to
+work:
+
+```sh
+ansible-playbook playbooks/k8s_platform_dev.yml --tags traefik
+ansible-playbook playbooks/k8s_platform_prod.yml --tags dns
+ansible-playbook playbooks/k8s_apps_prod.yml --tags frontend
+ansible-playbook playbooks/k8s_platform_dev.yml --skip-tags monitoring
+```
+
+Two things to know. Roles with a `meta/argument_specs.yml` (`traefik`,
+`metallb`, `external_dns`) get an automatic "Validating arguments against arg
+spec" task that Ansible tags `always`, so you will see those role names go
+past even under an unrelated tag — they validate variables and change
+nothing. And `--tags join` on its own will refuse to run: the join play reads
+cluster membership from the seed play, so select `bootstrap` instead.
+
 ```sh
 ansible-playbook playbooks/k8s_apps_prod.yml
 ansible-playbook playbooks/k8s_apps_staging.yml
 ```
 
-Deploys ArgoCD application definitions for Django, frontend, graphics, schedule,
-playout, and stream components. Also deploys a CloudNativePG `Cluster` named
+Deploys Argo CD Application definitions for the Django API, frontend,
+graphics, schedule, playout, stream and ingest components. Every one of them
+is declared in `data/apps.yml` (`frikanalen_apps`) and rendered by the single
+`argocd_app` role, invoked once per app; adding an app is an entry in that
+file plus three lines in the playbook. Two apps need a credential in place
+before Argo CD syncs them, so they keep a small role of their own:
+`django_db_secret` and `ingest_api_secret`. Also deploys a CloudNativePG `Cluster` named
 `pgcluster` (see `roles/cnpg_cluster`) as a migration target alongside the
 existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
 storage class, `fkweb` db/user, and the same credentials as Kubegres's

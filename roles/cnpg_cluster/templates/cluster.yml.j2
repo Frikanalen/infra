@@ -19,4 +19,6 @@ spec:
     size: "{{ cnpg_cluster_storage_size }}"
     storageClass: "{{ cnpg_cluster_storage_class }}"
   monitoring:
-    enablePodMonitor: true
+    # The operator creates the PodMonitor itself, so this needs the
+    # Prometheus Operator CRDs present -- see data/cluster.yml.
+    enablePodMonitor: {{ k8s_monitoring_enabled | bool | lower }}

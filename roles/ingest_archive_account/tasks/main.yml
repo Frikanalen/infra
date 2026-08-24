@@ -8,13 +8,13 @@
 # re-running this generates a new key and replaces the authorised one.
 
 - name: Look for an existing archive key
-  become: yes
+  become: true
   kubernetes.core.k8s_info:
     api_version: v1
     kind: Secret
     name: "{{ ingest_archive_secret_name }}"
     namespace: "{{ ingest_archive_namespace }}"
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
   register: ingest_archive_secret_lookup
 
 - name: Note whether a usable key already exists
@@ -30,7 +30,7 @@
 - name: Generate an archive keypair
   when: not (ingest_archive_key_exists | bool)
   delegate_to: localhost
-  become: no
+  become: false
   block:
     - name: Create a temporary directory for key generation
       ansible.builtin.tempfile:
@@ -82,7 +82,7 @@
 
 - name: Provision the account on the archive host
   delegate_to: "{{ ingest_archive_host }}"
-  become: yes
+  become: true
   block:
     - name: Ensure the archive account exists
       # nologin is safe with a forced internal-sftp command: sshd serves SFTP
@@ -94,12 +94,12 @@
       # staging cannot reach the production archive — keep it that way.
       ansible.builtin.user:
         name: "{{ ingest_archive_user }}"
-        system: yes
-        create_home: yes
+        system: true
+        create_home: true
         home: "/home/{{ ingest_archive_user }}"
         shell: /usr/sbin/nologin
         groups: "{{ [ingest_archive_group] if ingest_archive_group else omit }}"
-        append: yes
+        append: true
         state: present
 
     - name: Check whether the archive directory exists
@@ -115,17 +115,17 @@
         state: directory
         owner: "{{ ingest_archive_user }}"
         group: "{{ ingest_archive_user }}"
-        mode: '2775'
+        mode: "2775"
       when: not ingest_archive_dir_stat.stat.exists
 
     - name: Authorise the archive key
       # exclusive: the account exists only for ingest, so this drops any key
       # this role did not put there and makes rotation self-cleaning.
-      ansible.builtin.authorized_key:
+      ansible.posix.authorized_key:
         user: "{{ ingest_archive_user }}"
         key: "{{ ingest_archive_public_key }}"
         key_options: "{{ ingest_archive_key_options }}"
-        exclusive: yes
+        exclusive: true
         state: present
 
     - name: Check the archive account can write to the archive directory
@@ -175,9 +175,9 @@
       {{ (ingest_archive_host_key.content | b64decode).split()[0:2] | join(' ') }}
 
 - name: Store the archive credentials in Kubernetes
-  become: yes
+  become: true
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'ssh-secret.yml.j2') }}"
     state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"

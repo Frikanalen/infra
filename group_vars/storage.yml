@@ -1,3 +1,4 @@
+---
 # file01: exports the ZFS media archive (archive/media) read-only to the
 # production playout host, and a weekly-reset clone of it
 # (archive/media-staging, see roles/media_staging_reset) to the staging
@@ -40,7 +41,10 @@ archive_media_staging_kube_clients:
 # playbooks/storage.yml, which chowns the directory to match. Writable by
 # every kubeprod node for the same reason as archive_media_kube_clients:
 # the backup CronJob's pod can land on any of them.
-db_backup_export_path: /util/k8s
+#
+# db_backup_export_path itself is defined in data/storage.yml, because the
+# cluster side of this contract (roles/kubegres_backup) runs on a host that
+# is not in this group.
 db_backup_kube_clients: "{{ archive_media_kube_clients }}"
 
 nfs_exports:

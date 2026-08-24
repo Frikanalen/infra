@@ -1,7 +1,13 @@
-- name: Restart vtnet1
-  become: yes
+---
+# noqa command-instead-of-module -- ansible.builtin.service can restart the
+# netif script but has nowhere to put the interface argument, and restarting
+# netif wholesale would drop every interface on the box.
+- name: Restart vtnet1 # noqa command-instead-of-module
+  become: true
   ansible.builtin.command: service netif restart vtnet1
+  changed_when: true
 
-- name: Restart routing
-  become: yes
+- name: Restart routing # noqa command-instead-of-module
+  become: true
   ansible.builtin.command: service routing restart
+  changed_when: true

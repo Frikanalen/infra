@@ -7,27 +7,28 @@ argocd_chart_repo_name: argo
 argocd_chart_repo_url: https://argoproj.github.io/argo-helm
 argocd_chart_name: argo/argo-cd
 argocd_chart_version: "{{ helm_chart_versions.argocd }}"
+# metrics.enabled stays unconditionally true -- it only adds a metrics
+# Service, which needs no CRD. Only the ServiceMonitors are gated; see
+# data/cluster.yml.
 argocd_chart_values:
   server:
     metrics:
       enabled: true
       serviceMonitor:
-        enabled: true
+        enabled: "{{ k8s_monitoring_enabled }}"
   controller:
     metrics:
       enabled: true
       serviceMonitor:
-        enabled: true
+        enabled: "{{ k8s_monitoring_enabled }}"
   repoServer:
     metrics:
       enabled: true
       serviceMonitor:
-        enabled: true
+        enabled: "{{ k8s_monitoring_enabled }}"
   applicationSet:
     metrics:
       enabled: true
       serviceMonitor:
-        enabled: true
-  # override in playbook if needed (e.g. `argocd_chart_values | combine(..., recursive=true)`)
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
-
+        enabled: "{{ k8s_monitoring_enabled }}"
+# override in playbook if needed (e.g. `argocd_chart_values | combine(..., recursive=true)`)

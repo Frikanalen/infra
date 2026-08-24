@@ -1,7 +1,6 @@
 ---
-
-- name: restart named
-  become: yes
+- name: Restart named
+  become: true
   ansible.builtin.service:
     name: named
     state: restarted

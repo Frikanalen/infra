@@ -7,5 +7,4 @@ argocd_image_updater_chart_repo_name: argo
 argocd_image_updater_chart_repo_url: https://argoproj.github.io/argo-helm
 argocd_image_updater_chart_name: argo/argocd-image-updater
 argocd_image_updater_chart_version: "{{ helm_chart_versions.argocd_image_updater }}"
-argocd_image_updater_chart_values: {}   # override in playbook if needed
-argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
+argocd_image_updater_chart_values: {} # override in playbook if needed

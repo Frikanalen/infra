@@ -28,8 +28,7 @@
     block: |
       rdr-anchor "ingress_prod"
       nat-anchor "ingress_prod"
-  notify: reload pf
-
+  notify: Reload pf
 - name: Add ingress_prod anchor to pf.conf (filter section)
   ansible.builtin.blockinfile:
     path: /etc/pf.conf
@@ -38,4 +37,4 @@
     block: |
       anchor "ingress_prod"
       load anchor "ingress_prod" from "/etc/pf.conf.d/ingress_prod.conf"
-  notify: reload pf
+  notify: Reload pf

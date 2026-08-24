@@ -142,11 +142,9 @@
         - name: Check the verified vault kept every secret
           ansible.builtin.assert:
             that:
-              - junos_exporter_vault_verify.vault_junos_exporter_ssh_private_key | trim
-                == junos_exporter_generated_private_key | trim
-              - junos_exporter_vault_verify.keys() | list
-                | difference(junos_exporter_vault_contents.keys() | list)
-                | sort == ['vault_junos_exporter_ssh_private_key', 'vault_junos_exporter_ssh_public_key']
+              - junos_exporter_vault_verify.vault_junos_exporter_ssh_private_key | trim == junos_exporter_generated_private_key | trim
+              - junos_exporter_vault_verify.keys() | list | difference(junos_exporter_vault_contents.keys() | list) | sort ==
+                ['vault_junos_exporter_ssh_private_key', 'vault_junos_exporter_ssh_public_key']
             fail_msg: >-
               The re-encrypted vault did not round-trip as expected.
               data/vault.yml has been left untouched.

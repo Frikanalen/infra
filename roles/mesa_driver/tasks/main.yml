@@ -1,3 +1,4 @@
+---
 - name: Install Xorg and Mesa software-rendering packages
   ansible.builtin.apt:
     name: "{{ mesa_driver_packages }}"

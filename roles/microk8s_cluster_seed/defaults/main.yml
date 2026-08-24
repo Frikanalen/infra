@@ -1,0 +1,8 @@
+---
+# Every host that should end up in this cluster, seed included -- normally
+# `{{ groups['kubedev'] }}` or `{{ groups['kubeprod'] }}` from the playbook.
+# Names must match what `microk8s kubectl get nodes` reports, which is the
+# node's hostname. Required: the role asserts on it rather than guessing,
+# because a wrong value here either re-forms a healthy cluster or silently
+# declines to form a new one.
+microk8s_cluster_expected_members: []

@@ -11,37 +11,17 @@
       resolver already uses instead of enabling a second one.
   when: traefik_internal_acme_enabled
 
-- name: Install pip
-  ansible.builtin.apt:
-    name: python3-pip
-    state: present
-  become: true
-
-# Debian's python3-kubernetes predates a 2022 upstream fix for CRDs with a
-# property literally named "self" (kubernetes-client/python#1715), which
-# breaks kubernetes.core.k8s on any such CRD. Pip installs to /usr/local/lib,
-# which takes priority over apt's /usr/lib on sys.path, so this shadows it.
-# Pinned below 36.0.0, which bumped its PyYAML requirement to >=6.0.3 --
-# the apt-installed PyYAML 6.0.1 has no RECORD file (dpkg-owned), so pip
-# can't uninstall it to satisfy that, and fails ("Cannot uninstall PyYAML
-# 6.0.1, RECORD file not found"). Versions below 36.0.0 only need
-# pyyaml>=5.4.1, which 6.0.1 already satisfies, so pip never touches it.
-- name: Install a kubernetes Python library new enough to handle CRDs with a "self" field
-  ansible.builtin.pip:
-    name: "kubernetes>=24.2.0,<36.0.0"
-    state: present
-    extra_args: --break-system-packages
-  become: true
-
 - name: Add Traefik Helm repository
   kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: traefik
     repo_url: https://traefik.github.io/charts
-  become: false
+  become: true
   run_once: true
 
 - name: Install Traefik via Helm
   kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     name: traefik
     chart_ref: traefik/traefik
     chart_version: "{{ traefik_chart_version | default(omit, true) }}"
@@ -92,13 +72,13 @@
       metrics:
         prometheus:
           serviceMonitor:
-            enabled: true
+            enabled: "{{ k8s_monitoring_enabled }}"
 
       ingressClass:
         enabled: true
         isDefaultClass: true
         name: "{{ traefik_ingress_class }}"
-      
+
       ports:
         web:
           redirections:
@@ -139,11 +119,12 @@
           if traefik_internal_acme_enabled else {}
         )
       }}
-  become: false
+  become: true
   run_once: true
 
 - name: Create www redirect Middleware
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: traefik.io/v1alpha1
@@ -156,11 +137,12 @@
           regex: "^https?://www\\.(.+)"
           replacement: "https://${1}"
           permanent: true
-  become: false
+  become: true
   run_once: true
 
 - name: Create www redirect IngressRoute
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: traefik.io/v1alpha1
@@ -182,11 +164,12 @@
                 kind: TraefikService
         tls:
           certResolver: letsencrypt
-  become: false
+  become: true
   run_once: true
 
 - name: Create Traefik Grafana dashboard ConfigMap
   kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
     definition:
       apiVersion: v1
@@ -198,11 +181,13 @@
           grafana_dashboard: "1"
       data:
         traefik-dashboard.json: "{{ lookup('file', 'traefik-dashboard.json') }}"
-  become: false
+  become: true
   run_once: true
+  when: k8s_monitoring_enabled | bool
 
 - name: Wait for Traefik to be ready
   kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
     kind: Deployment
     namespace: "{{ traefik_namespace }}"
     name: traefik
@@ -211,5 +196,5 @@
       type: Available
       status: "True"
     wait_timeout: 120
-  become: false
+  become: true
   run_once: true

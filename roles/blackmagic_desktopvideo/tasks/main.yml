@@ -1,3 +1,4 @@
+---
 - name: Check for an already-installed Desktop Video package
   ansible.builtin.command: dpkg-query -W -f=${Version} desktopvideo
   register: blackmagic_installed

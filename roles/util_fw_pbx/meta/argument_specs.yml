@@ -1,0 +1,18 @@
+---
+argument_specs:
+  main:
+    short_description: pf redirects for the PBX
+    options:
+      pbx_ext_ip:
+        type: str
+        required: true
+        description: Public address the PBX answers on.
+      pbx_int_ip:
+        type: str
+        required: true
+        description: Internal address of the PBX.
+      fw_ext_if:
+        type: str
+        required: false
+        default: vtnet1
+        description: External interface on the utility host.

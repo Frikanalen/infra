@@ -36,16 +36,23 @@ ingest_uploads_size: 100Gi
 
 argocd_stream_cubemap_ip: "192.168.3.91"
 
+# This is the cluster kube_prometheus_stack runs on, so the ServiceMonitors,
+# PodMonitors and Grafana dashboards the other roles ship are wanted here.
+# See data/cluster.yml for what this gates and why prod leaves it false.
+k8s_monitoring_enabled: true
+
 # Auto-roll staging deployments when a new image is pushed to the tracked
 # floating tag (see argocd_image_updater role and each argocd_* app role).
 argocd_image_updater_enabled: true
 
+# Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
   graphics: main
   playout: main
   frontend: main
   django: main
   stream: main
+  schedule: main
   ingest: main
 
 helm_chart_versions:
