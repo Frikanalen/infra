@@ -22,22 +22,6 @@
     state: present
     kubeconfig: "{{ argocd_kubeconfig }}"
 
-- name: Create Django API ServiceMonitor
-  become: yes
-  tags: [monitoring]
-  kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
-    state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
-
-- name: Create Django API Grafana dashboard ConfigMap
-  become: yes
-  tags: [monitoring]
-  kubernetes.core.k8s:
-    definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
-    state: present
-    kubeconfig: "{{ argocd_kubeconfig }}"
-
 - name: Deploy Django API Argo CD Image Updater tracking
   become: yes
   kubernetes.core.k8s:
