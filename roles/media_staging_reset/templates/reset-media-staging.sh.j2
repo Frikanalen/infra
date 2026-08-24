@@ -18,14 +18,6 @@ OWNER="{{ archive_media_staging_owner }}"
 GROUP="{{ archive_media_staging_group }}"
 MODE="{{ archive_media_staging_mode }}"
 EXPORT_PATH="{{ archive_media_staging_export_path }}"
-# Every client currently allowed to mount this export -- see
-# archive_media_staging_kube_clients in this role's defaults for why it's
-# not just the one NFS_CLIENT this variable name suggests.
-NFS_CLIENTS=(
-{% for client in [archive_media_staging_nfs_client] + archive_media_staging_kube_clients %}
-  "{{ client }}"
-{% endfor %}
-)
 
 echo "$(date -Is) Resetting $TARGET from $SOURCE"
 
@@ -35,16 +27,43 @@ if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
   # Drop the NFS export before destroying. The export is managed in
   # /etc/exports rather than through the ZFS sharenfs property, so ZFS will
   # not unshare it for us: nfsd keeps a reference to the mount and the
-  # destroy fails with "dataset is busy" as long as ANY client below is
-  # still shared, not just the first one.
+  # destroy fails with "dataset is busy" as long as ANY client is still
+  # shared, not just the first one.
   #
   # Only this one export's clients, never `exportfs -ua`: that would also
   # drop caspar1's and the kubeprod nodes' view of the production archive,
   # taking prod playout and media serving down to reset staging.
-  if exportfs -s | grep -qF "$EXPORT_PATH"; then
-    for client in "${NFS_CLIENTS[@]}"; do
-      exportfs -u "${client}:${EXPORT_PATH}"
-    done
+  #
+  # Unexport by the exact client strings the running nfsd holds, read back
+  # out of `exportfs -s`, rather than by the hostnames the export was
+  # configured with. exportfs canonicalises names as it exports, so the
+  # kernel and /var/lib/nfs/etab key the entry on
+  # caspar-sw1.dc1.frikanalen.no while /etc/exports (and this role's
+  # variables) say caspar-sw1. `exportfs -u` matches that string literally
+  # and exits 0 having done nothing when it does not match, so passing the
+  # short name leaves every client exported and surfaces here, several lines
+  # later, as an unexplained "dataset is busy".
+  mapfile -t clients < <(
+    exportfs -s | awk -v path="$EXPORT_PATH" '$1 == path { sub(/\(.*/, "", $2); print $2 }'
+  )
+  for client in "${clients[@]}"; do
+    exportfs -u "${client}:${EXPORT_PATH}"
+  done
+
+  # nfsd caches the export and the file handles resolved through it, and
+  # those cache entries hold a reference to the mount that outlives the
+  # unexport. Flush them, or the destroy below can still find the dataset
+  # busy. This only drops caches -- every export, including production's,
+  # is re-resolved from the table on next access; it is not `exportfs -ua`.
+  exportfs -f
+
+  # Fail loudly rather than leaving zfs to report the consequence. If the
+  # export is somehow still up, "still exported" is a far better starting
+  # point than "pool or dataset is busy".
+  if exportfs -s | awk -v path="$EXPORT_PATH" '$1 == path { found = 1 } END { exit !found }'; then
+    echo "$(date -Is) ERROR: $EXPORT_PATH is still exported after unexporting" >&2
+    echo "$(date -Is)        ${clients[*]:-(no clients found)}; refusing to destroy $TARGET." >&2
+    exit 1
   fi
 
   # Deliberately no -f. If something on file01 still holds the mount open --

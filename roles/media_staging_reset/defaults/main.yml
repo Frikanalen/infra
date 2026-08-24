@@ -19,19 +19,12 @@ archive_media_staging_group: ingest-staging
 archive_media_staging_mode: "2775"
 
 # The dataset is NFS-exported, so the reset has to drop the export before it
-# can destroy it. Overridden in group_vars/storage.yml, which is where the
-# matching nfs_exports entry lives -- keep the two in step.
+# can destroy it -- nfsd holds the mount for as long as any one client is
+# still shared. Only the path is needed here: the script reads the client
+# list back out of `exportfs -s` rather than being told it, so it drops
+# exactly what nfsd holds however group_vars/storage.yml's nfs_exports entry
+# for this path is spelled. Overridden there; keep the two paths in step.
 archive_media_staging_export_path: /archive/media-staging
-archive_media_staging_nfs_client: caspar-sw1
-
-# Every other client the export in group_vars/storage.yml also lists (the
-# kubedev nodes roles/media_server's pods can land on). The reset script must
-# drop all of these, not just archive_media_staging_nfs_client above -- nfsd
-# keeps the dataset busy as long as any one of them is still shared, and the
-# destroy below would fail with "dataset is busy". Empty by default so the
-# role still works standalone; group_vars/storage.yml is what actually
-# populates it.
-archive_media_staging_kube_clients: []
 
 # Weekly, start of Monday.
 archive_media_staging_cron_weekday: "1"
