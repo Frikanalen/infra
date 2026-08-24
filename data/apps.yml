@@ -144,6 +144,8 @@ frikanalen_apps:
         repository: ghcr.io/frikanalen/playout
         tag: "{{ app_versions.playout }}"
       env:
+        - name: MEDIA_ROOT
+          value: "{{ playout_media_path }}"
         - name: USE_ORIGINAL
           value: "true"
         - name: CASPAR_HOST

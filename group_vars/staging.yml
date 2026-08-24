@@ -23,6 +23,8 @@ caspar_host: "192.168.3.101"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+playout_media_path: /mnt/media/
+
 # Deliberately a separate account and directory from prod: staging uploads must
 # not reach the production archive, which roles/nfs_server exports to the
 # playout hosts. Still on file01, so staging exercises the real SSH path.

@@ -25,7 +25,6 @@ archive_media_staging_mode: "2775"
 # exactly what nfsd holds however group_vars/storage.yml's nfs_exports entry
 # for this path is spelled. Overridden there; keep the two paths in step.
 archive_media_staging_export_path: /archive/media-staging
-
 # Weekly, start of Monday.
 archive_media_staging_cron_weekday: "1"
 archive_media_staging_cron_hour: "0"
