@@ -52,8 +52,8 @@ nfs_exports:
   - path: "{{ archive_media_staging_export_path }}"
     # Every client shares the one pinned fsid above -- see the comment
     # there. roles/media_staging_reset must drop every one of these before
-    # it can destroy and reclone the dataset; see
-    # archive_media_staging_kube_clients in that role's defaults.
+    # it can destroy and reclone the dataset, which it does by reading them
+    # back out of `exportfs -s`; adding a client here needs no change there.
     clients: >-
       {{ ([archive_media_staging_nfs_client] + archive_media_staging_kube_clients)
          | map('regex_replace', '^(.*)$', '\1(ro,sync,no_subtree_check,fsid=' ~ archive_media_staging_export_fsid ~ ')')
