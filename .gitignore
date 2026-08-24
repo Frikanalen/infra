@@ -47,3 +47,5 @@ terraform.rc
 
 # Vim temporary files
 *.swp
+
+.ansible/
