@@ -138,7 +138,7 @@ Three axes, applied consistently across the Kubernetes playbooks:
 | Axis | Tags |
 | --- | --- |
 | Layer, one per play | `bootstrap`, `platform`, `apps` |
-| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `schedule`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
 | Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
 
 So a single component can be advanced on its own, which is the usual way to
@@ -164,7 +164,7 @@ ansible-playbook playbooks/k8s_apps_staging.yml
 ```
 
 Deploys Argo CD Application definitions for the Django API, frontend,
-graphics, schedule, playout, stream and ingest components. Every one of them
+graphics, playout, stream and ingest components. Every one of them
 is declared in `data/apps.yml` (`frikanalen_apps`) and rendered by the single
 `argocd_app` role, invoked once per app; adding an app is an entry in that
 file plus three lines in the playbook. Two apps need a credential in place
