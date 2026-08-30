@@ -54,7 +54,6 @@ app_versions:
   frontend: main
   django: main
   stream: main
-  schedule: main
   ingest: main
 
 helm_chart_versions:
