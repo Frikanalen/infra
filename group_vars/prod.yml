@@ -48,17 +48,12 @@ argocd_stream_cubemap_ip: "192.168.3.105"
 # a fallback: a missing key is now an undefined-variable error rather than a
 # silent deploy of whatever the fallback happened to name.
 app_versions:
-  graphics: staging
-  playout: v2.0.1
-  frontend: v2.0.4
-  django: v0.1.3
-  stream: main
-  # FIXME: this key was absent, so roles/argocd_schedule's old
-  # `| default('staging')` resolved it to the literal tag "staging" -- prod
-  # has been running schedule-service's staging tag. Recorded as-is so this
-  # change moves nothing; pin it to a release tag like the others.
-  schedule: staging
-  ingest: main
+  graphics: v1.2.0
+  playout: v2.1.1
+  frontend: v3.1.0
+  django: v1.0.0
+  stream: v0.2.0
+  ingest: v0.1.1
 
 helm_chart_versions:
   traefik: "38.0.2"
