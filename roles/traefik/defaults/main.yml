@@ -1,5 +1,6 @@
 ---
 traefik_namespace: traefik
+traefik_release_name: traefik
 traefik_chart_version: "{{ helm_chart_versions.traefik }}"
 
 # ACME/Let's Encrypt configuration
@@ -17,6 +18,9 @@ traefik_dashboard_enabled: true
 
 # Ingress class for external-dns integration
 traefik_ingress_class: "{{ frikanalen_public_ingress_class }}"
+traefik_manage_ingress_class: true
+traefik_manage_www_redirect: true
+traefik_enable_crd_provider: true
 
 # RFC2136 DNS challenge defaults (same as external_dns)
 # Only relevant if traefik_acme_challenge is 'dns'

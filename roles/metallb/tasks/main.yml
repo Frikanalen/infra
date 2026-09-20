@@ -88,7 +88,6 @@
         name: ingress-pool
         namespace: "{{ metallb_namespace }}"
       spec:
-        addresses:
-          - "{{ metallb_ingress_ip }}"
+        addresses: "{{ [metallb_ingress_ip] + ([metallb_internal_ingress_ip] if metallb_internal_ingress_ip | length > 0 else []) }}"
   become: true
   run_once: true

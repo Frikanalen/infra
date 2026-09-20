@@ -8,6 +8,11 @@ argument_specs:
         required: false
         default: traefik
         description: Kubernetes namespace for Traefik
+      traefik_release_name:
+        type: str
+        required: false
+        default: traefik
+        description: Helm release and Deployment name
       traefik_chart_version:
         type: str
         required: false
@@ -48,6 +53,21 @@ argument_specs:
         required: false
         default: public
         description: Ingress class name (should match external_dns_ingress_class)
+      traefik_manage_ingress_class:
+        type: bool
+        required: false
+        default: true
+        description: Create the IngressClass with this Helm release
+      traefik_manage_www_redirect:
+        type: bool
+        required: false
+        default: true
+        description: Create the public www redirect route
+      traefik_enable_crd_provider:
+        type: bool
+        required: false
+        default: true
+        description: Enable class-filtered Traefik CRD routes
       traefik_loadbalancer_ip:
         type: str
         required: true
