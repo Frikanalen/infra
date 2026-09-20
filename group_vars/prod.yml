@@ -64,7 +64,7 @@ app_versions:
 
 helm_chart_versions:
   traefik: "41.6.0"
-  argocd: "9.1.7"
+  argocd: "10.9.2"
   argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
@@ -73,3 +73,5 @@ helm_chart_versions:
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"
   kube_prometheus_stack: "91.4.1"
+  loki: "7.3.0"
+  alloy: "1.12.1"

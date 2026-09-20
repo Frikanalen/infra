@@ -1,0 +1,30 @@
+---
+# defaults for loki role
+#
+# Installs Loki via the grafana/loki Helm chart in SingleBinary deployment
+# mode (filesystem storage, no S3/GCS bucket to provision) -- appropriate
+# for this cluster's log volume. roles/grafana_alloy ships the DaemonSet
+# that collects pod logs and pushes them here; see its defaults for the
+# push URL this role's release name/namespace feed into.
+
+loki_chart_version: "{{ helm_chart_versions.loki }}"
+loki_namespace: loki
+loki_release_name: loki
+
+loki_persistence_size: 10Gi
+
+# The Grafana datasource ConfigMap this role creates must land in the same
+# namespace kube_prometheus_stack's Grafana runs in -- its sidecar only
+# watches its own namespace for grafana_datasource-labelled ConfigMaps
+# (unlike the dashboards sidecar, which searches every namespace). This
+# role must therefore run after kube_prometheus_stack in the play.
+loki_grafana_namespace: "{{ kube_prometheus_stack_namespace | default('monitoring') }}"
+
+# Internal-only ingress for the gateway, same pattern and zone as
+# kube_prometheus_stack's Grafana/Prometheus/Alertmanager -- this is what
+# lets roles/alloy_journal push journal logs from hosts that are not
+# Kubernetes nodes at all (caspar1, caspar-sw1, ...) rather than only pods
+# on the cluster network, which reach the gateway Service directly.
+loki_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+loki_cert_resolver: letsencrypt
+loki_hostname: "loki.{{ frikanalen_intern_zone }}"

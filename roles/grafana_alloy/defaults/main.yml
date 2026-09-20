@@ -1,0 +1,14 @@
+---
+# defaults for grafana_alloy role
+#
+# Installs Grafana Alloy via the grafana/alloy Helm chart as a DaemonSet
+# (the chart's default controller type) that tails every pod's logs via
+# the kube-apiserver (loki.source.kubernetes -- no hostPath log mount
+# needed) and pushes them to roles/loki's gateway Service. Must run after
+# that role in the play.
+
+grafana_alloy_chart_version: "{{ helm_chart_versions.alloy }}"
+grafana_alloy_namespace: "{{ loki_namespace | default('loki') }}"
+grafana_alloy_release_name: alloy
+
+grafana_alloy_loki_push_url: "http://{{ loki_release_name | default('loki') }}-gateway.{{ loki_namespace | default('loki') }}.svc.cluster.local/loki/api/v1/push"

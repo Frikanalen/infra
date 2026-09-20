@@ -47,6 +47,15 @@
     - role: kube_prometheus_stack
       tags: [kube_prometheus_stack, monitoring]
 
+    # Loki + Alloy for log aggregation. Runs after kube_prometheus_stack so
+    # its Grafana datasource ConfigMap lands in an already-existing
+    # namespace and Grafana's sidecar is up to pick it up.
+    - role: loki
+      tags: [loki, monitoring, logging]
+
+    - role: grafana_alloy
+      tags: [grafana_alloy, monitoring, logging]
+
     - role: metallb
       tags: [metallb, ingress]
 
