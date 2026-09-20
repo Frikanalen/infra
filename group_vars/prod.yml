@@ -50,7 +50,7 @@ argocd_stream_cubemap_ip: "192.168.3.105"
 app_versions:
   graphics: v1.2.0
   playout: v2.1.1
-  frontend: v3.1.0
+  frontend: v3.1.1
   django: v1.0.0
   stream: v0.2.0
   ingest: v0.1.1
