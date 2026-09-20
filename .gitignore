@@ -53,3 +53,5 @@ terraform.rc
 .ansible/
 
 .DS_Store
+scripts/chwiki-migration.yml
+scripts/chwiki-migration/.env

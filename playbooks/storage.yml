@@ -11,4 +11,6 @@
   roles:
     - media_staging_reset
     - db_backup_retention
+    - role: chwiki_images
+      tags: [chwiki_images]
     - nfs_server

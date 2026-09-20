@@ -48,6 +48,16 @@ archive_media_staging_kube_clients:
 # is not in this group.
 db_backup_kube_clients: "{{ archive_media_kube_clients }}"
 
+# Export for chwiki's uploaded images. simula only, not the kube clusters --
+# chwiki runs there directly rather than as a pod, so no cluster node needs
+# access. rw, unlike the read-only archive_media export below, because
+# chwiki writes images directly into this path; roles/chwiki_images makes
+# the directory itself world-writable since the writing process's uid isn't
+# pinned down.
+chwiki_images_export_path: /util/chwiki-images
+chwiki_images_clients:
+  - simula
+
 nfs_exports:
   - path: /archive/media
     clients: >-
@@ -66,5 +76,10 @@ nfs_exports:
   - path: "{{ db_backup_export_path }}"
     clients: >-
       {{ db_backup_kube_clients
+         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
+         | join(' ') }}
+  - path: "{{ chwiki_images_export_path }}"
+    clients: >-
+      {{ chwiki_images_clients
          | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
          | join(' ') }}
