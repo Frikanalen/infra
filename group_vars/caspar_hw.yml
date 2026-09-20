@@ -7,3 +7,9 @@
 nfs_client_mounts:
   - src: "file01:/archive/media"
     path: /mnt/media
+
+# caspar1 is not a kubeprod node, so it does not inherit
+# frikanalen_intern_zone from group_vars/prod.yml -- roles/alloy_journal
+# needs it directly to reach the prod cluster's Loki (see
+# group_vars/prod.yml for the value this must match).
+frikanalen_intern_zone: intern.frikanalen.no

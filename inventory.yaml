@@ -93,6 +93,15 @@ all:
         proxmox:
         storage:
 
+    # Hosts that get roles/alloy_journal: a native systemd Alloy agent
+    # shipping the systemd journal to Loki's internal-only ingress. Not
+    # folded into node_exporter_hosts -- that group is metrics-scrape
+    # targets for the dev cluster's Prometheus specifically, whereas this
+    # is a push path any cluster's Loki can receive.
+    alloy_journal_hosts:
+      children:
+        caspar:
+
     qemu_guest:
       children:
         kubeprod:
