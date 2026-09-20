@@ -22,6 +22,13 @@
     traefik_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
     external_dns_default_target: "158.36.191.229"
   pre_tasks:
+    - name: Refresh local Helm repository caches
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      become: true
+      run_once: true
+      tags: [always]
+
     - name: Keep public and internal ingress endpoints distinct
       ansible.builtin.assert:
         that:
@@ -43,7 +50,10 @@
         traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
         traefik_manage_ingress_class: false
         traefik_manage_www_redirect: false
-        traefik_enable_crd_provider: false
+        traefik_enable_crd_provider: true
+        traefik_skip_crds: true
+        traefik_dashboard_ingressroute_enabled: true
+        traefik_dashboard_host: "traefik.{{ frikanalen_intern_zone }}"
 
     - role: external_dns
       tags: [external_dns, dns]
@@ -64,6 +74,7 @@
         external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
+        external_dns_sources: [ingress, traefik-proxy]
 
     # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
     # on intern.dev.frikanalen.no via the internal ingress class/external-dns

@@ -56,9 +56,9 @@ app_versions:
   ingest: v0.1.1
 
 helm_chart_versions:
-  traefik: "38.0.2"
+  traefik: "41.6.0"
   argocd: "9.1.7"
-  argocd_image_updater: "1.2.4"
+  argoc d_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
   kubegres: "v1.19"

@@ -34,8 +34,7 @@
     values:
       provider:
         name: rfc2136
-      sources:
-        - ingress
+      sources: "{{ external_dns_sources }}"
       policy: "{{ external_dns_policy }}"
       txtOwnerId: "{{ external_dns_txt_owner_id }}"
       txtPrefix: "{{ external_dns_txt_prefix }}"

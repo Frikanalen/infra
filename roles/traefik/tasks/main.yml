@@ -27,6 +27,7 @@
     chart_version: "{{ traefik_chart_version | default(omit, true) }}"
     release_namespace: "{{ traefik_namespace }}"
     create_namespace: true
+    skip_crds: "{{ traefik_skip_crds }}"
     wait: true
     values:
       persistence:
@@ -62,12 +63,25 @@
       certificatesResolvers: "{{ traefik_cert_resolvers }}"
 
       service:
-        type: "{{ traefik_service_type }}"
         spec:
+          type: "{{ traefik_service_type }}"
           loadBalancerIP: "{{ traefik_loadbalancer_ip | default(omit) }}"
 
-      dashboard:
-        enabled: "{{ traefik_dashboard_enabled }}"
+      api:
+        dashboard: "{{ traefik_dashboard_enabled }}"
+
+      ingressRoute:
+        dashboard:
+          enabled: "{{ traefik_dashboard_ingressroute_enabled }}"
+          annotations:
+            kubernetes.io/ingress.class: "{{ traefik_ingress_class }}"
+            external-dns.kubernetes.io/target: "{{ traefik_loadbalancer_ip }}"
+          entryPoints:
+            - web
+            - websecure
+          matchRule: "Host(`{{ traefik_dashboard_host }}`)"
+          tls:
+            certResolver: letsencrypt
 
       metrics:
         prometheus:
@@ -81,10 +95,11 @@
 
       ports:
         web:
-          redirections:
-            entryPoint:
-              to: websecure
-              scheme: https
+          http:
+            redirections:
+              entryPoint:
+                to: websecure
+                scheme: https
 
       providers:
         kubernetesCRD:

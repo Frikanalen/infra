@@ -48,6 +48,20 @@ argument_specs:
         required: false
         default: true
         description: Enable Traefik dashboard
+      traefik_dashboard_ingressroute_enabled:
+        type: bool
+        required: false
+        default: false
+        description: >-
+          Create an IngressRoute for the dashboard, annotated with
+          traefik_ingress_class. Off by default -- don't expose a dashboard
+          over the internet. Requires traefik_dashboard_host and
+          traefik_enable_crd_provider: true on the release that should serve it.
+      traefik_dashboard_host:
+        type: str
+        required: false
+        default: ""
+        description: Host to match for the dashboard IngressRoute, e.g. traefik.intern.frikanalen.no
       traefik_ingress_class:
         type: str
         required: false
@@ -68,6 +82,14 @@ argument_specs:
         required: false
         default: true
         description: Enable class-filtered Traefik CRD routes
+      traefik_skip_crds:
+        type: bool
+        required: false
+        default: false
+        description: >-
+          Skip installing the chart's cluster-scoped CRDs. Set true on every
+          release after the first one in a cluster, or the second release's
+          install conflicts with CRDs the first one already created.
       traefik_loadbalancer_ip:
         type: str
         required: true
