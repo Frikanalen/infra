@@ -12,6 +12,13 @@ frikanalen_intern_tsig_keyname: prod-cluster-update-key
 frikanalen_intern_owner_id: prod-internal-external-dns
 frikanalen_intern_ingress_class: internal
 
+# Prometheus Operator + Prometheus + Alertmanager + Grafana via
+# roles/kube_prometheus_stack, exposed only on frikanalen_intern_zone -- see
+# playbooks/k8s_platform_prod.yml. Also turns on the ServiceMonitors that
+# traefik/argocd/cnpg/metallb would otherwise skip -- see data/apps.yml and
+# each role's tasks.
+k8s_monitoring_enabled: true
+
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 
@@ -58,10 +65,11 @@ app_versions:
 helm_chart_versions:
   traefik: "41.6.0"
   argocd: "9.1.7"
-  argoc d_image_updater: "1.2.4"
+  argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
   kubegres: "v1.19"
   # CloudNativePG Helm chart version, not the operator's app version (chart
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"
+  kube_prometheus_stack: "91.4.1"

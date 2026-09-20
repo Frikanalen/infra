@@ -5,11 +5,8 @@
 #   ansible-playbook playbooks/k8s_platform_prod.yml
 #   ansible-playbook playbooks/k8s_platform_prod.yml --tags traefik
 #
-# Prod runs no kube-prometheus-stack, so k8s_monitoring_enabled stays false
-# here and the ServiceMonitors these roles would otherwise render are
-# skipped -- see data/cluster.yml. Prod is also some way behind this file:
-# advancing it a component at a time with --tags is a good deal calmer than
-# a single run of everything.
+# Prod is some way behind this file: advancing it a component at a time
+# with --tags is a good deal calmer than a single run of everything.
 
 - name: Install platform services on the kubeprod cluster
   hosts: kubeprod_admin
@@ -36,6 +33,17 @@
           - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
       tags: [always]
   roles:
+    # Prometheus Operator CRDs must exist before any role below that
+    # conditionally creates a ServiceMonitor (metallb, traefik, argocd,
+    # cnpg -- all gated on k8s_monitoring_enabled), so this runs first.
+    # Its own Ingress objects reference frikanalen_intern_ingress_class/
+    # frikanalen_intern_zone from group_vars rather than anything the
+    # ingress/DNS roles below produce, so there's no dependency the other
+    # way -- Grafana/Prometheus/Alertmanager just aren't reachable until
+    # traefik and external-dns are up.
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack, monitoring]
+
     - role: metallb
       tags: [metallb, ingress]
 

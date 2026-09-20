@@ -36,6 +36,17 @@
           - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
       tags: [always]
   roles:
+    # Prometheus Operator CRDs must exist before any role below that
+    # conditionally creates a ServiceMonitor (metallb, traefik, argocd,
+    # cnpg -- all gated on k8s_monitoring_enabled), so this runs first.
+    # Its own Ingress objects reference frikanalen_intern_ingress_class/
+    # frikanalen_intern_zone from group_vars rather than anything the
+    # ingress/DNS roles below produce, so there's no dependency the other
+    # way -- Grafana/Prometheus/Alertmanager just aren't reachable until
+    # traefik and external-dns are up.
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack, monitoring]
+
     - role: metallb
       tags: [metallb, ingress]
 
@@ -75,13 +86,6 @@
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
         external_dns_sources: [ingress, traefik-proxy]
-
-    # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
-    # on intern.dev.frikanalen.no via the internal ingress class/external-dns
-    # instance above -- not reachable outside the VPN. This is what makes
-    # k8s_monitoring_enabled true for this cluster; see data/cluster.yml.
-    - role: kube_prometheus_stack
-      tags: [kube_prometheus_stack, monitoring]
 
     # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
     # hands it to the Prometheus above. Needs a login user on the switch that
