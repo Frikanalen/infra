@@ -59,10 +59,7 @@ all:
 
     tx:
       hosts:
-        tx1:
-        tx2:
         tx3:
-        tx4:
 
     proxmox:
       hosts:
