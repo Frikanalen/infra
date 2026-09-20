@@ -41,12 +41,12 @@ dns_dynamic_zones:
   - name: intern.frikanalen.no
     tsig_key_name: prod-cluster-update-key
     ns1_address: "158.36.191.229"
-    apex_address: "192.168.3.104"
+    apex_address: "{{ host_config['ingress-prod-internal'].ip_cidr.split('/')[0] }}"
 
   - name: intern.dev.frikanalen.no
     tsig_key_name: staging-update-key
     ns1_address: "158.36.191.229"
-    apex_address: "192.168.3.90"
+    apex_address: "{{ host_config['ingress-dev-internal'].ip_cidr.split('/')[0] }}"
 
 # Paths are for BIND installed from pkg/ports on FreeBSD.
 dns_zone_dir: "/usr/local/etc/namedb/master"

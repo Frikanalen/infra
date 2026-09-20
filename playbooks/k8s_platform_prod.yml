@@ -17,21 +17,36 @@
   vars:
     metallb_ingress_ip: "192.168.3.104/30"
     traefik_loadbalancer_ip: "192.168.3.104"
+    traefik_internal_loadbalancer_ip: "{{ host_config['ingress-prod-internal'].ip_cidr.split('/')[0] }}"
     traefik_public_ip: "158.36.191.231"
     traefik_acme_challenge: http
-    # frikanalen.no stays on HTTP-01 above (unchanged). intern.frikanalen.no
-    # is internal-only, so it needs its own DNS-01 resolver -- see the
-    # conflict assertion in roles/traefik/tasks/main.yml for why this can't
-    # just flip traefik_acme_challenge to dns instead.
-    traefik_internal_acme_enabled: true
-    traefik_internal_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
-    traefik_internal_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+    # The public release uses HTTP-01; the internal release uses DNS-01.
+  pre_tasks:
+    - name: Keep public and internal ingress endpoints distinct
+      ansible.builtin.assert:
+        that:
+          - traefik_internal_loadbalancer_ip != traefik_loadbalancer_ip
+          - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
+      tags: [always]
   roles:
     - role: metallb
       tags: [metallb, ingress]
 
     - role: traefik
       tags: [traefik, ingress]
+
+    - role: traefik
+      tags: [traefik, ingress, internal_ingress]
+      vars:
+        traefik_release_name: traefik-internal
+        traefik_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
+        traefik_manage_ingress_class: false
+        traefik_manage_www_redirect: false
+        traefik_enable_crd_provider: false
+        traefik_acme_challenge: dns
+        traefik_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+        traefik_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
 
     # external-dns for intern.frikanalen.no: watches ingressClassName:
     # internal and targets the cluster's internal ingress IP. There is
@@ -43,7 +58,7 @@
         external_dns_release_name: external-dns-internal
         external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
         external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
-        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_default_target: "{{ traefik_internal_loadbalancer_ip }}"
         external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
         external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
