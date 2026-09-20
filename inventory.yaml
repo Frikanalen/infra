@@ -29,6 +29,7 @@ all:
         dev-kube-1:
         dev-kube-2:
         dev-kube-3:
+        dev-kube-4:
 
     # The single node each cluster is driven from: it holds the kubeconfig,
     # and the platform and application playbooks run their kubernetes.core

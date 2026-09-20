@@ -32,6 +32,7 @@ archive_media_staging_kube_clients:
   - dev-kube-1
   - dev-kube-2
   - dev-kube-3
+  - dev-kube-4
 
 # Destination for the daily prod Kubegres backup CronJob (see
 # roles/kubegres_backup): a plain rw export, not part of the ZFS media
