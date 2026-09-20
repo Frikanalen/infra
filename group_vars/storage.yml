@@ -58,6 +58,32 @@ chwiki_images_export_path: /util/chwiki-images
 chwiki_images_clients:
   - simula
 
+# roles/fk_archive_utils installs the storage-host half of ingest
+# (Frikanalen/ingest's archive-utils). file01 is one host shared by both the
+# prod and staging archive profiles, so there is a single package version
+# here rather than one per environment.
+#
+# "main" for now: no release has shipped a .deb yet (v0.1.1 predates the
+# package solidifying), so this pulls the newest successful archive-utils.yml
+# build off main instead of a release asset -- see the comment at the top of
+# roles/fk_archive_utils/tasks/main.yml. Switch to "latest" once a release
+# has one attached, and to a pinned tag (e.g. "v0.1.1") once the package has
+# seen enough use that floating is no longer wanted.
+fk_archive_utils_version: main
+
+# One archive profile per environment, both configured on this one host --
+# see roles/fk_archive_utils's defaults. Root paths match /archive/media and
+# archive_media_staging_export_path above; manager account names match
+# examples/sudoers and examples/prod.toml in archive-utils, so a future
+# sudoers rule here can be copied from those without renaming anything.
+fk_archive_utils_profiles:
+  - name: prod
+    root: /archive/media
+    manager: archive-manager
+  - name: staging
+    root: "{{ archive_media_staging_export_path }}"
+    manager: archive-manager-staging
+
 nfs_exports:
   - path: /archive/media
     clients: >-

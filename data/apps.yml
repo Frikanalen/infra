@@ -210,6 +210,15 @@ frikanalen_apps:
           size: "{{ ingest_uploads_size }}"
       archive:
         dir: "{{ ingest_archive_dir }}"
+        # Reads use the archive's read-only NFS export; mutations still go
+        # through the separately constrained SSH account below. These values
+        # intentionally remain explicit even though both currently share a
+        # host and path: the container mount point, NFS export, and fk-archive
+        # profile root are independent parts of the deployment contract.
+        mount:
+          nfs:
+            server: "{{ ingest_archive_host }}"
+            path: "{{ ingest_archive_dir }}"
         ssh:
           enabled: true
           host: "{{ ingest_archive_host }}"

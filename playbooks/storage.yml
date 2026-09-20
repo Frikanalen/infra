@@ -13,4 +13,7 @@
     - db_backup_retention
     - role: chwiki_images
       tags: [chwiki_images]
-    - nfs_server
+    - role: fk_archive_utils
+      tags: [fk_archive_utils]
+    - role: nfs_server
+      tags: [nfs]

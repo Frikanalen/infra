@@ -1,0 +1,225 @@
+---
+# Installs fk-archive-utils, the storage-host half of the ingest engine --
+# see archive-utils/README.md in the Frikanalen/ingest repository for what the
+# package actually does -- and sets up what it needs to run: one manager
+# account per archive profile, and that profile's
+# /etc/fk-archive-utils/profiles.d/<name>.toml.
+#
+# Deliberately not yet handled here: the sudoers rule that lets the ingest
+# account sudo into these managers, and the SSH forced-command migration off
+# roles/ingest_archive_account's internal-sftp setup. Until those land, these
+# accounts and profiles exist but nothing reaches them.
+#
+# Normally this asks GitHub's API which release fk_archive_utils_version names
+# and installs straight from the asset URL it returns -- the same pattern
+# roles/casparcg uses for CasparCG's own GitHub releases, except those URLs
+# are static and this one has to be resolved per run.
+#
+# fk_archive_utils_version: main is a stopgap for right now: no release has
+# shipped since the package started building for real, so there is nothing
+# for "latest" or a pinned tag to point at yet. It instead pulls the .deb out
+# of the most recent successful archive-utils.yml run on main -- a workflow
+# artifact, not a release asset, which is why this half needs `gh` and its own
+# auth on the controller rather than a plain URL a remote apt can fetch
+# itself. Delete this whole path once a real release exists to pin -- see
+# archive-utils/README.md's "Installing" section and switch
+# fk_archive_utils_version back to a tag.
+
+- name: Verify gh is available for the main-branch workaround
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv: [gh, auth, status]
+  changed_when: false
+  register: fk_archive_utils_gh_auth
+  failed_when: fk_archive_utils_gh_auth.rc != 0
+  # This one's message is the assert-style guidance for a check that isn't an
+  # assert, because the failure is `gh`'s own, not ours to phrase -- `gh auth
+  # login` is what fixes it either way.
+
+- name: Find the latest successful archive-utils.yml run on main
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - gh
+      - run
+      - list
+      - --repo
+      - "{{ fk_archive_utils_github_repo }}"
+      - --workflow
+      - archive-utils.yml
+      - --branch
+      - main
+      - --status
+      - success
+      - --limit
+      - "1"
+      - --json
+      - databaseId
+      - --jq
+      - .[0].databaseId
+  register: fk_archive_utils_run_lookup
+  changed_when: false
+  failed_when: fk_archive_utils_run_lookup.rc != 0 or fk_archive_utils_run_lookup.stdout | trim | length == 0
+
+- name: Create a scratch directory for the artifact download
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: fk-archive-utils-artifact
+  register: fk_archive_utils_artifact_dir
+
+- name: Download that run's fk-archive-utils-deb artifact
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv:
+      - gh
+      - run
+      - download
+      - "{{ fk_archive_utils_run_lookup.stdout | trim }}"
+      - --repo
+      - "{{ fk_archive_utils_github_repo }}"
+      - --name
+      - fk-archive-utils-deb
+      - --dir
+      - "{{ fk_archive_utils_artifact_dir.path }}"
+  changed_when: true
+
+- name: Find the .deb inside the downloaded artifact
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.find:
+    paths: "{{ fk_archive_utils_artifact_dir.path }}"
+    patterns: "*.deb"
+    recurse: true
+  register: fk_archive_utils_artifact_debs
+
+- name: Verify the artifact holds exactly one .deb
+  # Not "at least one": a run that somehow produced two would leave the next
+  # task silently installing whichever one find() happened to return first,
+  # onto the one host this all runs on.
+  when: fk_archive_utils_version == 'main'
+  ansible.builtin.assert:
+    that:
+      - fk_archive_utils_artifact_debs.files | length == 1
+    fail_msg: >-
+      Run {{ fk_archive_utils_run_lookup.stdout | trim }}'s fk-archive-utils-deb
+      artifact holds {{ fk_archive_utils_artifact_debs.files | length }} .deb
+      files, not one. Check the archive-utils.yml workflow's build step --
+      only build-deb.sh's own dist/*.deb should ever land in that artifact.
+
+- name: Copy the artifact .deb to file01
+  when: fk_archive_utils_version == 'main'
+  ansible.builtin.copy:
+    src: "{{ fk_archive_utils_artifact_debs.files[0].path }}"
+    dest: "/tmp/{{ fk_archive_utils_artifact_debs.files[0].path | basename }}"
+    mode: "0644"
+  become: true
+  register: fk_archive_utils_copied_deb
+
+- name: Install fk-archive-utils from the main-branch artifact
+  when: fk_archive_utils_version == 'main'
+  ansible.builtin.apt:
+    deb: "{{ fk_archive_utils_copied_deb.dest }}"
+    state: present
+  become: true
+
+- name: Remove the copied .deb
+  when: fk_archive_utils_version == 'main'
+  ansible.builtin.file:
+    path: "{{ fk_archive_utils_copied_deb.dest }}"
+    state: absent
+  become: true
+
+- name: Remove the local scratch directory
+  when: fk_archive_utils_version == 'main'
+  delegate_to: localhost
+  become: false
+  ansible.builtin.file:
+    path: "{{ fk_archive_utils_artifact_dir.path }}"
+    state: absent
+
+# --- the real path: a GitHub Release, once one has a .deb attached ---------
+
+- name: Look up the {{ fk_archive_utils_version }} fk-archive-utils release
+  when: fk_archive_utils_version != 'main'
+  ansible.builtin.uri:
+    url: >-
+      https://api.github.com/repos/{{ fk_archive_utils_github_repo }}/releases/{{
+      'latest' if fk_archive_utils_version == 'latest'
+      else 'tags/' ~ fk_archive_utils_version }}
+    return_content: true
+  register: fk_archive_utils_release
+
+- name: Find the .deb asset on that release
+  when: fk_archive_utils_version != 'main'
+  ansible.builtin.set_fact:
+    fk_archive_utils_deb_asset: >-
+      {{ fk_archive_utils_release.json.assets
+         | selectattr('name', 'match', '^fk-archive-utils_.*\.deb$')
+         | list }}
+
+- name: Verify the release has exactly one .deb attached
+  # Not "at least one": selectattr matching more than one asset would
+  # otherwise be silently resolved by picking [0], installing whichever one
+  # GitHub happened to list first.
+  when: fk_archive_utils_version != 'main'
+  ansible.builtin.assert:
+    that:
+      - fk_archive_utils_deb_asset | length == 1
+    fail_msg: >-
+      {{ fk_archive_utils_release.json.tag_name }} on
+      {{ fk_archive_utils_github_repo }} has
+      {{ fk_archive_utils_deb_asset | length }} fk-archive-utils_*.deb assets,
+      not one. Check the release on GitHub and the archive-utils.yml workflow
+      that is meant to attach it -- or, if none has been attached yet, set
+      fk_archive_utils_version to "main" as a stopgap (see this role's
+      comments at the top of this file).
+
+- name: Install fk-archive-utils {{ fk_archive_utils_release.json.tag_name | default('') }}
+  when: fk_archive_utils_version != 'main'
+  ansible.builtin.apt:
+    deb: "{{ fk_archive_utils_deb_asset[0].browser_download_url }}"
+    state: present
+  become: true
+
+- name: Create the archive manager accounts
+  # One per profile -- see group_vars/storage.yml's fk_archive_utils_profiles.
+  # No login shell and no sudo of its own: this account is a destination
+  # `sudo -u` execs a specific fk-archive command into, never a session
+  # anything logs into directly.
+  ansible.builtin.user:
+    name: "{{ item.manager }}"
+    system: true
+    create_home: false
+    shell: /usr/sbin/nologin
+    state: present
+  loop: "{{ fk_archive_utils_profiles }}"
+  loop_control:
+    label: "{{ item.manager }}"
+  become: true
+
+- name: Write the archive profile configs
+  # /etc/fk-archive-utils/profiles.d/ itself is created by the package (see
+  # its debian/dirs), so this only ever needs to exist after the install task
+  # above. Root-owned and world-readable per the package's own examples --
+  # nothing in a profile file is secret, and the forced-command wrapper reads
+  # it as the unprivileged ingest account to learn which manager to sudo to.
+  ansible.builtin.template:
+    src: profile.toml.j2
+    dest: "/etc/fk-archive-utils/profiles.d/{{ item.name }}.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ fk_archive_utils_profiles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true

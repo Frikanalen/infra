@@ -1,0 +1,29 @@
+---
+# defaults for fk_archive_utils role
+
+fk_archive_utils_github_repo: Frikanalen/ingest
+
+# "latest" tracks whatever GitHub Release is newest, once one exists with a
+# .deb attached. "main" is a stopgap that instead pulls the .deb out of the
+# newest successful archive-utils.yml build on main -- see the long comment at
+# the top of tasks/main.yml. file01 is a single host shared by both the prod
+# and staging archive profiles (see roles/ingest_archive_account's README), so
+# there is only one installed version of this package to choose, not one per
+# environment -- set in group_vars/storage.yml. Pin it to a release tag, e.g.
+# "v0.1.1", once the package has seen enough use that floating is no longer
+# wanted.
+fk_archive_utils_version: latest
+
+# One profile per archive: which directory `fk-archive <name> ...` may touch
+# and which manager account it runs as. file01 is the one host for both, so
+# both profiles are configured on it -- there is no per-environment inventory
+# split here to key this off, unlike ingest_archive_dir. Set in
+# group_vars/storage.yml.
+fk_archive_utils_profiles: []
+
+# Modes applied to everything fk-archive publishes, shared by every profile.
+# Octal, and as strings: TOML has no octal literal, and 0644 written as a
+# number is 644 decimal. The archive is exported read-only over NFS to the
+# playout hosts, so both have to leave "other" able to read.
+fk_archive_utils_file_mode: "0644"
+fk_archive_utils_dir_mode: "0755"

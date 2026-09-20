@@ -1,0 +1,17 @@
+# /etc/fk-archive-utils/profiles.d/{{ item.name }}.toml
+#
+# Managed by roles/fk_archive_utils -- edits here are overwritten on the next
+# Ansible run; change fk_archive_utils_profiles in group_vars/storage.yml
+# instead. Which archive `fk-archive {{ item.name }} ...` acts on, and as
+# whom. The profile name is the filename, and it is the first argument to
+# every command, which is what lets a sudoers rule pin it.
+
+root = "{{ item.root }}"
+manager = "{{ item.manager }}"
+
+# Modes applied to everything published. Octal, and as strings: TOML has no
+# octal literal, and 0644 written as a number is 644 decimal. The archive is
+# exported read-only over NFS to the playout hosts, so both have to leave
+# "other" able to read.
+file_mode = "{{ fk_archive_utils_file_mode }}"
+dir_mode = "{{ fk_archive_utils_dir_mode }}"
