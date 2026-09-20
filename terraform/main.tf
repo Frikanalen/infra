@@ -12,15 +12,17 @@ locals {
         # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
         # It speeds disk I/O at the cost of almost certain data loss on host power failure.
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
-        disk_cache     = try(h.vm.disk_cache, "none")
-        cores          = try(h.vm.cores, 8)
-        memory_max     = try(h.vm.memory_max, 16384)
-        memory_min     = try(h.vm.memory_min, 8192)
-        template       = try(h.vm.template, var.template)
-        storage        = try(h.vm.storage, "localssd-lvm")
-        ceph_storage   = try(h.vm.ceph_storage, "local-lvm")
-        ceph_disk_size = try(h.vm.ceph_disk_size, null)
-        pci_mappings   = try(h.vm.pci_mappings, [])
+        disk_cache        = try(h.vm.disk_cache, "none")
+        cores             = try(h.vm.cores, 8)
+        memory_max        = try(h.vm.memory_max, 16384)
+        memory_min        = try(h.vm.memory_min, 8192)
+        template          = try(h.vm.template, var.template)
+        storage           = try(h.vm.storage, "localssd-lvm")
+        ceph_storage      = try(h.vm.ceph_storage, "local-lvm")
+        ceph_disk_size    = try(h.vm.ceph_disk_size, null)
+        local_ssd_size    = try(h.vm.local_ssd_size, null)
+        local_ssd_storage = try(h.vm.local_ssd_storage, "localssd-lvm")
+        pci_mappings      = try(h.vm.pci_mappings, [])
       },
       h.vm
     )
@@ -54,6 +56,15 @@ resource "proxmox_vm_qemu" "kube" {
   memory  = each.value.memory_max
   balloon = each.value.memory_min
 
+  # cpu here (on top of the provider's network,disk,usb default) so core
+  # count changes -- including the initial clone -> full-spec resize on
+  # creation -- apply live instead of being gated behind automatic_reboot.
+  # Memory hotplug deliberately left out: Proxmox's DIMM allocator only
+  # accepts specific memory sizes (not every 2048-aligned value), which
+  # made "memory size (N) must be aligned to 2048" errors common; memory
+  # changes go back to being reboot-gated like before.
+  hotplug = "network,disk,usb,cpu"
+
   # Disks
   scsihw = "virtio-scsi-single"
 
@@ -80,6 +91,24 @@ resource "proxmox_vm_qemu" "kube" {
             backup    = false
             replicate = false
             serial    = "ceph-osd-${each.value.vmid}"
+          }
+        }
+      }
+      # roles/local_ssd_mount formats and mounts this by serial on the kube
+      # nodes; it predates this resource being Terraform-managed, so it's
+      # opt-in per host rather than assumed for every VM.
+      dynamic "scsi2" {
+        for_each = each.value.local_ssd_size == null ? [] : [each.value.local_ssd_size]
+        content {
+          disk {
+            size       = scsi2.value
+            storage    = each.value.local_ssd_storage
+            cache      = each.value.disk_cache
+            iothread   = true
+            discard    = true
+            backup     = true
+            emulatessd = true
+            serial     = "localssd-${each.value.vmid}"
           }
         }
       }
@@ -152,6 +181,12 @@ resource "proxmox_vm_qemu" "kube" {
 
   agent  = 1
   onboot = true
+
+  # Apply config changes without rebooting the VM; some changes (cores,
+  # memory, disks, network) only take effect after a reboot, but we want to
+  # control when that happens rather than have `terraform apply` reboot
+  # production nodes unprompted.
+  automatic_reboot = false
 }
 
 output "kube_nodes_ips" {
