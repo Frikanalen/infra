@@ -258,3 +258,18 @@ and applied with:
 ```sh
 ansible-playbook playbooks/proxmox/pci_resource_mappings.yml
 ```
+
+The dev-cluster playbook labels `dev-kube-4` with A310 and Tesla P4
+capabilities. Select the required GPU host in a pod template with its label:
+
+```yaml
+nodeSelector:
+  frikanalen.no/gpu-intel-arc-a310: "true"
+```
+
+For workloads targeting the Tesla P4:
+
+```yaml
+nodeSelector:
+  frikanalen.no/gpu-nvidia-tesla-p4: "true"
+```
