@@ -244,3 +244,17 @@ especially user access, firewall rules, DNS zones, and production app versions.
 The `terraform/` directory manages Proxmox VM guest orchestration. See
 `terraform/README.md` for required Proxmox token environment variables and the
 usual `terraform init`, `terraform plan`, and `terraform apply` flow.
+
+## Proxmox
+
+Proxmox has mostly been provisioned by hand.
+
+### GPU PCIe passthrough
+
+Cluster PCI resource mappings, the `dev-kube-4` GPU assignments, and its
+Proxmox VM tags (`nvidia` and `a310`) are declared in `group_vars/proxmox.yml`
+and applied with:
+
+```sh
+ansible-playbook playbooks/proxmox/pci_resource_mappings.yml
+```

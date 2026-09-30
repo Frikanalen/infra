@@ -1,0 +1,23 @@
+proxmox_pci_mappings:
+- id: intel-arc-a310
+  description: Intel Arc A310 on vmtx1
+  node: vmtx1
+  path: "0000:83:00.0"
+  pci_id: "8086:56a6"
+  iommugroup: 9
+  subsystem_id: "172f:4019"
+
+- id: nvidia-tesla-p4
+  description: NVIDIA Tesla P4 on vmtx1
+  node: vmtx1
+  path: "0000:86:00.0"
+  pci_id: "10de:1bb3"
+  iommugroup: 12
+  subsystem_id: "10de:11d8"
+
+proxmox_gpu_vm:
+  node: vmtx1
+  vmid: 314
+  tags: "ubuntu;nvidia;a310"
+  hostpci0: "mapping=intel-arc-a310,pcie=1"
+  hostpci1: "mapping=nvidia-tesla-p4,pcie=1"
