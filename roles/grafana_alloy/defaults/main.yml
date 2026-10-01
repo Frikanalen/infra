@@ -11,4 +11,5 @@ grafana_alloy_chart_version: "{{ helm_chart_versions.alloy }}"
 grafana_alloy_namespace: "{{ loki_namespace | default('loki') }}"
 grafana_alloy_release_name: alloy
 
-grafana_alloy_loki_push_url: "http://{{ loki_release_name | default('loki') }}-gateway.{{ loki_namespace | default('loki') }}.svc.cluster.local/loki/api/v1/push"
+grafana_alloy_loki_push_url: >-
+  http://{{ loki_release_name | default('loki') }}-gateway.{{ loki_namespace | default('loki') }}.svc.cluster.local/loki/api/v1/push
