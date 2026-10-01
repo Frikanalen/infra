@@ -45,10 +45,13 @@ ingest_uploads_size: 500Gi
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
-# Prod's live feed is already served as MPEG-TS over HTTP by simula
-# (192.168.3.1:9094/frikanalen.ts), so the stream app pulls it directly
-# instead of running the in-cluster cubemap UDP reflector.
-argocd_stream_cubemap_enabled: false
+# simula's own cubemap service is being decommissioned, so prod now runs
+# the in-cluster cubemap UDP reflector instead of pulling simula's HTTP
+# endpoint directly (see roles/util_fw_ingress_prod's port-5565 rdr rule,
+# which already forwards to this IP:5004 -- see live-stream-packager's
+# cubemap-service.yaml). The encoder feeding that reflector must push
+# MPEG-TS to 158.36.191.230:5565.
+argocd_stream_cubemap_enabled: true
 argocd_stream_cubemap_ip: "192.168.3.105"
 
 # Every app the cluster runs must have a key here. The roles no longer carry
