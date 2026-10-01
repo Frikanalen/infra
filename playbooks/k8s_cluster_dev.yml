@@ -16,60 +16,60 @@
 - name: Seed the kubedev cluster
   hosts: kubedev_admin
   become: true
-  tags: [ bootstrap, seed ]
+  tags: [bootstrap, seed]
   vars:
     microk8s_cluster_expected_members: "{{ groups['kubedev'] }}"
   roles:
-  - microk8s_cluster_seed
+    - microk8s_cluster_seed
 
 - name: Join the remaining kubedev nodes
   hosts: kubedev:!kubedev_admin
   become: true
-  tags: [ bootstrap, join ]
+  tags: [bootstrap, join]
   vars:
     microk8s_seed_host: dev-kube-1
   roles:
-  - microk8s_cluster_join
+    - microk8s_cluster_join
 
 - name: Label dev-kube-4 GPU capabilities
   hosts: kubedev_admin
   become: true
   gather_facts: false
-  tags: [ bootstrap, gpu-labels ]
+  tags: [bootstrap, gpu-labels]
   vars:
     gpu_node_name: dev-kube-4
     gpu_node_labels:
       frikanalen.no/gpu-intel-arc-a310: "true"
       frikanalen.no/gpu-nvidia-tesla-p4: "true"
   tasks:
-  - name: Read GPU node labels
-    ansible.builtin.command:
-      argv:
-      - microk8s
-      - kubectl
-      - get
-      - node
-      - "{{ gpu_node_name }}"
-      - -o
-      - json
-    register: gpu_node
-    changed_when: false
+    - name: Read GPU node labels
+      ansible.builtin.command:
+        argv:
+          - microk8s
+          - kubectl
+          - get
+          - node
+          - "{{ gpu_node_name }}"
+          - -o
+          - json
+      register: gpu_node
+      changed_when: false
 
-  - name: Apply missing GPU capability labels
-    ansible.builtin.command:
-      argv:
-      - microk8s
-      - kubectl
-      - label
-      - node
-      - "{{ gpu_node_name }}"
-      - "{{ item.key }}={{ item.value }}"
-      - --overwrite
-    vars:
-      current_gpu_node_labels: "{{ (gpu_node.stdout | from_json).metadata.labels | default({}) }}"
-    loop: "{{ gpu_node_labels | dict2items }}"
-    when: current_gpu_node_labels.get(item.key) != item.value
-    changed_when: true
+    - name: Apply missing GPU capability labels
+      ansible.builtin.command:
+        argv:
+          - microk8s
+          - kubectl
+          - label
+          - node
+          - "{{ gpu_node_name }}"
+          - "{{ item.key }}={{ item.value }}"
+          - --overwrite
+      vars:
+        current_gpu_node_labels: "{{ (gpu_node.stdout | from_json).metadata.labels | default({}) }}"
+      loop: "{{ gpu_node_labels | dict2items }}"
+      when: current_gpu_node_labels.get(item.key) != item.value
+      changed_when: true
 
 # The A310's host half: driver, firmware and device ownership. The cluster
 # half, Intel's device plugin, is in playbooks/k8s_platform_dev.yml.
@@ -83,15 +83,15 @@
 - name: Install node prerequisites across kubedev
   hosts: kubedev
   become: true
-  tags: [ bootstrap ]
+  tags: [bootstrap]
   roles:
-  - role: microk8s_kubectl
-    tags: [ kubectl ]
-  - role: k8s_base_helm
-    tags: [ helm ]
-  # nfs-common only -- nfs_client_mounts is deliberately left unset here.
-  # roles/media_server mounts the archive as a raw k8s NFS volume, which
-  # kubelet mounts per-pod on whichever node it lands on; it just needs
-  # mount.nfs present on every node, not a host-level fstab entry.
-  - role: nfs_client
-    tags: [ nfs ]
+    - role: microk8s_kubectl
+      tags: [kubectl]
+    - role: k8s_base_helm
+      tags: [helm]
+    # nfs-common only -- nfs_client_mounts is deliberately left unset here.
+    # roles/media_server mounts the archive as a raw k8s NFS volume, which
+    # kubelet mounts per-pod on whichever node it lands on; it just needs
+    # mount.nfs present on every node, not a host-level fstab entry.
+    - role: nfs_client
+      tags: [nfs]

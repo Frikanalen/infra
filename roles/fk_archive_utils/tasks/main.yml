@@ -149,7 +149,7 @@
 
 # --- the real path: a GitHub Release, once one has a .deb attached ---------
 
-- name: Look up the {{ fk_archive_utils_version }} fk-archive-utils release
+- name: Look up the fk-archive-utils release for version {{ fk_archive_utils_version }}
   when: fk_archive_utils_version != 'main'
   ansible.builtin.uri:
     url: >-
