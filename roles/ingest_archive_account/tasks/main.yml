@@ -143,17 +143,53 @@
       changed_when: false
       failed_when: false
       register: ingest_archive_writable
+      when: not ingest_archive_fk_profile
 
-    - name: Verify the archive account can write to the archive directory
+    - name: Check the archive account may run fk-archive for its profile
+      # Asked of sudo itself rather than read off the sudoers file, the way
+      # archive-utils' own CI does. The manager comes from the storage host's
+      # fk_archive_utils_profiles, the same list that wrote the profile.
+      vars:
+        _manager: >-
+          {{ (hostvars[ingest_archive_host].fk_archive_utils_profiles
+              | selectattr('name', 'equalto', ingest_archive_fk_profile) | first).manager }}
+      ansible.builtin.command:
+        argv:
+          - sudo
+          - -n
+          - -l
+          - -U
+          - "{{ ingest_archive_user }}"
+          - -u
+          - "{{ _manager }}"
+          - /usr/bin/fk-archive
+          - "{{ ingest_archive_fk_profile }}"
+          - publish
+          - probe
+          - --size
+          - "0"
+      changed_when: false
+      failed_when: false
+      register: ingest_archive_fk_allowed
+      when: ingest_archive_fk_profile | length > 0
+
+    - name: Verify the archive account can write to the archive
       # Turns a silent "ingest cannot archive anything" into a failed play.
       ansible.builtin.assert:
         that:
-          - ingest_archive_writable.rc == 0
+          - (ingest_archive_fk_allowed if ingest_archive_fk_profile else ingest_archive_writable).rc == 0
         fail_msg: >-
+          {% if ingest_archive_fk_profile %}
+          sudo will not let {{ ingest_archive_user }} run `fk-archive
+          {{ ingest_archive_fk_profile }}` as the profile's manager on
+          {{ ingest_archive_host }}. Check /etc/sudoers.d/fk-archive-utils and
+          that roles/fk_archive_utils has been run there.
+          {% else %}
           {{ ingest_archive_user }} cannot write to {{ ingest_archive_dir }}.
           Set ingest_archive_group to a group with write access to it, as
           prod does, or fix the directory's permissions. Check with
           `ls -ld {{ ingest_archive_dir }}` and `id {{ ingest_archive_user }}`.
+          {% endif %}
 
     - name: Read the archive host's SSH host key
       ansible.builtin.slurp:

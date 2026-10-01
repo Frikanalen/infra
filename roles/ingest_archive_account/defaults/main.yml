@@ -19,9 +19,19 @@ ingest_archive_key_comment: "ingest@{{ inventory_hostname }}"
 # from the host itself is why ingest never has to trust ssh-keyscan.
 ingest_archive_host_key_type: ed25519
 
-# What the archive key is allowed to do. Ingest only ever speaks SFTP, so a
-# stolen key cannot get a shell, forward ports, or allocate a PTY.
-ingest_archive_key_options: 'restrict,command="internal-sftp"'
+# The fk-archive-utils profile (see roles/fk_archive_utils) this environment's
+# ingest writes through, for ingest versions that no longer write over SFTP but
+# ask fk-archive on the storage host to. Empty for an ingest that still speaks
+# SFTP into a directory it can write itself.
+ingest_archive_fk_profile: ""
+
+# What the archive key is allowed to do: one forced command and nothing else,
+# so a stolen key cannot get a shell, forward ports, or allocate a PTY. With a
+# profile that command is fk-archive-ssh, which names the profile itself, so
+# the key cannot reach another environment's archive; without one, SFTP.
+ingest_archive_key_options: >-
+  restrict,command="{{ '/usr/bin/fk-archive-ssh ' ~ ingest_archive_fk_profile
+  if ingest_archive_fk_profile else 'internal-sftp' }}"
 
 # Group granting write access to an existing archive directory. Set for the
 # environment whose archive already exists and is group-writable; left unset

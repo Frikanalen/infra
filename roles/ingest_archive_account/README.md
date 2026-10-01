@@ -30,13 +30,13 @@ key and replaces the authorised one. Nothing else needs updating.
    type one in when the pod starts).
 3. Creates the account and, if absent, the archive directory on the storage
    host.
-4. Installs the public key in `authorized_keys`, `exclusive`, restricted to
-   `restrict,command="internal-sftp"` — a stolen key cannot get a shell,
-   forward ports, or allocate a PTY. Ingest only ever speaks SFTP, so this
-   costs nothing.
-5. Checks the account can actually write to the archive directory, so a
-   permissions mistake fails the play rather than surfacing as an ingest that
-   silently archives nothing.
+4. Installs the public key in `authorized_keys`, `exclusive`, restricted to a
+   single forced command — a stolen key cannot get a shell, forward ports, or
+   allocate a PTY. That command is `internal-sftp`, or `fk-archive-ssh
+   <profile>` where `ingest_archive_fk_profile` is set (see below).
+5. Checks the account can actually write to the archive, so a permissions
+   mistake fails the play rather than surfacing as an ingest that silently
+   archives nothing.
 6. Reads the host's own SSH host key to build `known_hosts`. Taking it from the
    host rather than `ssh-keyscan` means there is no trust-on-first-use window.
 7. Writes the secret.
@@ -54,6 +54,15 @@ it unset: the role creates that directory and the account owns it outright.
 Keeping the two environments out of one shared group is the whole point, so
 resist the temptation to set `ingest_archive_group` for staging when its
 archive one day already exists. Give it a group of its own instead.
+
+Newer ingest versions have no write access at all: they ask `fk-archive` on
+the storage host (`roles/fk_archive_utils`) to make each change, and sudo runs
+it as the profile's manager account, which owns the directory. An environment
+on such a version sets `ingest_archive_fk_profile` to its profile name. The
+key's forced command becomes `fk-archive-ssh <profile>`, which pins the
+profile on the storage host's side, and step 5 asks sudo whether the account
+may run `fk-archive <profile>` as that profile's manager instead of testing
+the directory. Staging does this today; production still speaks SFTP.
 
 POSIX ACLs would not improve on this. They add principals, not verbs: `w` on a
 directory still means create, delete and rename, so an ACL grants exactly what
