@@ -1,0 +1,20 @@
+---
+# WireGuard interface and pf identifiers, named the same as the
+# fw_ext_if/fw_int_if/fw_lan_net convention the util_fw_ingress_* roles use,
+# so a single override style covers every role on this host.
+wireguard_interface: "wg0"
+fw_ext_if: "vtnet1"
+fw_lan_net: "192.168.3.0/24"
+
+# Public address clients dial -- util1's primary WAN address, the same one
+# frikanalen.no resolves to (roles/util_wan).
+wireguard_listen_ip: "158.36.191.229"
+wireguard_listen_port: 51820
+
+# The tunnel's own addressing. Clients are handed addresses out of
+# wireguard_client_net by hand -- there is no dynamic allocation here, so
+# nothing in this role needs to track which address belongs to which peer.
+wireguard_server_address: "192.168.5.1/24"
+wireguard_client_net: "192.168.5.0/24"
+
+wireguard_conf_dir: "/usr/local/etc/wireguard"

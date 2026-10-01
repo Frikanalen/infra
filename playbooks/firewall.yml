@@ -11,7 +11,7 @@
   # Tags let you re-apply one piece without the rest, but only util_fw can
   # run alone from a stopped state: it renders pf.conf with the anchors the
   # other roles insert into, so on a host that has never seen this playbook,
-  # --tags dev/pbx/prod fails until --tags base has run once. See
+  # --tags dev/pbx/prod/wireguard fails until --tags base has run once. See
   # docs/router-redundancy.md's note on pf.conf being templated then mutated.
   roles:
     - role: util_fw
@@ -22,3 +22,5 @@
       tags: [firewall, pbx]
     - role: util_fw_ingress_prod
       tags: [firewall, prod]
+    - role: wireguard_server
+      tags: [firewall, wireguard]
