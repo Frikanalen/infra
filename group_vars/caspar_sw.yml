@@ -14,3 +14,9 @@ casparcg_consumer_type: "ffmpeg"
 nfs_client_mounts:
   - src: "file01:/archive/media-staging"
     path: /mnt/media
+
+# caspar-sw1 is not a kubedev node, so it does not inherit
+# frikanalen_intern_zone from group_vars/staging.yml -- roles/alloy_journal
+# needs it directly to reach the dev cluster's Loki (see
+# group_vars/staging.yml for the value this must match).
+frikanalen_intern_zone: intern.dev.frikanalen.no

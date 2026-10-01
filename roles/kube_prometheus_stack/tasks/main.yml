@@ -21,6 +21,13 @@
     # own default.
     wait_timeout: 10m0s
     values:
+      # Helm doesn't reconcile CRD changes on upgrade -- this runs a Job that
+      # applies the Prometheus Operator's CRDs via server-side apply so
+      # chart bumps that ship new CRD versions (e.g. 91.x's Operator
+      # v0.94.0 CRDs) don't need a manual kubectl apply step first.
+      crds:
+        upgradeJob:
+          enabled: true
       grafana:
         # microk8s's cluster CA cert has no X509v3 Key Usage extension
         # (only Basic Constraints: CA:TRUE). The k8s-sidecar image's Python

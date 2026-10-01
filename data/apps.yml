@@ -122,18 +122,6 @@ frikanalen_apps:
       image:
         tag: "{{ app_versions.graphics }}"
 
-  schedule:
-    name: schedule-service
-    repo_url: https://github.com/Frikanalen/schedule-service.git
-    image_repository: ghcr.io/frikanalen/schedule-service
-    version: "{{ app_versions.schedule }}"
-    helm_values:
-      image:
-        tag: "{{ app_versions.schedule }}"
-      timezone: "{{ timezone_region }}"
-      database:
-        secret: "{{ django_db_secret_name }}"
-
   playout:
     name: playout
     repo_url: https://github.com/Frikanalen/playout.git

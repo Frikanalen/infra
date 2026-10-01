@@ -15,12 +15,21 @@ traefik_service_type: LoadBalancer
 
 # Dashboard
 traefik_dashboard_enabled: true
+# Expose the dashboard on an IngressRoute (off by default -- don't expose a
+# dashboard over the internet). Set traefik_dashboard_host when enabling.
+traefik_dashboard_ingressroute_enabled: false
+traefik_dashboard_host: ""
 
 # Ingress class for external-dns integration
 traefik_ingress_class: "{{ frikanalen_public_ingress_class }}"
 traefik_manage_ingress_class: true
 traefik_manage_www_redirect: true
 traefik_enable_crd_provider: true
+# CRDs (including Traefik Hub's, unused here) are cluster-scoped and shipped
+# in the chart's crds/ directory, which Helm installs unconditionally on a
+# release's first install. Set true on every release after the first in a
+# cluster to avoid a field-manager conflict re-applying the same CRDs.
+traefik_skip_crds: false
 
 # RFC2136 DNS challenge defaults (same as external_dns)
 # Only relevant if traefik_acme_challenge is 'dns'

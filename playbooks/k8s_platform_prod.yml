@@ -5,11 +5,8 @@
 #   ansible-playbook playbooks/k8s_platform_prod.yml
 #   ansible-playbook playbooks/k8s_platform_prod.yml --tags traefik
 #
-# Prod runs no kube-prometheus-stack, so k8s_monitoring_enabled stays false
-# here and the ServiceMonitors these roles would otherwise render are
-# skipped -- see data/cluster.yml. Prod is also some way behind this file:
-# advancing it a component at a time with --tags is a good deal calmer than
-# a single run of everything.
+# Prod is some way behind this file: advancing it a component at a time
+# with --tags is a good deal calmer than a single run of everything.
 
 - name: Install platform services on the kubeprod cluster
   hosts: kubeprod_admin
@@ -22,6 +19,13 @@
     traefik_acme_challenge: http
     # The public release uses HTTP-01; the internal release uses DNS-01.
   pre_tasks:
+    - name: Refresh local Helm repository caches
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      become: true
+      run_once: true
+      tags: [always]
+
     - name: Keep public and internal ingress endpoints distinct
       ansible.builtin.assert:
         that:
@@ -29,6 +33,26 @@
           - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
       tags: [always]
   roles:
+    # Prometheus Operator CRDs must exist before any role below that
+    # conditionally creates a ServiceMonitor (metallb, traefik, argocd,
+    # cnpg -- all gated on k8s_monitoring_enabled), so this runs first.
+    # Its own Ingress objects reference frikanalen_intern_ingress_class/
+    # frikanalen_intern_zone from group_vars rather than anything the
+    # ingress/DNS roles below produce, so there's no dependency the other
+    # way -- Grafana/Prometheus/Alertmanager just aren't reachable until
+    # traefik and external-dns are up.
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack, monitoring]
+
+    # Loki + Alloy for log aggregation. Runs after kube_prometheus_stack so
+    # its Grafana datasource ConfigMap lands in an already-existing
+    # namespace and Grafana's sidecar is up to pick it up.
+    - role: loki
+      tags: [loki, monitoring, logging]
+
+    - role: grafana_alloy
+      tags: [grafana_alloy, monitoring, logging]
+
     - role: metallb
       tags: [metallb, ingress]
 
@@ -43,7 +67,10 @@
         traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
         traefik_manage_ingress_class: false
         traefik_manage_www_redirect: false
-        traefik_enable_crd_provider: false
+        traefik_enable_crd_provider: true
+        traefik_skip_crds: true
+        traefik_dashboard_ingressroute_enabled: true
+        traefik_dashboard_host: "traefik.{{ frikanalen_intern_zone }}"
         traefik_acme_challenge: dns
         traefik_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         traefik_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
@@ -64,6 +91,7 @@
         external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
+        external_dns_sources: [ingress, traefik-proxy]
 
     - role: kubegres
       tags: [kubegres, database]

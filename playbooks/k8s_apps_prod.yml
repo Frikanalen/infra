@@ -53,11 +53,6 @@
         argocd_app: "{{ frikanalen_apps.graphics }}"
 
     - role: argocd_app
-      tags: [schedule]
-      vars:
-        argocd_app: "{{ frikanalen_apps.schedule }}"
-
-    - role: argocd_app
       tags: [playout]
       vars:
         argocd_app: "{{ frikanalen_apps.playout }}"

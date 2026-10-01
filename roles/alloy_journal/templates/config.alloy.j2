@@ -1,0 +1,32 @@
+// Ships this host's systemd journal to Loki -- see roles/alloy_journal.
+// Managed by Ansible; changes made here will be overwritten.
+
+logging {
+  level = "info"
+}
+
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "host"
+  }
+}
+
+loki.source.journal "read" {
+  forward_to    = [loki.write.loki.receiver]
+  relabel_rules = loki.relabel.journal.rules
+  max_age       = "{{ alloy_journal_max_age }}"
+}
+
+loki.write "loki" {
+  endpoint {
+    url = "{{ alloy_journal_push_url }}"
+  }
+}

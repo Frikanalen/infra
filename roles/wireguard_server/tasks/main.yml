@@ -1,0 +1,133 @@
+---
+- name: Install wireguard-tools
+  become: true
+  community.general.pkgng:
+    name: wireguard-tools
+    state: present
+
+# if_wg ships as a kernel module, not built into GENERIC, and nothing else on
+# this host references it, so it has to be loaded explicitly rather than
+# relying on device autoloading.
+- name: Load if_wg at boot
+  become: true
+  community.general.sysrc:
+    name: kld_list
+    value: if_wg
+
+- name: Load if_wg now # noqa command-instead-of-module -- no ansible module loads a kernel module on FreeBSD
+  become: true
+  ansible.builtin.command: kldload if_wg
+  register: wireguard_kldload
+  changed_when: wireguard_kldload.rc == 0
+  failed_when: wireguard_kldload.rc != 0 and 'already loaded' not in wireguard_kldload.stderr
+
+- name: Create WireGuard config directory
+  become: true
+  ansible.builtin.file:
+    path: "{{ wireguard_conf_dir }}"
+    state: directory
+    mode: "0700"
+
+# Generated once and left alone: this key never leaves util1, so there is
+# nothing to vault. Losing it just means generating a new one and
+# re-pointing every manually provisioned client at the new public half.
+- name: Generate the server private key
+  become: true
+  ansible.builtin.shell: |
+    umask 077
+    wg genkey > {{ wireguard_conf_dir }}/{{ wireguard_interface }}.key
+  args:
+    creates: "{{ wireguard_conf_dir }}/{{ wireguard_interface }}.key"
+
+- name: Read the server private key
+  become: true
+  ansible.builtin.slurp:
+    src: "{{ wireguard_conf_dir }}/{{ wireguard_interface }}.key"
+  register: wireguard_private_key_file
+  no_log: true
+
+- name: Hold the server private key
+  no_log: true
+  ansible.builtin.set_fact:
+    wireguard_private_key: "{{ (wireguard_private_key_file.content | b64decode).strip() }}"
+
+- name: Derive the server public key
+  become: true
+  ansible.builtin.command: wg pubkey
+  args:
+    stdin: "{{ wireguard_private_key }}"
+  register: wireguard_public_key_result
+  changed_when: false
+  no_log: true
+
+- name: Show the server public key
+  ansible.builtin.debug:
+    msg: >-
+      Server public key: {{ wireguard_public_key_result.stdout }}
+      -- put this in each client's [Peer] section, with Endpoint
+      {{ wireguard_listen_ip }}:{{ wireguard_listen_port }} and AllowedIPs
+      covering {{ fw_lan_net }} (and {{ wireguard_client_net }} if clients
+      should reach each other).
+
+# force: false -- clients are added by hand as [Peer] blocks appended to
+# this file, and a re-render here would erase every one of them. This only
+# ever creates the file; it never touches it again.
+- name: Deploy the interface config
+  become: true
+  ansible.builtin.template:
+    src: wg0.conf.j2
+    dest: "{{ wireguard_conf_dir }}/{{ wireguard_interface }}.conf"
+    mode: "0600"
+    force: false
+  no_log: true
+  notify: Restart wireguard
+
+# Helper that generates keys, a PSK and a config for a new client; see the README.
+# Its defaults duplicate wireguard_listen_* and wireguard_client_net, so
+# keep them in step if those change.
+- name: Install the client provisioning script
+  become: true
+  ansible.builtin.copy:
+    src: wg-add-client.sh
+    dest: /usr/local/sbin/wg-add-client
+    owner: root
+    group: wheel
+    mode: "0750"
+
+- name: Enable WireGuard in rc.conf
+  become: true
+  community.general.sysrc:
+    name: wireguard_enable
+    value: "YES"
+
+- name: Register the interface in rc.conf
+  become: true
+  community.general.sysrc:
+    name: wireguard_interfaces
+    value: "{{ wireguard_interface }}"
+
+- name: Start WireGuard service
+  become: true
+  ansible.builtin.service:
+    name: wireguard
+    state: started
+    enabled: true
+
+- name: Deploy WireGuard pf rules
+  become: true
+  ansible.builtin.template:
+    src: wireguard.conf.j2
+    dest: /etc/pf.conf.d/wireguard.conf
+    mode: "0600"
+  notify: Reload pf
+
+- name: Add wireguard anchor to pf.conf (filter section)
+  become: true
+  ansible.builtin.blockinfile:
+    path: /etc/pf.conf
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - wireguard"
+    insertafter: "^# Drop-in configuration files"
+    block: |
+      anchor "wireguard"
+      load anchor "wireguard" from "/etc/pf.conf.d/wireguard.conf"
+  notify: Reload pf

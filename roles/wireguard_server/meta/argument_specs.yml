@@ -1,0 +1,48 @@
+---
+argument_specs:
+  main:
+    short_description: WireGuard road-warrior VPN server on the utility host
+    options:
+      wireguard_interface:
+        type: str
+        required: false
+        default: wg0
+        description: Name of the WireGuard interface, and its config filename under wireguard_conf_dir.
+      fw_ext_if:
+        type: str
+        required: false
+        default: vtnet1
+        description: External interface on the utility host.
+      fw_lan_net:
+        type: str
+        required: false
+        default: 192.168.3.0/24
+        description: Internal network clients are given access to, in CIDR form.
+      wireguard_listen_ip:
+        type: str
+        required: false
+        default: 158.36.191.229
+        description: Public address clients connect to.
+      wireguard_listen_port:
+        type: int
+        required: false
+        default: 51820
+        description: UDP port WireGuard listens on.
+      wireguard_server_address:
+        type: str
+        required: false
+        default: 192.168.5.1/24
+        description: Tunnel address assigned to the server end of the interface.
+      wireguard_client_net:
+        type: str
+        required: false
+        default: 192.168.5.0/24
+        description: >-
+          Network clients are addressed from. Purely descriptive here --
+          clients are provisioned by hand, so nothing in this role hands out
+          or tracks individual addresses from it.
+      wireguard_conf_dir:
+        type: str
+        required: false
+        default: /usr/local/etc/wireguard
+        description: Directory holding the interface config and key material.

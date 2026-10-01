@@ -8,8 +8,19 @@
     dev_ingress_live_int_ip: "192.168.3.91"
     pbx_ext_ip: "158.36.191.229"
     pbx_int_ip: "192.168.3.3"
+  # Tags let you re-apply one piece without the rest, but only util_fw can
+  # run alone from a stopped state: it renders pf.conf with the anchors the
+  # other roles insert into, so on a host that has never seen this playbook,
+  # --tags dev/pbx/prod/wireguard fails until --tags base has run once. See
+  # docs/router-redundancy.md's note on pf.conf being templated then mutated.
   roles:
-    - util_fw
-    - util_fw_ingress_dev
-    - util_fw_pbx
-    - util_fw_ingress_prod
+    - role: util_fw
+      tags: [firewall, base]
+    - role: util_fw_ingress_dev
+      tags: [firewall, dev]
+    - role: util_fw_pbx
+      tags: [firewall, pbx]
+    - role: util_fw_ingress_prod
+      tags: [firewall, prod]
+    - role: wireguard_server
+      tags: [firewall, wireguard]

@@ -37,6 +37,16 @@ argument_specs:
         required: false
         default: public
         description: Ingress class to watch for DNS records
+      external_dns_sources:
+        type: list
+        elements: str
+        required: false
+        default: ["ingress"]
+        description: >-
+          Resource kinds to watch for hostnames. Add traefik-proxy to also
+          pick up Traefik IngressRoute/IngressRouteTCP/UDP CRDs; those need
+          an explicit external-dns.kubernetes.io/target annotation since
+          IngressRoute has no status.loadBalancer for --default-targets.
       external_dns_default_target:
         type: str
         required: true
