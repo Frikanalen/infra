@@ -5,8 +5,14 @@
 # The firmware matters more than it looks: on DG2 (Arc) the encoder only does
 # bitrate control with the HuC firmware loaded and authenticated, and without
 # it a QSV encode either fails or silently falls back to constant QP.
+#
+# The driver matters too: Ubuntu's cloud images run the linux-virtual flavour,
+# whose modules leave out i915 and xe altogether. linux-modules-extra carries
+# them, and linux-image-generic keeps it installed for every later kernel.
 intel_gpu_node_packages:
   - linux-firmware
+  - linux-image-generic
+  - "linux-modules-extra-{{ ansible_facts.kernel }}"
 
 # PCI vendor of the card we expect to find bound to a DRM driver.
 intel_gpu_node_vendor: "0x8086"

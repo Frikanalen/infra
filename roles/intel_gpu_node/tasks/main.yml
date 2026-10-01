@@ -1,9 +1,17 @@
 ---
-- name: Install GPU firmware
+- name: Install the GPU driver and firmware
   ansible.builtin.apt:
     name: "{{ intel_gpu_node_packages }}"
     state: present
     update_cache: true
+
+- name: Load the GPU driver
+  # The card was already enumerated at boot, when there was no module for it,
+  # so nothing will load one now unless asked. i915 claims DG2 by default; xe
+  # only does with force_probe.
+  community.general.modprobe:
+    name: i915
+    state: present
 
 - name: Find render nodes bound to an Intel GPU driver
   # Each /dev/dri/renderD* has a sysfs entry naming its PCI vendor and the
