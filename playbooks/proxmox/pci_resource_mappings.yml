@@ -5,97 +5,98 @@
   become: true
 
   tasks:
-  - name: Read current cluster PCI mappings
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - get
-      - /cluster/mapping/pci
-      - --output-format
-      - json
-    register: current_pci_mappings
-    changed_when: false
-    run_once: true
+    - name: Read current cluster PCI mappings
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - get
+          - /cluster/mapping/pci
+          - --output-format
+          - json
+      register: current_pci_mappings
+      changed_when: false
+      run_once: true
 
-  - name: Create missing PCI mappings
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - create
-      - /cluster/mapping/pci
-      - --id
-      - "{{ item.id }}"
-      - --description
-      - "{{ item.description }}"
-      - --map
-      - "{{ desired_map }}"
-    vars:
-      desired_map: >-
-        node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
-    loop: "{{ proxmox_pci_mappings }}"
-    when: >-
-      item.id not in (current_pci_mappings.stdout | from_json | map(attribute='id') | list)
-    changed_when: true
-    run_once: true
+    - name: Create missing PCI mappings
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - create
+          - /cluster/mapping/pci
+          - --id
+          - "{{ item.id }}"
+          - --description
+          - "{{ item.description }}"
+          - --map
+          - "{{ desired_map }}"
+      vars:
+        desired_map: >-
+          node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
+      loop: "{{ proxmox_pci_mappings }}"
+      when: >-
+        item.id not in (current_pci_mappings.stdout | from_json | map(attribute='id') | list)
+      changed_when: true
+      run_once: true
 
-  - name: Update PCI mappings that differ from desired state
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - set
-      - "/cluster/mapping/pci/{{ item.id }}"
-      - --description
-      - "{{ item.description }}"
-      - --map
-      - "{{ desired_map }}"
-    vars:
-      existing_mapping: >-
-        {{ (current_pci_mappings.stdout | from_json | selectattr('id', 'equalto', item.id) | list | first) | default({}) }}
-      desired_map: >-
-        node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
-    loop: "{{ proxmox_pci_mappings }}"
-    when:
-    - existing_mapping | length > 0
-    - >-
-      existing_mapping.description | default('') != item.description or existing_mapping.map | default([]) != [desired_map]
-    changed_when: true
-    run_once: true
+    - name: Update PCI mappings that differ from desired state
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/cluster/mapping/pci/{{ item.id }}"
+          - --description
+          - "{{ item.description }}"
+          - --map
+          - "{{ desired_map }}"
+      vars:
+        existing_mapping: >-
+          {{ (current_pci_mappings.stdout | from_json | selectattr('id', 'equalto', item.id) | list | first) | default({}) }}
+        desired_map: >-
+          node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
+      loop: "{{ proxmox_pci_mappings }}"
+      when:
+        - existing_mapping | length > 0
+        - >-
+          existing_mapping.description | default('') != item.description or existing_mapping.map | default([]) != [desired_map]
+      changed_when: true
+      run_once: true
 
-  - name: Read dev-kube-4 configuration
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - get
-      - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
-      - --output-format
-      - json
-    register: gpu_vm_config
-    changed_when: false
-    run_once: true
+    - name: Read dev-kube-4 configuration
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - get
+          - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
+          - --output-format
+          - json
+      register: gpu_vm_config
+      changed_when: false
+      run_once: true
 
-  - name: Tag dev-kube-4 with GPU capabilities
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - set
-      - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
-      - --tags
-      - "{{ proxmox_gpu_vm.tags }}"
-    when: (gpu_vm_config.stdout | from_json).tags | default('') != proxmox_gpu_vm.tags
-    changed_when: true
-    run_once: true
+    - name: Tag dev-kube-4 with GPU capabilities
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
+          - --tags
+          - "{{ proxmox_gpu_vm.tags }}"
+      when: (gpu_vm_config.stdout | from_json).tags | default('') != proxmox_gpu_vm.tags
+      changed_when: true
+      run_once: true
 
-  - name: Assign GPU resource mappings to dev-kube-4
-    ansible.builtin.command:
-      argv:
-      - pvesh
-      - set
-      - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
-      - --hostpci0
-      - "{{ proxmox_gpu_vm.hostpci0 }}"
-      - --hostpci1
-      - "{{ proxmox_gpu_vm.hostpci1 }}"
-    when: >-
-      (gpu_vm_config.stdout | from_json).hostpci0 | default('') != proxmox_gpu_vm.hostpci0 or (gpu_vm_config.stdout | from_json).hostpci1 | default('') != proxmox_gpu_vm.hostpci1
-    changed_when: true
-    run_once: true
+    - name: Assign GPU resource mappings to dev-kube-4
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
+          - --hostpci0
+          - "{{ proxmox_gpu_vm.hostpci0 }}"
+          - --hostpci1
+          - "{{ proxmox_gpu_vm.hostpci1 }}"
+      when: >-
+        (gpu_vm_config.stdout | from_json).hostpci0 | default('') != proxmox_gpu_vm.hostpci0 or
+        (gpu_vm_config.stdout | from_json).hostpci1 | default('') != proxmox_gpu_vm.hostpci1
+      changed_when: true
+      run_once: true
