@@ -76,6 +76,7 @@
             - host: "{{ loki_hostname }}"
               paths:
                 - path: /
+                  pathType: Prefix
           tls:
             - hosts:
                 - "{{ loki_hostname }}"
