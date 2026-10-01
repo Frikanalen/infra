@@ -1,0 +1,99 @@
+---
+- name: Install GPU firmware
+  ansible.builtin.apt:
+    name: "{{ intel_gpu_node_packages }}"
+    state: present
+    update_cache: true
+
+- name: Find render nodes bound to an Intel GPU driver
+  # Each /dev/dri/renderD* has a sysfs entry naming its PCI vendor and the
+  # driver bound to it. Printed as "renderD128 i915" per Intel render node.
+  ansible.builtin.shell: |
+    set -o pipefail
+    for node in /sys/class/drm/renderD*; do
+      [ "$(cat "$node/device/vendor")" = "{{ intel_gpu_node_vendor }}" ] || continue
+      echo "$(basename "$node") $(basename "$(readlink -f "$node/device/driver")")"
+    done
+  args:
+    executable: /bin/bash
+  register: intel_gpu_node_render
+  changed_when: false
+
+- name: Verify an Intel render node is served by a media-capable driver
+  ansible.builtin.assert:
+    that:
+      - intel_gpu_node_render.stdout_lines | length > 0
+      - intel_gpu_node_render.stdout_lines | map('split') | map('last') | select('in', intel_gpu_node_drivers) | list | length > 0
+    fail_msg: >-
+      No /dev/dri/renderD* on {{ inventory_hostname }} is an Intel GPU bound to
+      {{ intel_gpu_node_drivers | join(' or ') }} (found:
+      {{ intel_gpu_node_render.stdout_lines | default([]) | join(', ') or 'none' }}).
+      Check the PCIe passthrough (group_vars/proxmox.yml) and that the guest
+      kernel supports the card; Arc (DG2) needs Linux 6.2 or later.
+
+- name: Read the HuC firmware status
+  # debugfs, so root only; the path is the same under i915 and xe.
+  ansible.builtin.shell: |
+    set -o pipefail
+    cat /sys/kernel/debug/dri/*/gt*/uc/huc_info 2>/dev/null | grep -i -m1 'status' || true
+  args:
+    executable: /bin/bash
+  register: intel_gpu_node_huc
+  changed_when: false
+
+- name: Verify the HuC firmware is authenticated
+  # Skipped, with a warning, if debugfs does not say: an unreadable status is
+  # not evidence of a broken one, and the ingest workers' own self-test will
+  # catch an encoder that cannot do bitrate control.
+  ansible.builtin.assert:
+    that: "'authenticated' in intel_gpu_node_huc.stdout | lower or 'running' in intel_gpu_node_huc.stdout | lower"
+    fail_msg: >-
+      The GPU's HuC firmware is not loaded on {{ inventory_hostname }}
+      ({{ intel_gpu_node_huc.stdout | trim }}). Hardware bitrate control on Arc
+      depends on it: check that linux-firmware carries the dg2 HuC blob and
+      reboot.
+  when: intel_gpu_node_huc.stdout | trim | length > 0
+
+- name: Warn that the HuC firmware status could not be read
+  ansible.builtin.debug:
+    msg: >-
+      Could not read the HuC status from debugfs on {{ inventory_hostname }};
+      not verifying it. The ingest workers' encoder self-test is the backstop.
+  when: intel_gpu_node_huc.stdout | trim | length == 0
+
+- name: Read the containerd config template
+  ansible.builtin.slurp:
+    src: "{{ intel_gpu_node_containerd_template }}"
+  register: intel_gpu_node_containerd
+
+# Give a container's devices to the pod's own user and group rather than
+# leaving them root:render. The ingest workers run unprivileged, and the
+# alternative -- adding the host's render group to their supplementalGroups --
+# would tie the chart's values to a GID that differs from host to host.
+#
+# Where the setting lives depends on containerd's config version: under the
+# CRI plugin in version 2, under its runtime plugin in version 3.
+- name: Let pods own the devices they are given
+  vars:
+    _config: "{{ intel_gpu_node_containerd.content | b64decode }}"
+    _section: >-
+      {{ '[plugins."io.containerd.cri.v1.runtime"]'
+         if '[plugins."io.containerd.cri.v1.runtime"]' in _config
+         else '[plugins."io.containerd.grpc.v1.cri"]' }}
+  ansible.builtin.lineinfile:
+    path: "{{ intel_gpu_node_containerd_template }}"
+    insertafter: "^{{ _section | regex_escape }}$"
+    regexp: '^\s*device_ownership_from_security_context\s*='
+    line: "  device_ownership_from_security_context = true"
+  notify: Restart MicroK8s containerd
+
+- name: Verify the setting landed under a CRI section
+  ansible.builtin.shell: |
+    set -o pipefail
+    grep -B1000 -m1 '^\s*device_ownership_from_security_context' {{ intel_gpu_node_containerd_template | quote }} \
+      | grep -E '^\[' | tail -1
+  args:
+    executable: /bin/bash
+  register: intel_gpu_node_section
+  changed_when: false
+  failed_when: intel_gpu_node_section.stdout | trim not in ['[plugins."io.containerd.grpc.v1.cri"]', '[plugins."io.containerd.cri.v1.runtime"]']

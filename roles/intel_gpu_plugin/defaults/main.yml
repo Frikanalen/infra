@@ -1,0 +1,28 @@
+---
+# Intel's GPU device plugin: advertises each Intel GPU on a node as a
+# schedulable resource (gpu.intel.com/i915, or gpu.intel.com/xe under the xe
+# driver) and hands a pod that requests one the matching /dev/dri nodes. It is
+# what lets the ingest QSV workers use the Arc A310 without running privileged
+# or mounting /dev/dri from the host.
+#
+# Deployed as the plain DaemonSet rather than through Intel's operator, which
+# would also need cert-manager on the cluster for one plugin on one node.
+intel_gpu_plugin_namespace: kube-system
+
+intel_gpu_plugin_image: intel/intel-gpu-plugin
+# Pinned: a device plugin decides which devices land in which pod.
+intel_gpu_plugin_version: "0.37.0"
+
+# How many pods may hold the same GPU at once. One is the conservative start:
+# raise it once a single worker is seen to leave the A310's media engines
+# idle, and raise the ingest pool's replicaCount with it.
+intel_gpu_plugin_shared_dev_num: 1
+
+# Only nodes carrying this label run the plugin. Set by
+# playbooks/k8s_cluster_dev.yml on the node the A310 is passed through to.
+intel_gpu_plugin_node_selector:
+  frikanalen.no/gpu-intel-arc-a310: "true"
+
+# MicroK8s runs its kubelet out of the snap's data directory, not
+# /var/lib/kubelet, so this is where the plugin has to register its socket.
+intel_gpu_plugin_kubelet_device_plugins: /var/snap/microk8s/common/var/lib/kubelet/device-plugins

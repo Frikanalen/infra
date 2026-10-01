@@ -1,0 +1,21 @@
+---
+# Prepares a Kubernetes node with an Intel GPU passed through for hardware
+# video encoding (Quick Sync) by pods -- today the Arc A310 on dev-kube-4.
+#
+# The firmware matters more than it looks: on DG2 (Arc) the encoder only does
+# bitrate control with the HuC firmware loaded and authenticated, and without
+# it a QSV encode either fails or silently falls back to constant QP.
+intel_gpu_node_packages:
+  - linux-firmware
+
+# PCI vendor of the card we expect to find bound to a DRM driver.
+intel_gpu_node_vendor: "0x8086"
+
+# Kernel drivers that serve Arc for media: i915 today, xe on newer kernels.
+# The device plugin advertises gpu.intel.com/i915 or gpu.intel.com/xe to match,
+# so a pod's resource request has to name whichever this turns out to be.
+intel_gpu_node_drivers: [i915, xe]
+
+# MicroK8s's containerd config template. Edited, not replaced: MicroK8s
+# regenerates the real config from it on every containerd start.
+intel_gpu_node_containerd_template: /var/snap/microk8s/current/args/containerd-template.toml

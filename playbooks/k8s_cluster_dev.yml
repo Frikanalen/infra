@@ -9,7 +9,7 @@
 #
 #   ansible-playbook playbooks/k8s_cluster_dev.yml
 #
-# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs / gpu-labels.
+# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs / gpu-labels / gpu.
 # "join" needs the seed play's facts, so select "bootstrap" to re-form or
 # extend the cluster rather than "join" on its own.
 
@@ -70,6 +70,15 @@
     loop: "{{ gpu_node_labels | dict2items }}"
     when: current_gpu_node_labels.get(item.key) != item.value
     changed_when: true
+
+# The A310's host half: driver, firmware and device ownership. The cluster
+# half, Intel's device plugin, is in playbooks/k8s_platform_dev.yml.
+- name: Prepare dev-kube-4's Intel GPU for pods
+  hosts: dev-kube-4
+  become: true
+  tags: [bootstrap, gpu]
+  roles:
+    - role: intel_gpu_node
 
 - name: Install node prerequisites across kubedev
   hosts: kubedev

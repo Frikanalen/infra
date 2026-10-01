@@ -231,3 +231,8 @@ frikanalen_apps:
           # Rolls the deployment when the key is rotated; Helm cannot watch a
           # secret it does not own.
           secretChecksum: "{{ ingest_archive_private_key | default('') | hash('sha256') }}"
+      workers:
+        # Extra worker pools per encoder, beyond the main CPU pool. Empty
+        # unless the environment names some: see ingest_worker_pools in
+        # group_vars/staging.yml.
+        pools: "{{ ingest_worker_pools | default({}) }}"

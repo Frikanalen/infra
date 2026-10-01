@@ -92,6 +92,12 @@
     - role: node_exporter_scrape
       tags: [node_exporter, monitoring]
 
+    # Advertises the Arc A310 on dev-kube-4 as gpu.intel.com/i915 (or /xe),
+    # which the ingest QSV worker pool requests. Needs the host prepared by
+    # playbooks/k8s_cluster_dev.yml --tags gpu first.
+    - role: intel_gpu_plugin
+      tags: [intel_gpu_plugin, gpu]
+
     - role: kubegres
       tags: [kubegres, database]
 
