@@ -273,3 +273,28 @@ For workloads targeting the Tesla P4:
 nodeSelector:
   frikanalen.no/gpu-nvidia-tesla-p4: "true"
 ```
+
+A pod that needs the A310 itself, rather than just its node, requests it as a
+resource; Intel's GPU device plugin then gives that pod the card's `/dev/dri`
+nodes, owned by the pod's own user and group:
+
+```yaml
+resources:
+  limits:
+    gpu.intel.com/i915: 1
+```
+
+That takes two steps, host first:
+
+```sh
+ansible-playbook playbooks/k8s_cluster_dev.yml --tags gpu        # roles/intel_gpu_node
+ansible-playbook playbooks/k8s_platform_dev.yml --tags gpu       # roles/intel_gpu_plugin
+```
+
+`intel_gpu_node` checks the card is bound to i915 or xe with its HuC firmware
+loaded, and sets `device_ownership_from_security_context` in MicroK8s's
+containerd so unprivileged pods can open the device. `intel_gpu_plugin` runs
+the plugin on the labelled node and waits for the node to advertise the GPU,
+printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. Staging's
+ingest QSV worker pool (`ingest_worker_pools` in `group_vars/staging.yml`) is
+the consumer.

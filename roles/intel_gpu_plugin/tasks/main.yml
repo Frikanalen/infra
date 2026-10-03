@@ -1,0 +1,62 @@
+---
+- name: Deploy the Intel GPU device plugin
+  become: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    template: daemonset.yml.j2
+  run_once: true
+
+- name: Wait for the plugin to run on every GPU node
+  become: true
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    kind: DaemonSet
+    namespace: "{{ intel_gpu_plugin_namespace }}"
+    name: intel-gpu-plugin
+  register: intel_gpu_plugin_ds
+  until: >-
+    intel_gpu_plugin_ds.resources | length > 0
+    and intel_gpu_plugin_ds.resources[0].status.desiredNumberScheduled | default(0) > 0
+    and intel_gpu_plugin_ds.resources[0].status.numberReady | default(0)
+        == intel_gpu_plugin_ds.resources[0].status.desiredNumberScheduled
+  retries: 24
+  delay: 5
+  run_once: true
+
+# The plugin running is not the same as it having found a GPU: on a node where
+# the card is not bound to a driver it registers nothing and stays Ready. So
+# wait for each GPU node to advertise one, and fail if it never does.
+- name: Wait for every GPU node to advertise an Intel GPU
+  become: true
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    kind: Node
+    label_selectors: "{{ intel_gpu_plugin_node_selector.items() | map('join', '=') | list }}"
+  register: intel_gpu_plugin_nodes
+  vars:
+    _advertising: >-
+      {{ intel_gpu_plugin_nodes.resources
+         | map(attribute='status.allocatable')
+         | map('dict2items')
+         | map('selectattr', 'key', 'match', '^gpu[.]intel[.]com/(i915|xe)$')
+         | map('list') | reject('equalto', []) | list | length }}
+  until: >-
+    intel_gpu_plugin_nodes.resources | length > 0
+    and _advertising | int == intel_gpu_plugin_nodes.resources | length
+  retries: 12
+  delay: 5
+  run_once: true
+
+- name: Report which GPU resource each node advertises
+  # i915 or xe, depending on the node's driver; a pod's request has to name
+  # the one shown here.
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.metadata.name }}:
+      {{ item.status.allocatable | dict2items | selectattr('key', 'match', '^gpu[.]intel[.]com/')
+         | items2dict }}
+  loop: "{{ intel_gpu_plugin_nodes.resources }}"
+  loop_control:
+    label: "{{ item.metadata.name }}"
+  run_once: true
