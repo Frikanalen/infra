@@ -1,0 +1,17 @@
+---
+argument_specs:
+  main:
+    short_description: Cubemap stream relay on a plain host.
+    options:
+      cubemap_listen:
+        type: list
+        elements: str
+        required: false
+        description: Addresses (ip:port) cubemap serves HTTP on.
+      cubemap_streams:
+        type: list
+        elements: dict
+        required: false
+        description: >-
+          Streams to relay. Each has "path" (URL path served) and "src"
+          (cubemap src= value, e.g. udp://@:5565 for unicast UDP ingest).

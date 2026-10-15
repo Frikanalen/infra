@@ -1,0 +1,7 @@
+---
+# SIGHUP makes cubemap re-read its config without dropping clients.
+- name: Reload cubemap
+  ansible.builtin.service:
+    name: cubemap
+    state: reloaded
+  become: true

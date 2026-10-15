@@ -45,13 +45,14 @@ ingest_uploads_size: 500Gi
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
-# simula's own cubemap service is being decommissioned, so prod now runs
-# the in-cluster cubemap UDP reflector instead of pulling simula's HTTP
-# endpoint directly (see roles/util_fw_ingress_prod's port-5565 rdr rule,
-# which already forwards to this IP:5004 -- see live-stream-packager's
-# cubemap-service.yaml). The encoder feeding that reflector must push
-# MPEG-TS to 158.36.191.230:5565.
-argocd_stream_cubemap_enabled: true
+# Prod does not run the in-cluster cubemap: the appliance pushes MPEG-TS to
+# simula (158.36.191.230:5565), whose cubemap (roles/cubemap) serves it over
+# HTTP, and ffmpeg pulls that via the chart's default inputSourceUrl. An
+# earlier attempt at a multicast-joined in-cluster cubemap dropped out of the
+# switch's IGMP snooping table, so it was abandoned.
+# argocd_stream_cubemap_ip is still required by data/apps.yml although unused
+# while the cubemap is disabled.
+argocd_stream_cubemap_enabled: false
 argocd_stream_cubemap_ip: "192.168.3.105"
 
 # Every app the cluster runs must have a key here. The roles no longer carry

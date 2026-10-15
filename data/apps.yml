@@ -156,12 +156,17 @@ frikanalen_apps:
     version: "{{ app_versions.stream }}"
     helm_values:
       cubemap:
-        # True in staging, where ffmpeg reads from the in-cluster cubemap UDP
-        # reflector. False in prod, where the feed is already served as
-        # MPEG-TS over HTTP by simula and ffmpeg pulls it directly. See
-        # group_vars/prod.yml.
         enabled: "{{ argocd_stream_cubemap_enabled | default(true) }}"
         loadBalancerIP: "{{ argocd_stream_cubemap_ip }}"
+        # hostNetwork + multicastGroup replace the old unicast
+        # loadBalancerIP-fronted ingest: the source pushes to a multicast
+        # group on the LAN instead of a single owned VIP, so Cubemap joining
+        # it survives pod/node churn without the kube-proxy conntrack and
+        # MetalLB ServiceL2Status failure modes that VIP ingest hit. Empty
+        # multicastGroup falls back to the old unicast listen -- see
+        # group_vars/prod.yml and group_vars/staging.yml for current values.
+        hostNetwork: "{{ argocd_stream_cubemap_host_network | default(false) }}"
+        multicastGroup: "{{ argocd_stream_cubemap_multicast_group | default('') }}"
       ffmpeg:
         inputSourceUrl: "{{ argocd_stream_input_source_url | default('http://192.168.3.1:9094/frikanalen.ts') }}"
       ingress:
