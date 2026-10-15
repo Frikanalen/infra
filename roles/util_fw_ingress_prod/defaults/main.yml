@@ -9,9 +9,3 @@ prod_ingress_ext_netmask: "255.255.255.128"
 
 # Internal ingress IP to forward traffic to (web/API)
 prod_ingress_int_ip: "192.168.3.104"
-
-# Internal ingress IP for media/stream traffic
-prod_media_ingress_int_ip: "192.168.3.105"
-
-# External IP for MPEG-TS ingest
-prod_media_ext_ip: "158.36.191.231"
