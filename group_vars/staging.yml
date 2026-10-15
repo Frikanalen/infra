@@ -45,6 +45,9 @@ ingest_uploads_size: 100Gi
 # up. Reads are a few large sequential fetches, so the lost caching costs little.
 ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 
+# The CPU ladder was OOM-killed at the chart's 4Gi, 14% into a 1080p encode.
+ingest_cpu_worker_memory_limit: 16Gi
+
 # One ingest worker encoding on the Arc A310 through Quick Sync, beside the
 # main CPU pool, while the GPU ladder is tried out in dev before production.
 # Needs the device plugin (roles/intel_gpu_plugin) and the host preparation

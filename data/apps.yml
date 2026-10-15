@@ -228,6 +228,14 @@ frikanalen_apps:
           # secret it does not own.
           secretChecksum: "{{ ingest_archive_private_key | default('') | hash('sha256') }}"
       workers:
+        # Size of the main CPU pool; the chart's own default is 4. Set
+        # ingest_cpu_worker_replicas where a benchmark needs it held at 0 or 1.
+        replicaCount: "{{ ingest_cpu_worker_replicas | default(4) }}"
+        # The chart's own limit is 4Gi. Helm merges this over it, so only the
+        # memory limit is overridden.
+        resources:
+          limits:
+            memory: "{{ ingest_cpu_worker_memory_limit | default('4Gi') }}"
         # Extra worker pools per encoder, beyond the main CPU pool. Empty
         # unless the environment names some: see ingest_worker_pools in
         # group_vars/staging.yml.
