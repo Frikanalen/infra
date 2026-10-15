@@ -1,0 +1,17 @@
+---
+# Run after every role that drops a file into /etc/pf.conf.d: the anchors
+# below load those files, so pfctl -n can only check the ruleset once they
+# exist. This template is the only writer of pf.conf -- nothing patches it
+# afterwards -- so a re-run with no input changes reports no change.
+- name: Deploy main pf.conf
+  ansible.builtin.template:
+    src: pf.conf.j2
+    dest: /etc/pf.conf
+    mode: "0600"
+    validate: "pfctl -n -f %s"
+  notify: Reload pf
+
+- name: Start PF service
+  ansible.builtin.service:
+    name: pf
+    state: started

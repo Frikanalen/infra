@@ -13,6 +13,8 @@
   community.general.sysrc:
     name: kld_list
     value: if_wg
+    # Add to the list rather than replace it: other modules live there too.
+    state: value_present
 
 - name: Load if_wg now # noqa command-instead-of-module -- no ansible module loads a kernel module on FreeBSD
   become: true
@@ -58,6 +60,7 @@
     stdin: "{{ wireguard_private_key }}"
   register: wireguard_public_key_result
   changed_when: false
+  check_mode: false # read-only; otherwise --check prints an empty key
   no_log: true
 
 - name: Show the server public key
@@ -119,15 +122,4 @@
     src: wireguard.conf.j2
     dest: /etc/pf.conf.d/wireguard.conf
     mode: "0600"
-  notify: Reload pf
-
-- name: Add wireguard anchor to pf.conf (filter section)
-  become: true
-  ansible.builtin.blockinfile:
-    path: /etc/pf.conf
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - wireguard"
-    insertafter: "^# Drop-in configuration files"
-    block: |
-      anchor "wireguard"
-      load anchor "wireguard" from "/etc/pf.conf.d/wireguard.conf"
   notify: Reload pf

@@ -8,11 +8,19 @@
     dev_ingress_live_int_ip: "192.168.3.91"
     pbx_ext_ip: "158.36.191.229"
     pbx_int_ip: "192.168.3.3"
-  # Tags let you re-apply one piece without the rest, but only util_fw can
-  # run alone from a stopped state: it renders pf.conf with the anchors the
-  # other roles insert into, so on a host that has never seen this playbook,
-  # --tags dev/pbx/prod/wireguard fails until --tags base has run once. See
-  # docs/router-redundancy.md's note on pf.conf being templated then mutated.
+    # Every anchor pf.conf loads, in evaluation order; each is
+    # /etc/pf.conf.d/<name>.conf, written by the role of the same purpose
+    # below. nat: true also hooks the anchor into the rdr/nat stage. A role
+    # added here needs its anchor listed, and vice versa: pfctl -n refuses
+    # an anchor whose file does not exist.
+    util_fw_anchors:
+      - {name: wireguard}
+      - {name: pbx, nat: true}
+      - {name: ingress_dev, nat: true}
+      - {name: ingress_prod, nat: true}
+  # Tags re-apply one piece without the rest. pf.conf itself is rendered in
+  # post_tasks on every run, whatever the tags, so it always lists the full
+  # set of anchors -- a partial run can no longer drop the others.
   roles:
     - role: util_fw
       tags: [firewall, base]
@@ -24,3 +32,9 @@
       tags: [firewall, prod]
     - role: wireguard_server
       tags: [firewall, wireguard]
+  post_tasks:
+    - name: Render pf.conf with every anchor
+      ansible.builtin.import_role:
+        name: util_fw
+        tasks_from: pf_conf
+      tags: [always]

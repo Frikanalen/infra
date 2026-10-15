@@ -22,13 +22,17 @@ scrub on $ext_if all no-df fragment reassemble
 # NAT for internal network (exclude hairpin NAT destinations handled by anchors)
 nat on $ext_if from $int_net to ! $dev_ingress_ext_ip -> ($ext_if)
 
-# BEGIN ANSIBLE MANAGED BLOCK - ingress_prod NAT
-# END ANSIBLE MANAGED BLOCK - ingress_prod NAT
+# Translation anchors (util_fw_anchors with nat: true)
+{% for anchor in util_fw_anchors if anchor.nat | default(false) %}
+rdr-anchor "{{ anchor.name }}"
+nat-anchor "{{ anchor.name }}"
+{% endfor %}
 
-# Drop-in configuration files go here (anchors added by their respective roles)
-
-# BEGIN ANSIBLE MANAGED BLOCK - ingress_prod
-# END ANSIBLE MANAGED BLOCK - ingress_prod
+# Drop-in configuration files, written to /etc/pf.conf.d by their roles
+{% for anchor in util_fw_anchors %}
+anchor "{{ anchor.name }}"
+load anchor "{{ anchor.name }}" from "/etc/pf.conf.d/{{ anchor.name }}.conf"
+{% endfor %}
 
 # Default block inbound
 block in log all

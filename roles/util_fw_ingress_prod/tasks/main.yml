@@ -1,11 +1,17 @@
 ---
+- name: Read vtnet1's addresses
+  ansible.builtin.command: ifconfig {{ fw_ext_if }} inet
+  register: ifconfig_current
+  changed_when: false
+  check_mode: false
+
+# FreeBSD accepts re-adding an address that is already there, so the exit
+# code says nothing about whether this changed anything; look first.
 - name: Add IP alias to vtnet1
   ansible.builtin.command: >
     ifconfig {{ fw_ext_if }} alias {{ prod_ingress_ext_ip }}
     netmask {{ prod_ingress_ext_netmask }}
-  register: ifconfig_result
-  changed_when: ifconfig_result.rc == 0
-  failed_when: ifconfig_result.rc != 0 and 'File exists' not in ifconfig_result.stderr
+  when: ('inet ' ~ prod_ingress_ext_ip ~ ' ') not in ifconfig_current.stdout
 
 - name: Ensure IP alias persists across reboots
   ansible.builtin.lineinfile:
@@ -19,22 +25,4 @@
     src: ingress_prod.conf.j2
     dest: /etc/pf.conf.d/ingress_prod.conf
     mode: "0600"
-
-- name: Add ingress_prod rdr-anchor and nat-anchor to pf.conf (NAT section)
-  ansible.builtin.blockinfile:
-    path: /etc/pf.conf
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - ingress_prod NAT"
-    insertafter: "^nat on"
-    block: |
-      rdr-anchor "ingress_prod"
-      nat-anchor "ingress_prod"
-  notify: Reload pf
-- name: Add ingress_prod anchor to pf.conf (filter section)
-  ansible.builtin.blockinfile:
-    path: /etc/pf.conf
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - ingress_prod"
-    insertafter: "^# Drop-in configuration files"
-    block: |
-      anchor "ingress_prod"
-      load anchor "ingress_prod" from "/etc/pf.conf.d/ingress_prod.conf"
   notify: Reload pf

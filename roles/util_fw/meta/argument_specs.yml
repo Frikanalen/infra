@@ -1,7 +1,10 @@
 ---
 argument_specs:
   main:
-    short_description: Base pf ruleset for the utility host
+    short_description: Base pf setup for the utility host (forwarding, rc.conf, pflog)
+    options: {}
+  pf_conf:
+    short_description: Render pf.conf with the anchors the other firewall roles fill
     options:
       dev_ingress_ext_ip:
         type: str
@@ -10,3 +13,18 @@ argument_specs:
           Public address the dev/staging ingress answers on. Rendered into
           pf.conf; an empty value produces a ruleset that loads but matches
           nothing, so this is required rather than defaulted.
+      util_fw_anchors:
+        type: list
+        elements: dict
+        required: true
+        description: >-
+          Anchors to load, in order. Each has name (the anchor, loaded from
+          /etc/pf.conf.d/<name>.conf) and nat (true to also hook it into the
+          rdr/nat stage).
+        options:
+          name:
+            type: str
+            required: true
+          nat:
+            type: bool
+            default: false
