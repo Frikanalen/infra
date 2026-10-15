@@ -60,6 +60,9 @@
     - role: ingest_archive_account
       tags: [ingest, ingest_account]
 
+    - role: ingest_archive_mount
+      tags: [ingest, ingest_app]
+
     - role: ingest_api_secret
       tags: [ingest, ingest_app]
       vars:

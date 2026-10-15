@@ -1,0 +1,49 @@
+---
+# The ingest chart mounts the archive from an inline nfs volume, which has no
+# way to set mount options. When an environment names some, this makes the same
+# export a PV/PVC pair that does, and data/apps.yml points the chart at it.
+- name: Create the archive PersistentVolume
+  when: ingest_archive_nfs_mount_options | length > 0
+  become: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: "{{ ingest_archive_mount_claim }}"
+      spec:
+        capacity:
+          storage: 1Ti
+        accessModes: [ReadOnlyMany]
+        persistentVolumeReclaimPolicy: Retain
+        storageClassName: ""
+        mountOptions: "{{ ingest_archive_nfs_mount_options }}"
+        claimRef:
+          namespace: "{{ ingest_archive_mount_namespace }}"
+          name: "{{ ingest_archive_mount_claim }}"
+        nfs:
+          server: "{{ ingest_archive_host }}"
+          path: "{{ ingest_archive_dir }}"
+          readOnly: true
+
+- name: Create the archive PersistentVolumeClaim
+  when: ingest_archive_nfs_mount_options | length > 0
+  become: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: "{{ ingest_archive_mount_claim }}"
+        namespace: "{{ ingest_archive_mount_namespace }}"
+      spec:
+        accessModes: [ReadOnlyMany]
+        storageClassName: ""
+        volumeName: "{{ ingest_archive_mount_claim }}"
+        resources:
+          requests:
+            storage: 1Ti

@@ -39,6 +39,12 @@ ingest_archive_fk_profile: staging
 # frikanalen_domain. Django's FK_UPLOAD_URL must point there.
 ingest_uploads_size: 100Gi
 
+# Workers must see a published original at once, so the archive mount keeps no
+# attribute, directory or negative-lookup cache. The default ~30 s directory
+# cache let a worker claim a job before the file it had just been given showed
+# up. Reads are a few large sequential fetches, so the lost caching costs little.
+ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
+
 # One ingest worker encoding on the Arc A310 through Quick Sync, beside the
 # main CPU pool, while the GPU ladder is tried out in dev before production.
 # Needs the device plugin (roles/intel_gpu_plugin) and the host preparation

@@ -209,6 +209,9 @@ frikanalen_apps:
         # host and path: the container mount point, NFS export, and fk-archive
         # profile root are independent parts of the deployment contract.
         mount:
+          # Named only when ingest_archive_nfs_mount_options is set; the empty
+          # string leaves the chart on its inline nfs volume.
+          existingClaim: "{{ ingest_archive_mount_claim | default('ingest-archive') if (ingest_archive_nfs_mount_options | default([])) | length > 0 else '' }}"
           nfs:
             server: "{{ ingest_archive_host }}"
             path: "{{ ingest_archive_dir }}"
