@@ -285,14 +285,14 @@ frikanalen_apps:
         additionalHosts:
           - "{{ frikanalen_domain }}"
           - "{{ mediamtx_loadbalancer_ip }}"
-      # The metrics endpoint is internal-only (ClusterIP, port 9998), so it is
-      # always on. The ServiceMonitor is a monitoring.coreos.com kind and is
-      # gated like every other one here -- see data/cluster.yml. No release
-      # label: roles/kube_prometheus_stack selects every ServiceMonitor.
       # Opus previews for the member preview page, converted inside MediaMTX
       # only while someone watches. Off unless the environment turns it on.
       preview:
         enabled: "{{ mediamtx_preview_enabled | default(false) }}"
+      # The metrics endpoint is internal-only (ClusterIP, port 9998), so it is
+      # always on. The ServiceMonitor is a monitoring.coreos.com kind and is
+      # gated like every other one here -- see data/cluster.yml. No release
+      # label: roles/kube_prometheus_stack selects every ServiceMonitor.
       monitoring:
         enabled: true
         serviceMonitor:
