@@ -52,6 +52,12 @@
       vars:
         argocd_app: "{{ frikanalen_apps.graphics }}"
 
+    # Issues playout's MediaMTX reader credential through Django and stores it
+    # in the Secret playout reads; must follow the django app and precede
+    # playout's, which rolls when the key changes.
+    - role: playout_live_secret
+      tags: [playout, playout_live]
+
     - role: argocd_app
       tags: [playout]
       vars:

@@ -27,6 +27,10 @@
 # roles/ingest_api_secret, so it belongs to neither and sits here.
 ingest_api_secret_name: ingest-api
 
+# Name of the Secret holding playout's MediaMTX reader credential. Read by the
+# playout app definition below and created by roles/playout_live_secret.
+playout_live_secret_name: playout-live
+
 frikanalen_apps:
 
   django:
@@ -148,6 +152,18 @@ frikanalen_apps:
           value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/"
         - name: GRAPHICS_URL
           value: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}/graphics/"
+        # CasparCG, not the pod, opens this, so it is MediaMTX's LoadBalancer
+        # address rather than the in-cluster service.
+        - name: LIVE_INPUT_URL
+          value: "rtsp://{{ mediamtx_loadbalancer_ip }}:8554"
+      envFrom:
+        - secretRef:
+            name: "{{ playout_live_secret_name }}"
+            # Playout still runs videos before the credential exists.
+            optional: true
+      podAnnotations:
+        # Rolls playout when roles/playout_live_secret issues a new key.
+        checksum/live-credential: "{{ playout_live_key | default('') | hash('sha256') }}"
       timezone:
         enabled: true
         path: "/usr/share/zoneinfo/{{ timezone_region }}"

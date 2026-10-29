@@ -1,0 +1,77 @@
+---
+# Owns playout's MediaMTX reader credential end to end: Django issues it, and
+# the Secret below is the only copy of its password.
+#
+# Every run asks Django whether the key in the Secret is still valid. If it
+# is, nothing changes; if not (first run, revoked, or a staging database just
+# replaced by a copy of production's), Django issues a fresh one and the
+# Secret is rewritten. Losing the Secret is recoverable the same way.
+
+- name: Look for an existing playout live credential
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ playout_live_secret_name }}"
+    namespace: "{{ playout_live_secret_namespace }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: playout_live_secret_lookup
+  no_log: true
+
+- name: Note the key the existing secret holds
+  # Only the key UUID, the username half; the password stays in the Secret.
+  ansible.builtin.set_fact:
+    playout_live_current_key: >-
+      {{ ((playout_live_secret_lookup.resources[0].data | default({})).LIVE_READER_CREDENTIAL
+          | default('') | b64decode).split(':')[0]
+         if playout_live_secret_lookup.resources | length > 0 else '' }}
+  no_log: true
+
+- name: Find a running Django pod
+  become: true
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ playout_live_django_namespace }}"
+    label_selectors:
+      - "{{ playout_live_django_selector }}"
+    field_selectors:
+      - status.phase=Running
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: playout_live_django_pods
+  failed_when: playout_live_django_pods.resources | length == 0
+
+- name: Ask Django to keep or issue the playout reader credential
+  become: true
+  kubernetes.core.k8s_exec:
+    namespace: "{{ playout_live_django_namespace }}"
+    pod: "{{ playout_live_django_pods.resources[0].metadata.name }}"
+    container: "{{ playout_live_django_container }}"
+    command: >-
+      python manage.py ensure_playout_credential
+      {{ ('--keep ' ~ (playout_live_current_key | quote)) if playout_live_current_key else '' }}
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: playout_live_ensure
+  changed_when: (playout_live_ensure.stdout | from_json).changed
+  # A newly issued password is in stdout.
+  no_log: true
+
+- name: Settle on the issued credential
+  ansible.builtin.set_fact:
+    playout_live_issued: "{{ playout_live_ensure.stdout | from_json }}"
+  no_log: true
+
+- name: Store the new credential for playout
+  # Django returns a password only when it issued a new credential.
+  when: playout_live_issued.password is defined
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'live-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Remember which key playout holds
+  # Read by the playout app definition to roll the pod when the key changes;
+  # Helm cannot watch a Secret it does not own. Not secret.
+  ansible.builtin.set_fact:
+    playout_live_key: "{{ playout_live_issued.username }}"
