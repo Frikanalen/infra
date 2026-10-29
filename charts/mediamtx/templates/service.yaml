@@ -23,3 +23,14 @@ spec:
       port: 8554
       targetPort: rtsp
       protocol: TCP
+
+{{- if .Values.webrtc.enabled }}
+    - name: webrtc-udp
+      port: 8189
+      targetPort: webrtc-udp
+      protocol: UDP
+    - name: webrtc-tcp
+      port: 8189
+      targetPort: webrtc-tcp
+      protocol: TCP
+{{- end }}

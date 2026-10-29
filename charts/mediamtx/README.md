@@ -19,8 +19,8 @@ version is pinned independently of the infra Git revision.
 PF forwards UDP 8890 (SRT), TCP 1935 (RTMP), and TCP 8554 (RTSP) from the
 environment's existing public web IP to the new MetalLB address, including hairpin
 access. RTSP media uses interleaved TCP; clients must select TCP transport, with
-no separate RTP/RTCP UDP ports needed. HLS, WebRTC, MoQ, the management API,
-metrics and recording remain disabled. Django advertises all three configured
+no separate RTP/RTCP UDP ports needed. HLS, MoQ, the management API,
+metrics and recording remain disabled. Django advertises the configured contribution and WebRTC
 listeners in its one-time credential dialog.
 
 Production URLs are `srt://frikanalen.no:8890`, `rtmp://frikanalen.no:1935` and
@@ -53,7 +53,7 @@ ansible-playbook playbooks/firewall.yml --tags dev
 ```
 
 The Django app definition adds its internal service FQDN to ALLOWED_HOSTS and
-sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL` and `FK_MEDIAMTX_RTSP_URL`. ArgoCD syncs the chart from infra main after merge.
+sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL`, `FK_MEDIAMTX_RTSP_URL` and `FK_MEDIAMTX_WEBRTC_URL`. ArgoCD syncs the chart from infra main after merge.
 Check the Django rollout and its migration hook before trying credentials.
 
 If using an unmerged Django branch for a staging trial, explicitly override both
@@ -162,3 +162,37 @@ All connections used `staging.frikanalen.no`, exercising public forwarding and
 Django authentication rather than an internal shortcut. RTSP used interleaved
 TCP. The temporary test organization, source and credentials were removed after
 testing. Production was not deployed or tested.
+
+## WebRTC transport for source preview / return feeds
+
+The environment app definition enables authenticated WebRTC, with HTTPS
+signaling under `https://<site>/live-preview`. For a source's read credential:
+
+- Browser player: `https://<site>/live-preview/live/<source UUID>/`
+- WHEP: `https://<site>/live-preview/live/<source UUID>/whep`
+- Use the read credential's username/password (Basic authentication), or the
+  `username:password` bearer token shown in the one-time credential dialog.
+
+Traefik terminates HTTPS using the existing hostname/certificate. A small
+rootless Nginx sidecar strips `/live-preview` on upstream requests and adds it
+back to Location response headers, preserving WHEP PATCH/DELETE session URLs.
+The upstream HTTP listener binds only to pod loopback; there is no public 8889
+forwarding. CORS is restricted to the environment's HTTPS site origin.
+
+WebRTC media uses UDP 8189 with TCP 8189 as a fallback. Both are exposed through
+the same dedicated MediaMTX LoadBalancer and PF forwarding/hairpin rules. The
+server advertises only its public hostname and reserved LAN IP, not pod IPs.
+No TURN relay is deployed, so networks blocking both direct UDP and TCP still
+need a later TURN configuration. WebRTC media is encrypted independently of
+HTTPS signaling.
+
+**This change enables transport only; it does not transcode.** Browser-friendly
+H.264 (no B-frames) and Opus audio can be received directly. Existing H.264/AAC
+contributions may show video without audio; automatic AAC-to-Opus preview
+conversion is explicitly deferred. A WebRTC preview of a source is the received
+contribution, not proof that CasparCG has put it on air. An actual TX return
+requires publishing the channel output as its own source.
+
+No frontend organization page or session-based preview-token endpoint is added.
+The WHEP endpoint can be consumed by the future frontend player, while operators
+can use the MediaMTX browser player now with a read credential.

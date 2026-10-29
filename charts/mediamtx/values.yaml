@@ -17,3 +17,13 @@ resources:
 # this with alwaysAvailable: true; MediaMTX forbids fallback on regex paths.
 paths:
   "~^live/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$": {}
+
+webrtc:
+  enabled: false
+  hostname: ""
+  path: /live-preview
+  ingressClassName: public
+  certResolver: letsencrypt
+  additionalHosts: []
+  # Nginx rewrites both requests and Location responses for WHEP sessions.
+  proxyImage: nginx:1.30.6-alpine

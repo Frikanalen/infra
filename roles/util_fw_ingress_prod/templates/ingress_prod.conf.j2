@@ -17,20 +17,20 @@ nat on $int_if proto tcp from $lan_net to $prod_ingress_int_ip port { 80, 443 } 
 
 # Authenticated SRT contribution, including hairpin access to the public URL.
 # RTMP and TCP-only RTSP use the same authenticated contribution service.
-rdr on $ext_if proto tcp from any to $prod_ingress_ext_ip port { 1935, 8554 } -> $prod_contribution_int_ip
-rdr on $int_if proto tcp from $lan_net to $prod_ingress_ext_ip port { 1935, 8554 } -> $prod_contribution_int_ip
-nat on $int_if proto tcp from $lan_net to $prod_contribution_int_ip port { 1935, 8554 } -> ($int_if:0)
-rdr on $ext_if proto udp from any to $prod_ingress_ext_ip port 8890 -> $prod_contribution_int_ip
-rdr on $int_if proto udp from $lan_net to $prod_ingress_ext_ip port 8890 -> $prod_contribution_int_ip
-nat on $int_if proto udp from $lan_net to $prod_contribution_int_ip port 8890 -> ($int_if:0)
+rdr on $ext_if proto tcp from any to $prod_ingress_ext_ip port { 1935, 8554, 8189 } -> $prod_contribution_int_ip
+rdr on $int_if proto tcp from $lan_net to $prod_ingress_ext_ip port { 1935, 8554, 8189 } -> $prod_contribution_int_ip
+nat on $int_if proto tcp from $lan_net to $prod_contribution_int_ip port { 1935, 8554, 8189 } -> ($int_if:0)
+rdr on $ext_if proto udp from any to $prod_ingress_ext_ip port { 8890, 8189 } -> $prod_contribution_int_ip
+rdr on $int_if proto udp from $lan_net to $prod_ingress_ext_ip port { 8890, 8189 } -> $prod_contribution_int_ip
+nat on $int_if proto udp from $lan_net to $prod_contribution_int_ip port { 8890, 8189 } -> ($int_if:0)
 
 # Filter rules (pass)
 
 pass in quick on $ext_if proto tcp from any to $prod_ingress_int_ip port { 80, 443 }
 pass in quick on $int_if proto tcp from $lan_net to $prod_ingress_int_ip port { 80, 443 } scrub (max-mss 1400)
 
-pass in quick on $ext_if proto udp from any to $prod_contribution_int_ip port 8890
-pass in quick on $int_if proto udp from $lan_net to $prod_contribution_int_ip port 8890
+pass in quick on $ext_if proto udp from any to $prod_contribution_int_ip port { 8890, 8189 }
+pass in quick on $int_if proto udp from $lan_net to $prod_contribution_int_ip port { 8890, 8189 }
 
-pass in quick on $ext_if proto tcp from any to $prod_contribution_int_ip port { 1935, 8554 }
-pass in quick on $int_if proto tcp from $lan_net to $prod_contribution_int_ip port { 1935, 8554 } scrub (max-mss 1400)
+pass in quick on $ext_if proto tcp from any to $prod_contribution_int_ip port { 1935, 8554, 8189 }
+pass in quick on $int_if proto tcp from $lan_net to $prod_contribution_int_ip port { 1935, 8554, 8189 } scrub (max-mss 1400)

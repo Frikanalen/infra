@@ -47,6 +47,14 @@ spec:
             - name: rtsp
               containerPort: 8554
               protocol: TCP
+{{- if .Values.webrtc.enabled }}
+            - name: webrtc-udp
+              containerPort: 8189
+              protocol: UDP
+            - name: webrtc-tcp
+              containerPort: 8189
+              protocol: TCP
+{{- end }}
           readinessProbe:
             tcpSocket:
               port: rtsp
@@ -64,7 +72,43 @@ spec:
               mountPath: /mediamtx.yml
               subPath: mediamtx.yml
               readOnly: true
+{{- if .Values.webrtc.enabled }}
+        - name: webrtc-proxy
+          image: {{ .Values.webrtc.proxyImage | quote }}
+          command: ["nginx"]
+          args: ["-c", "/etc/nginx/webrtc.conf", "-g", "daemon off;"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: webrtc-http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: webrtc-http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/webrtc.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: proxy-tmp
+              mountPath: /tmp
+{{- end }}
       volumes:
+{{- if .Values.webrtc.enabled }}
+        - name: proxy-tmp
+          emptyDir: {}
+{{- end }}
         - name: config
           configMap:
             name: mediamtx
