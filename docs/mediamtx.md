@@ -172,19 +172,24 @@ testing. Production was not deployed or tested.
 
 ## WebRTC transport for source preview / return feeds
 
-The environment app definition enables authenticated WebRTC. The gitops chart
-routes `/live` and `/preview` on the site's own hostname to MediaMTX through a
-standard Ingress, so `FK_MEDIAMTX_WEBRTC_URL` is the bare site origin:
+The environment app definition enables authenticated WebRTC on a dedicated
+contribution host, `mediamtx_hostname`: `contrib.frikanalen.no` in prod (a
+manual CNAME to `frikanalen.no`) and `contrib.staging.frikanalen.no` in staging
+(published by external-dns from the Ingress). The gitops chart routes that whole
+host to MediaMTX, so the main site reserves no paths, and
+`FK_MEDIAMTX_WEBRTC_URL` is the contribution host's origin:
 
-- WHEP of the original: `https://<site>/live/<source UUID>/whep`
-- WHEP of the Opus preview: `https://<site>/preview/<source UUID>/whep`
+- WHEP of the original: `https://contrib.<site>/live/<source UUID>/whep`
+- WHEP of the Opus preview: `https://contrib.<site>/preview/<source UUID>/whep`
 
-(The first staging trial used a `/live-preview` prefix and an Nginx sidecar from
-the old infra chart; the gitops chart replaced both.)
+CORS allows the contribution host and the main site's origin, for a future
+embedded player. (The first staging trial used a `/live-preview` prefix on the
+main site and an Nginx sidecar from the old infra chart; both are gone.)
 
 WebRTC media uses UDP 8189 with TCP 8189 as a fallback, through the same
 dedicated MediaMTX LoadBalancer and PF forwarding/hairpin rules. Only the public
-hostname and reserved LAN IP are advertised. No TURN relay is deployed.
+site hostname and reserved LAN IP are advertised as ICE candidates. No TURN
+relay is deployed.
 
 ## Monitoring
 

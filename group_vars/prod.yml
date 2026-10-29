@@ -27,6 +27,9 @@ caspar_host: "192.168.3.35"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+# MediaMTX WebRTC signaling host; the whole host is routed to MediaMTX.
+mediamtx_hostname: "contrib.{{ frikanalen_domain }}"
+
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-prod-contribution'].ip_cidr.split('/')[0] }}"
 

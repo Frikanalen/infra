@@ -64,9 +64,9 @@ frikanalen_apps:
         FK_MEDIAMTX_SRT_URL: "srt://{{ frikanalen_domain }}:8890"
         FK_MEDIAMTX_RTMP_URL: "rtmp://{{ frikanalen_domain }}:1935"
         FK_MEDIAMTX_RTSP_URL: "rtsp://{{ frikanalen_domain }}:8554"
-        # MediaMTX's Ingress serves /live and /preview at the site root; Django
-        # appends live/<UUID>/whep or preview/<UUID>/whep to this base.
-        FK_MEDIAMTX_WEBRTC_URL: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
+        # MediaMTX owns the whole contribution host (see frikanalen_apps.mediamtx);
+        # Django appends live/<UUID>/whep or preview/<UUID>/whep to this base.
+        FK_MEDIAMTX_WEBRTC_URL: "{{ frikanalen_scheme }}://{{ mediamtx_hostname }}"
         # .pod.cluster.local is what makes the Prometheus scrape work: Django
         # rejects any Host it does not recognise with a 400 before routing,
         # and the chart's ServiceMonitor addresses the pod by its CoreDNS
@@ -260,7 +260,12 @@ frikanalen_apps:
         loadBalancerIP: "{{ mediamtx_loadbalancer_ip }}"
       webrtc:
         enabled: true
-        hostname: "{{ frikanalen_domain }}"
+        # Staging's record is created by external-dns from this Ingress; prod's
+        # contrib.frikanalen.no is a manual CNAME to frikanalen.no.
+        hostname: "{{ mediamtx_hostname }}"
+        # The main site may embed a WHEP player later.
+        allowOrigins:
+          - "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
         ingressClassName: "{{ frikanalen_public_ingress_class }}"
         additionalHosts:
           - "{{ frikanalen_domain }}"
