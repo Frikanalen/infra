@@ -25,6 +25,9 @@ django_db_secret_name: django-postgres-passwords
 
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
+# Opus previews converted on demand for the member preview page; see
+# roles/mediamtx_preview_secret. Off in prod until rehearsed here.
+mediamtx_preview_enabled: true
 
 playout_media_path: /mnt/media/
 

@@ -82,6 +82,13 @@
     - role: media_server
       tags: [media_server]
 
+    # Issues MediaMTX's on-demand preview converter credential through Django
+    # and stores it in the Secret MediaMTX reads; must precede mediamtx's app,
+    # which rolls when the key changes.
+    - role: mediamtx_preview_secret
+      tags: [mediamtx, mediamtx_preview]
+      when: mediamtx_preview_enabled | default(false)
+
     - role: argocd_app
       tags: [mediamtx]
       vars:

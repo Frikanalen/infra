@@ -1,0 +1,78 @@
+---
+# Owns MediaMTX's on-demand Opus converter credential end to end, the same
+# way roles/playout_live_secret owns playout's: Django issues it, and the
+# Secret below is the only copy of its password.
+#
+# Every run asks Django whether the key in the Secret is still valid. If it
+# is, nothing changes; if not (first run, revoked, or a staging database just
+# replaced by a copy of production's), Django issues a fresh one and the
+# Secret is rewritten.
+
+- name: Look for an existing preview converter credential
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ mediamtx_preview_secret_name }}"
+    namespace: "{{ mediamtx_preview_secret_namespace }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: mediamtx_preview_secret_lookup
+  no_log: true
+
+- name: Note the key the existing secret holds
+  # Only the key UUID; the password stays in the Secret.
+  ansible.builtin.set_fact:
+    mediamtx_preview_current_key: >-
+      {{ ((mediamtx_preview_secret_lookup.resources[0].data | default({})).username
+          | default('') | b64decode)
+         if mediamtx_preview_secret_lookup.resources | length > 0 else '' }}
+  no_log: true
+
+- name: Find a running Django pod
+  become: true
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ mediamtx_preview_django_namespace }}"
+    label_selectors:
+      - "{{ mediamtx_preview_django_selector }}"
+    field_selectors:
+      - status.phase=Running
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: mediamtx_preview_django_pods
+  failed_when: mediamtx_preview_django_pods.resources | length == 0
+
+- name: Ask Django to keep or issue the preview converter credential
+  become: true
+  kubernetes.core.k8s_exec:
+    namespace: "{{ mediamtx_preview_django_namespace }}"
+    pod: "{{ mediamtx_preview_django_pods.resources[0].metadata.name }}"
+    container: "{{ mediamtx_preview_django_container }}"
+    command: >-
+      python manage.py ensure_preview_credential
+      {{ ('--keep ' ~ (mediamtx_preview_current_key | quote)) if mediamtx_preview_current_key else '' }}
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: mediamtx_preview_ensure
+  changed_when: (mediamtx_preview_ensure.stdout | from_json).changed
+  # A newly issued password is in stdout.
+  no_log: true
+
+- name: Settle on the issued credential
+  ansible.builtin.set_fact:
+    mediamtx_preview_issued: "{{ mediamtx_preview_ensure.stdout | from_json }}"
+  no_log: true
+
+- name: Store the new credential for MediaMTX
+  # Django returns a password only when it issued a new credential.
+  when: mediamtx_preview_issued.password is defined
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'preview-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Remember which key MediaMTX holds
+  # Read by the mediamtx app definition to roll the pod when the key
+  # changes; Helm cannot watch a Secret it does not own. Not secret.
+  ansible.builtin.set_fact:
+    mediamtx_preview_key: "{{ mediamtx_preview_issued.username }}"

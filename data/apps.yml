@@ -31,6 +31,12 @@ ingest_api_secret_name: ingest-api
 # playout app definition below and created by roles/playout_live_secret.
 playout_live_secret_name: playout-live
 
+# Name of the Secret holding MediaMTX's preview converter credential. Read by
+# the mediamtx app definition below and created by roles/mediamtx_preview_secret.
+mediamtx_preview_secret_name: mediamtx-preview
+mediamtx_preview_annotations:
+  checksum/preview-credential: "{{ mediamtx_preview_key | default('') | hash('sha256') }}"
+
 frikanalen_apps:
 
   django:
@@ -289,6 +295,14 @@ frikanalen_apps:
       # always on. The ServiceMonitor is a monitoring.coreos.com kind and is
       # gated like every other one here -- see data/cluster.yml. No release
       # label: roles/kube_prometheus_stack selects every ServiceMonitor.
+      # Opus previews, converted only while someone watches. Off unless the
+      # environment sets mediamtx_preview_enabled.
+      preview:
+        enabled: "{{ mediamtx_preview_enabled | default(false) }}"
+        credentialSecret: "{{ mediamtx_preview_secret_name }}"
+      # Rolls MediaMTX when roles/mediamtx_preview_secret issues a new key.
+      # Empty without previews, so environments without them render as before.
+      podAnnotations: "{{ mediamtx_preview_annotations if mediamtx_preview_enabled | default(false) else {} }}"
       monitoring:
         enabled: true
         serviceMonitor:

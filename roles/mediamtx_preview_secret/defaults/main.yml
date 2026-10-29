@@ -1,0 +1,10 @@
+---
+# Secret MediaMTX reads the converter's username and password from. Its name
+# is mediamtx_preview_secret_name, in data/apps.yml -- the mediamtx app
+# definition there reads it too.
+mediamtx_preview_secret_namespace: "{{ frikanalen_app_namespace }}"
+
+# Where Django runs, to issue the credential. Matches the django-api chart.
+mediamtx_preview_django_namespace: "{{ frikanalen_app_namespace }}"
+mediamtx_preview_django_selector: "app=django-api"
+mediamtx_preview_django_container: django
