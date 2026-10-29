@@ -43,7 +43,7 @@ From infra, deploy staging in this order:
 ```sh
 ansible-playbook playbooks/k8s_platform_dev.yml --tags metallb
 ansible-playbook playbooks/k8s_apps_staging.yml --tags django,mediamtx
-ansible-playbook playbooks/firewall.yml --tags mediamtx_staging
+ansible-playbook playbooks/firewall.yml --tags dev
 ```
 
 The Django app definition adds its internal service FQDN to ALLOWED_HOSTS and
@@ -102,3 +102,22 @@ scale its deployment to zero after disabling automatic reconciliation. Remove
 only UDP 8890 forwarding from the environment's PF anchor; preserve existing web
 and broadcast-stream rules. Do not remove an address from MetalLB while a service
 still uses it. Existing broadcast output and production services are independent.
+
+## Initial staging verification (29 October 2026)
+
+Staging was deployed for testing from infra branch `codex/mediamtx-infrastructure`
+and Django image tag `codex-mediamtx-auth` (django-api PR #81). Both the Django
+Application image parameter and its ImageUpdater track that test tag. Only
+staging's ingress_dev PF anchor was loaded; production was not changed.
+
+An external FFmpeg publisher sent a synthetic 640x360 50fps H.264 picture and
+48kHz stereo AAC to `staging.frikanalen.no:8890`. An independently authenticated
+SRT reader received both tracks through the public forwarding path. Publish-only
+credentials used for reading and a revoked read credential were rejected.
+Temporary test organization, source and credentials were removed afterward.
+
+After merging the prerequisite PRs, reapply the staging app definitions so the
+MediaMTX Application tracks infra main and Django/ImageUpdater track the main
+image again. Until then, preserve the test branch overrides when reconciling
+staging. Operators can issue their own source credentials in staging admin to
+repeat the public SRT test; the endpoint is already live.
