@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mediamtx
+  labels:
+    app: mediamtx
+data:
+  mediamtx.yml: |
+    logLevel: info
+    logDestinations: [stdout]
+    authMethod: http
+    authHTTPAddress: {{ required "authURL must point to Django's MediaMTX callback" .Values.authURL | quote }}
+    authHTTPExclude: []
+    api: false
+    metrics: false
+    pprof: false
+    playback: false
+    rtsp: true
+    rtspAddress: :8554
+    rtspTransports: [tcp]
+    rtmp: false
+    hls: false
+    webrtc: false
+    moq: false
+    srt: true
+    srtAddress: :8890
+    pathDefaults:
+      source: publisher
+      overridePublisher: false
+      record: false
+      # Regex paths support authenticated ingest; fallback requires an
+      # explicit per-source path supplied by the future controller.
+      alwaysAvailable: false
+      alwaysAvailableTracks:
+        - codec: H264
+        - codec: MPEG4Audio
+          sampleRate: 48000
+          channelCount: 2
+    paths:
+{{ toYaml .Values.paths | indent 6 }}

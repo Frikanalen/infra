@@ -2,3 +2,5 @@
 fw_int_if: "vtnet0"
 fw_ext_if: "vtnet1"
 fw_lan_net: "192.168.3.0/24"
+
+dev_ingress_contribution_int_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"

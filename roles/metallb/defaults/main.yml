@@ -2,3 +2,6 @@
 metallb_namespace: metallb-system
 metallb_chart_version: "{{ helm_chart_versions.metallb }}"
 metallb_internal_ingress_ip: ""
+
+# Additional explicitly reserved /32 endpoints outside the existing pool.
+metallb_extra_addresses: []

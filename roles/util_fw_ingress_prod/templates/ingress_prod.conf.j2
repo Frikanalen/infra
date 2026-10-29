@@ -3,6 +3,7 @@
 
 prod_ingress_ext_ip = "{{ prod_ingress_ext_ip }}"
 prod_ingress_int_ip = "{{ prod_ingress_int_ip }}"
+prod_contribution_int_ip = "{{ prod_ingress_contribution_int_ip }}"
 int_if = "{{ fw_int_if }}"
 ext_if = "{{ fw_ext_if }}"
 lan_net = "{{ fw_lan_net }}"
@@ -14,7 +15,15 @@ rdr on $ext_if proto tcp from any to $prod_ingress_ext_ip port { 80, 443 } -> $p
 rdr on $int_if proto tcp from $lan_net to $prod_ingress_ext_ip port { 80, 443 } -> $prod_ingress_int_ip
 nat on $int_if proto tcp from $lan_net to $prod_ingress_int_ip port { 80, 443 } -> ($int_if:0)
 
+# Authenticated SRT contribution, including hairpin access to the public URL.
+rdr on $ext_if proto udp from any to $prod_ingress_ext_ip port 8890 -> $prod_contribution_int_ip
+rdr on $int_if proto udp from $lan_net to $prod_ingress_ext_ip port 8890 -> $prod_contribution_int_ip
+nat on $int_if proto udp from $lan_net to $prod_contribution_int_ip port 8890 -> ($int_if:0)
+
 # Filter rules (pass)
 
 pass in quick on $ext_if proto tcp from any to $prod_ingress_int_ip port { 80, 443 }
 pass in quick on $int_if proto tcp from $lan_net to $prod_ingress_int_ip port { 80, 443 } scrub (max-mss 1400)
+
+pass in quick on $ext_if proto udp from any to $prod_contribution_int_ip port 8890
+pass in quick on $int_if proto udp from $lan_net to $prod_contribution_int_ip port 8890

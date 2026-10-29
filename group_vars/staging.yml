@@ -23,6 +23,9 @@ caspar_host: "192.168.3.101"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+# Dedicated contribution endpoint; SRT shares the site's public IP via PF.
+mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
+
 playout_media_path: /mnt/media/
 
 # Deliberately a separate account and directory from prod: staging uploads must
@@ -86,6 +89,7 @@ argocd_image_updater_enabled: true
 
 # Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
+  mediamtx: main
   graphics: main
   playout: main
   frontend: main

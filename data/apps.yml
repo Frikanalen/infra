@@ -61,6 +61,7 @@ frikanalen_apps:
           repository: ghcr.io/frikanalen/django-api
           tag: "{{ app_versions.django }}"
       env:
+        FK_MEDIAMTX_SRT_URL: "srt://{{ frikanalen_domain }}:8890"
         # .pod.cluster.local is what makes the Prometheus scrape work: Django
         # rejects any Host it does not recognise with a 400 before routing,
         # and the chart's ServiceMonitor addresses the pod by its CoreDNS
@@ -69,7 +70,7 @@ frikanalen_apps:
         # this admits <ip-with-dashes>.<namespace>.pod.cluster.local and
         # nothing outside the cluster. See chart/templates/servicemonitor.yaml
         # in django-api.
-        ALLOWED_HOSTS: "{{ frikanalen_domain }},.pod.cluster.local"
+        ALLOWED_HOSTS: "{{ frikanalen_domain }},.pod.cluster.local,django-api.{{ frikanalen_app_namespace }}.svc.cluster.local"
         CSRF_TRUSTED_ORIGINS: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
         # Handed to the frontend as a video's uploadUrl. Must resolve to the
         # tusd ingress that the ingest app creates.
@@ -240,3 +241,13 @@ frikanalen_apps:
         # unless the environment names some: see ingest_worker_pools in
         # group_vars/staging.yml.
         pools: "{{ ingest_worker_pools | default({}) }}"
+
+  mediamtx:
+    name: mediamtx
+    repo_url: https://github.com/Frikanalen/infra.git
+    repo_path: charts/mediamtx
+    version: "{{ app_versions.mediamtx }}"
+    helm_values:
+      authURL: "http://django-api.{{ frikanalen_app_namespace }}.svc.cluster.local:8080/api/mediamtx/auth"
+      service:
+        loadBalancerIP: "{{ mediamtx_loadbalancer_ip }}"

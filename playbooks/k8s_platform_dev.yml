@@ -16,6 +16,7 @@
   vars:
     metallb_ingress_ip: "192.168.3.90/30"
     metallb_internal_ingress_ip: "{{ traefik_internal_loadbalancer_ip }}/32"
+    metallb_extra_addresses: ["{{ mediamtx_loadbalancer_ip }}/32"]
     traefik_loadbalancer_ip: "192.168.3.90"
     traefik_internal_loadbalancer_ip: "{{ host_config['ingress-dev-internal'].ip_cidr.split('/')[0] }}"
     traefik_public_ip: "158.36.191.229"
