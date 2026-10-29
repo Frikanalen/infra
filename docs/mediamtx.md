@@ -107,7 +107,7 @@ this deployment does not change the broadcast schedule or on-air source.
 
 MediaMTX rejects `alwaysAvailable: true` on regex paths. The initial UUID-shaped
 regex path therefore has fallback disabled. The chart accepts explicit `paths`
-overrides: an exact `live/<UUID>` path may enable `alwaysAvailable: true` using
+overrides: an exact `contrib/live/<UUID>` path may enable `alwaysAvailable: true` using
 the default H.264/AAC stereo slate tracks. Provisioning those exact paths from
 Django belongs to the next controller step. A disconnect currently ends the feed;
 this is a reception/authentication test, not an on-air continuity deployment.
@@ -172,19 +172,17 @@ testing. Production was not deployed or tested.
 
 ## WebRTC transport for source preview / return feeds
 
-The environment app definition enables authenticated WebRTC on a dedicated
-contribution host, `mediamtx_hostname`: `contrib.frikanalen.no` in prod (a
-manual CNAME to `frikanalen.no`) and `contrib.staging.frikanalen.no` in staging
-(published by external-dns from the Ingress). The gitops chart routes that whole
-host to MediaMTX, so the main site reserves no paths, and
-`FK_MEDIAMTX_WEBRTC_URL` is the contribution host's origin:
+The environment app definition enables authenticated WebRTC on the site's own
+hostname. Every MediaMTX stream path starts with `contrib/`, and the gitops
+chart's Ingress routes `/contrib` to MediaMTX without rewriting, so
+`FK_MEDIAMTX_WEBRTC_URL` is the bare site origin:
 
-- WHEP of the original: `https://contrib.<site>/live/<source UUID>/whep`
-- WHEP of the Opus preview: `https://contrib.<site>/preview/<source UUID>/whep`
+- WHEP of the original: `https://<site>/contrib/live/<source UUID>/whep`
+- WHEP of the Opus preview: `https://<site>/contrib/preview/<source UUID>/whep`
 
-CORS allows the contribution host and the main site's origin, for a future
-embedded player. (The first staging trial used a `/live-preview` prefix on the
-main site and an Nginx sidecar from the old infra chart; both are gone.)
+The frontend must not serve pages under `/contrib`. (The first staging trial
+used a `/live-preview` prefix and an Nginx sidecar from the old infra chart;
+both are gone.)
 
 WebRTC media uses UDP 8189 with TCP 8189 as a fallback, through the same
 dedicated MediaMTX LoadBalancer and PF forwarding/hairpin rules. Only the public
