@@ -35,8 +35,8 @@ definitions.
   MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CloudNativePG, CasparCG, NFS,
   and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
-- `charts/mediamtx/` - authenticated SRT contribution ingress, with its
-  [deployment and end-to-end test guide](charts/mediamtx/README.md).
+- `docs/mediamtx.md` - environment wiring, deployment and end-to-end test guide
+  for the MediaMTX contribution ingest (the chart lives in gitops).
 
 ## Development
 

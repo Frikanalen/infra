@@ -89,6 +89,7 @@ argocd_image_updater_enabled: true
 
 # Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
+  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
   graphics: main
   playout: main

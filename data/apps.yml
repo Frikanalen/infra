@@ -64,7 +64,9 @@ frikanalen_apps:
         FK_MEDIAMTX_SRT_URL: "srt://{{ frikanalen_domain }}:8890"
         FK_MEDIAMTX_RTMP_URL: "rtmp://{{ frikanalen_domain }}:1935"
         FK_MEDIAMTX_RTSP_URL: "rtsp://{{ frikanalen_domain }}:8554"
-        FK_MEDIAMTX_WEBRTC_URL: "https://{{ frikanalen_domain }}/live-preview"
+        # MediaMTX's Ingress claims /contrib on the site; Django appends
+        # contrib/live/<UUID>/whep or contrib/preview/<UUID>/whep to this base.
+        FK_MEDIAMTX_WEBRTC_URL: "{{ frikanalen_scheme }}://{{ frikanalen_domain }}"
         # .pod.cluster.local is what makes the Prometheus scrape work: Django
         # rejects any Host it does not recognise with a 400 before routing,
         # and the chart's ServiceMonitor addresses the pod by its CoreDNS
@@ -245,10 +247,12 @@ frikanalen_apps:
         # group_vars/staging.yml.
         pools: "{{ ingest_worker_pools | default({}) }}"
 
+  # The chart lives in gitops (helm/mediamtx); this repo owns only the
+  # environment wiring: callback, listener addresses and the monitoring flag.
   mediamtx:
     name: mediamtx
-    repo_url: https://github.com/Frikanalen/infra.git
-    repo_path: charts/mediamtx
+    repo_url: https://github.com/Frikanalen/gitops.git
+    repo_path: helm/mediamtx
     version: "{{ app_versions.mediamtx }}"
     helm_values:
       authURL: "http://django-api.{{ frikanalen_app_namespace }}.svc.cluster.local:8080/api/mediamtx/auth"
@@ -256,8 +260,19 @@ frikanalen_apps:
         loadBalancerIP: "{{ mediamtx_loadbalancer_ip }}"
       webrtc:
         enabled: true
+        # The Ingress claims /contrib on the site's own hostname.
         hostname: "{{ frikanalen_domain }}"
         ingressClassName: "{{ frikanalen_public_ingress_class }}"
         additionalHosts:
           - "{{ frikanalen_domain }}"
           - "{{ mediamtx_loadbalancer_ip }}"
+      # The metrics endpoint is internal-only (ClusterIP, port 9998), so it is
+      # always on. The ServiceMonitor is a monitoring.coreos.com kind and is
+      # gated like every other one here -- see data/cluster.yml. No release
+      # label: roles/kube_prometheus_stack selects every ServiceMonitor.
+      monitoring:
+        enabled: true
+        serviceMonitor:
+          enabled: "{{ k8s_monitoring_enabled }}"
+          interval: 30s
+          scrapeTimeout: 10s

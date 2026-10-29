@@ -60,37 +60,3 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
-
-  mediamtx-chart:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v5
-        with:
-          version: v4.3.0
-      - name: Validate contribution chart for both environments
-        run: |
-          for address in 192.168.3.93 192.168.3.107; do
-            helm lint charts/mediamtx \
-              --set authURL=http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth \
-              --set service.loadBalancerIP="$address"
-            helm template mediamtx charts/mediamtx \
-              --set authURL=http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth \
-              --set service.loadBalancerIP="$address" >/dev/null
-          done
-          helm lint charts/mediamtx \
-            --set authURL=http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth \
-            --set service.loadBalancerIP=192.168.3.93 \
-            --set webrtc.enabled=true \
-            --set webrtc.hostname=staging.frikanalen.no \
-            --set 'webrtc.additionalHosts[0]=staging.frikanalen.no'
-          helm template mediamtx charts/mediamtx \
-            --set authURL=http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth \
-            --set service.loadBalancerIP=192.168.3.93 \
-            --set webrtc.enabled=true \
-            --set webrtc.hostname=staging.frikanalen.no \
-            --set 'webrtc.additionalHosts[0]=staging.frikanalen.no' >/dev/null
-          if helm template mediamtx charts/mediamtx >/dev/null 2>&1; then
-            echo "Chart must refuse missing authentication and address settings"
-            exit 1
-          fi

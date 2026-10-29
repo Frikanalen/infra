@@ -1,13 +1,20 @@
-# Contribution ingest
+# MediaMTX contribution ingest
+
+Environment wiring for the MediaMTX chart. The chart itself lives in
+[Frikanalen/gitops `helm/mediamtx`](https://github.com/Frikanalen/gitops/tree/main/helm/mediamtx),
+which documents its values, WebRTC paths, Opus preview workers and monitoring.
 
 A single MediaMTX 1.21.3 instance receives authenticated SRT, RTMP and RTSP contributions.
 Django owns the source UUIDs and credentials. MediaMTX calls
 `http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth` for every
 publish/read request; an unavailable or rejecting callback fails closed.
 
-The chart lives in infra and is deployed by the standard `argocd_app` role via
-`frikanalen_apps.mediamtx`. Both app playbooks have a `mediamtx` tag. The image
-version is pinned independently of the infra Git revision.
+The standard `argocd_app` role deploys the gitops chart via
+`frikanalen_apps.mediamtx`; `app_versions.mediamtx` is the gitops revision Argo
+tracks. Both app playbooks have a `mediamtx` tag. The MediaMTX image is pinned in
+the chart, independently of either Git revision. The Application name and
+Kubernetes resource names are still `mediamtx`, so re-running the role after the
+move retargets the existing Application rather than creating a second service.
 
 ## Network
 
@@ -20,7 +27,7 @@ PF forwards UDP 8890 (SRT), TCP 1935 (RTMP), and TCP 8554 (RTSP) from the
 environment's existing public web IP to the new MetalLB address, including hairpin
 access. RTSP media uses interleaved TCP; clients must select TCP transport, with
 no separate RTP/RTCP UDP ports needed. HLS, MoQ, the management API,
-metrics and recording remain disabled. Django advertises the configured contribution and WebRTC
+and recording remain disabled. Django advertises the configured contribution and WebRTC
 listeners in its one-time credential dialog.
 
 Production URLs are `srt://frikanalen.no:8890`, `rtmp://frikanalen.no:1935` and
@@ -53,7 +60,7 @@ ansible-playbook playbooks/firewall.yml --tags dev
 ```
 
 The Django app definition adds its internal service FQDN to ALLOWED_HOSTS and
-sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL`, `FK_MEDIAMTX_RTSP_URL` and `FK_MEDIAMTX_WEBRTC_URL`. ArgoCD syncs the chart from infra main after merge.
+sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL`, `FK_MEDIAMTX_RTSP_URL` and `FK_MEDIAMTX_WEBRTC_URL`. ArgoCD syncs the chart from gitops main after merge.
 Check the Django rollout and its migration hook before trying credentials.
 
 If using an unmerged Django branch for a staging trial, explicitly override both
@@ -100,7 +107,7 @@ this deployment does not change the broadcast schedule or on-air source.
 
 MediaMTX rejects `alwaysAvailable: true` on regex paths. The initial UUID-shaped
 regex path therefore has fallback disabled. The chart accepts explicit `paths`
-overrides: an exact `live/<UUID>` path may enable `alwaysAvailable: true` using
+overrides: an exact `contrib/live/<UUID>` path may enable `alwaysAvailable: true` using
 the default H.264/AAC stereo slate tracks. Provisioning those exact paths from
 Django belongs to the next controller step. A disconnect currently ends the feed;
 this is a reception/authentication test, not an on-air continuity deployment.
@@ -134,7 +141,7 @@ credentials used for reading and a revoked read credential were rejected.
 Temporary test organization, source and credentials were removed afterward.
 
 After merging the prerequisite PRs, reapply the staging app definitions so the
-MediaMTX Application tracks infra main and Django/ImageUpdater track the main
+MediaMTX Application tracks gitops main and Django/ImageUpdater track the main
 image again. Until then, preserve the test branch overrides when reconciling
 staging. Operators can issue their own source credentials in staging admin to
 repeat the public SRT test; the SRT, RTMP and RTSP listeners and credential URLs are deployed in staging.
@@ -165,34 +172,33 @@ testing. Production was not deployed or tested.
 
 ## WebRTC transport for source preview / return feeds
 
-The environment app definition enables authenticated WebRTC, with HTTPS
-signaling under `https://<site>/live-preview`. For a source's read credential:
+The environment app definition enables authenticated WebRTC on the site's own
+hostname. Every MediaMTX stream path starts with `contrib/`, and the gitops
+chart's Ingress routes `/contrib` to MediaMTX without rewriting, so
+`FK_MEDIAMTX_WEBRTC_URL` is the bare site origin:
 
-- Browser player: `https://<site>/live-preview/live/<source UUID>/`
-- WHEP: `https://<site>/live-preview/live/<source UUID>/whep`
-- Use the read credential's username/password (Basic authentication), or the
-  `username:password` bearer token shown in the one-time credential dialog.
+- WHEP of the original: `https://<site>/contrib/live/<source UUID>/whep`
+- WHEP of the Opus preview: `https://<site>/contrib/preview/<source UUID>/whep`
 
-Traefik terminates HTTPS using the existing hostname/certificate. A small
-rootless Nginx sidecar strips `/live-preview` on upstream requests and adds it
-back to Location response headers, preserving WHEP PATCH/DELETE session URLs.
-The upstream HTTP listener binds only to pod loopback; there is no public 8889
-forwarding. CORS is restricted to the environment's HTTPS site origin.
+The frontend must not serve pages under `/contrib`. (The first staging trial
+used a `/live-preview` prefix and an Nginx sidecar from the old infra chart;
+both are gone.)
 
-WebRTC media uses UDP 8189 with TCP 8189 as a fallback. Both are exposed through
-the same dedicated MediaMTX LoadBalancer and PF forwarding/hairpin rules. The
-server advertises only its public hostname and reserved LAN IP, not pod IPs.
-No TURN relay is deployed, so networks blocking both direct UDP and TCP still
-need a later TURN configuration. WebRTC media is encrypted independently of
-HTTPS signaling.
+WebRTC media uses UDP 8189 with TCP 8189 as a fallback, through the same
+dedicated MediaMTX LoadBalancer and PF forwarding/hairpin rules. Only the public
+site hostname and reserved LAN IP are advertised as ICE candidates. No TURN
+relay is deployed.
 
-**This change enables transport only; it does not transcode.** Browser-friendly
-H.264 (no B-frames) and Opus audio can be received directly. Existing H.264/AAC
-contributions may show video without audio; automatic AAC-to-Opus preview
-conversion is explicitly deferred. A WebRTC preview of a source is the received
-contribution, not proof that CasparCG has put it on air. An actual TX return
-requires publishing the channel output as its own source.
+## Monitoring
 
-No frontend organization page or session-based preview-token endpoint is added.
-The WHEP endpoint can be consumed by the future frontend player, while operators
-can use the MediaMTX browser player now with a read credential.
+MediaMTX's Prometheus endpoint is always enabled, on port 9998 behind the
+internal `mediamtx-metrics` ClusterIP Service only; it is not forwarded by PF or
+exposed by the LoadBalancer or Ingress. MediaMTX does not ask Django to authorize
+metrics scrapes; every publish and read is still authorized.
+
+Where `k8s_monitoring_enabled` is true (staging and prod), the chart also creates
+a `mediamtx` ServiceMonitor scraped every 30 s. Like the other ServiceMonitors
+here it carries no `release` label, because roles/kube_prometheus_stack selects
+every ServiceMonitor in the cluster. To check the target after deploying, look
+for `serviceMonitor/<namespace>/mediamtx/0` under Status > Targets on
+`prometheus.<intern zone>`, or query `paths` in Grafana's Explore view.
