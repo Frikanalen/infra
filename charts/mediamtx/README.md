@@ -78,6 +78,17 @@ ffmpeg -re -f lavfi -i 'testsrc2=size=1280x720:rate=50' \
   -g 50 -b:v 4M -c:a aac -ar 48000 -ac 2 -f mpegts "$PUBLISH_URL"
 ```
 
+For RTMP or RTSP, the credential dialog supplies the corresponding full URL.
+Given a local H.264/AAC file, these commands test the alternative publishers:
+
+```sh
+ffmpeg -re -i test.mp4 -c copy -f flv "$RTMP_PUBLISH_URL"
+ffmpeg -re -i test.mp4 -c copy -rtsp_transport tcp -f rtsp "$RTSP_PUBLISH_URL"
+```
+
+Read with `ffplay "$RTMP_READ_URL"` or
+`ffplay -rtsp_transport tcp "$RTSP_READ_URL"`. RTSP must use TCP transport.
+
 In another shell, read with `ffplay "$READ_URL"`. A publish key must not allow
 reading. Revoke a key in admin and reconnect to verify rejection; revocation
 alone does not disconnect existing sessions yet.
@@ -126,4 +137,28 @@ After merging the prerequisite PRs, reapply the staging app definitions so the
 MediaMTX Application tracks infra main and Django/ImageUpdater track the main
 image again. Until then, preserve the test branch overrides when reconciling
 staging. Operators can issue their own source credentials in staging admin to
-repeat the public SRT test; the SRT endpoint is already live. RTMP/RTSP listener and URL support is included in the follow-up change.
+repeat the public SRT test; the SRT, RTMP and RTSP listeners and credential URLs are deployed in staging.
+
+Staging listener URLs and ALLOWED_HOSTS are stored in the Django Application's
+Helm values, matching `data/apps.yml`. Keep image-update parameters limited to
+image fields: an image-updater reconciliation discarded temporary environment
+parameters during the initial trial, causing HTTP 400 from the callback. Moving
+the environment settings into Helm values fixed authentication across listeners.
+The old failed staging migration Job was removed so Argo could recreate it;
+both applications subsequently completed reconciliation successfully.
+
+The follow-up public protocol matrix passed using a synthetic H.264 640x360
+picture and stereo AAC audio:
+
+| Publisher | Authenticated reader | Result |
+| --- | --- | --- |
+| SRT UDP 8890 | SRT UDP 8890 | Passed |
+| SRT UDP 8890 | RTMP TCP 1935 | Passed |
+| SRT UDP 8890 | RTSP TCP 8554 | Passed |
+| RTMP TCP 1935 | SRT UDP 8890 | Passed |
+| RTSP TCP 8554 | SRT UDP 8890 | Passed |
+
+All connections used `staging.frikanalen.no`, exercising public forwarding and
+Django authentication rather than an internal shortcut. RTSP used interleaved
+TCP. The temporary test organization, source and credentials were removed after
+testing. Production was not deployed or tested.
