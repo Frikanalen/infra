@@ -79,3 +79,8 @@
 
     - role: media_server
       tags: [media_server]
+
+    - role: argocd_app
+      tags: [mediamtx]
+      vars:
+        argocd_app: "{{ frikanalen_apps.mediamtx }}"

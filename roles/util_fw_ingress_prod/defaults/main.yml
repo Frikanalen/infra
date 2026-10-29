@@ -9,3 +9,5 @@ prod_ingress_ext_netmask: "255.255.255.128"
 
 # Internal ingress IP to forward traffic to (web/API)
 prod_ingress_int_ip: "192.168.3.104"
+
+prod_ingress_contribution_int_ip: "{{ host_config['ingress-prod-contribution'].ip_cidr.split('/')[0] }}"

@@ -27,6 +27,9 @@ caspar_host: "192.168.3.35"
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
 
+# Dedicated contribution endpoint; SRT shares the site's public IP via PF.
+mediamtx_loadbalancer_ip: "{{ host_config['ingress-prod-contribution'].ip_cidr.split('/')[0] }}"
+
 playout_media_path: /mnt/media/
 
 # Ingest archives over SSH, so it runs in Kubernetes rather than on file01
@@ -59,6 +62,8 @@ argocd_stream_cubemap_ip: "192.168.3.105"
 # a fallback: a missing key is now an undefined-variable error rather than a
 # silent deploy of whatever the fallback happened to name.
 app_versions:
+  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
+  mediamtx: main
   graphics: v1.2.0
   playout: v2.1.1
   frontend: v3.1.1

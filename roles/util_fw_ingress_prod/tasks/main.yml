@@ -11,6 +11,7 @@
   ansible.builtin.command: >
     ifconfig {{ fw_ext_if }} alias {{ prod_ingress_ext_ip }}
     netmask {{ prod_ingress_ext_netmask }}
+  changed_when: true
   when: ('inet ' ~ prod_ingress_ext_ip ~ ' ') not in ifconfig_current.stdout
 
 - name: Ensure IP alias persists across reboots
