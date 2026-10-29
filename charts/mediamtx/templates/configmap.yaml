@@ -18,7 +18,8 @@ data:
     rtsp: true
     rtspAddress: :8554
     rtspTransports: [tcp]
-    rtmp: false
+    rtmp: true
+    rtmpAddress: :1935
     hls: false
     webrtc: false
     moq: false

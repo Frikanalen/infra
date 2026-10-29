@@ -1,6 +1,6 @@
 # Contribution ingest
 
-A single MediaMTX 1.21.3 instance receives authenticated SRT contributions.
+A single MediaMTX 1.21.3 instance receives authenticated SRT, RTMP and RTSP contributions.
 Django owns the source UUIDs and credentials. MediaMTX calls
 `http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth` for every
 publish/read request; an unavailable or rejecting callback fails closed.
@@ -11,16 +11,22 @@ version is pinned independently of the infra Git revision.
 
 ## Network
 
-| Environment | Public SRT listener | Reserved LAN IP | Internal RTSP |
+| Environment | Public SRT listener | Reserved LAN IP | RTSP (public hostname or LAN) |
 | --- | --- | --- | --- |
 | Staging | `srt://staging.frikanalen.no:8890` | `192.168.3.93` | `rtsp://192.168.3.93:8554` |
 | Production | `srt://frikanalen.no:8890` | `192.168.3.107` | `rtsp://192.168.3.107:8554` |
 
-PF forwards UDP 8890 from the environment's existing public web IP to the new
-MetalLB address, including hairpin access. RTSP is TCP-only on the LAN: no public
-RTSP forwarding is added. RTMP, HLS, WebRTC, MoQ, the management API, metrics and
-recording are disabled in this first deployment. Django advertises only SRT in
-its one-time credential dialog, so no non-working public listener is offered.
+PF forwards UDP 8890 (SRT), TCP 1935 (RTMP), and TCP 8554 (RTSP) from the
+environment's existing public web IP to the new MetalLB address, including hairpin
+access. RTSP media uses interleaved TCP; clients must select TCP transport, with
+no separate RTP/RTCP UDP ports needed. HLS, WebRTC, MoQ, the management API,
+metrics and recording remain disabled. Django advertises all three configured
+listeners in its one-time credential dialog.
+
+Production URLs are `srt://frikanalen.no:8890`, `rtmp://frikanalen.no:1935` and
+`rtsp://frikanalen.no:8554`. Staging uses `staging.frikanalen.no` on the same ports.
+Each full URL includes the issued source path and the appropriate authentication.
+These RTMP/RTSP listeners do not have TLS; use a trusted route/VPN when required.
 
 The staging address is added to MetalLB's existing pool by the platform playbook.
 The production address is already inside its existing `192.168.3.104/30` pool.
@@ -47,7 +53,7 @@ ansible-playbook playbooks/firewall.yml --tags dev
 ```
 
 The Django app definition adds its internal service FQDN to ALLOWED_HOSTS and
-sets `FK_MEDIAMTX_SRT_URL`. ArgoCD syncs the chart from infra main after merge.
+sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL` and `FK_MEDIAMTX_RTSP_URL`. ArgoCD syncs the chart from infra main after merge.
 Check the Django rollout and its migration hook before trying credentials.
 
 If using an unmerged Django branch for a staging trial, explicitly override both
@@ -99,7 +105,7 @@ dry-run and compile the PF anchor with `pfctl -n`.
 
 To stop this test service, remove its Argo application with resource deletion or
 scale its deployment to zero after disabling automatic reconciliation. Remove
-only UDP 8890 forwarding from the environment's PF anchor; preserve existing web
+only contribution forwarding on UDP 8890 and TCP 1935/8554 from the environment's PF anchor; preserve existing web
 and broadcast-stream rules. Do not remove an address from MetalLB while a service
 still uses it. Existing broadcast output and production services are independent.
 
@@ -120,4 +126,4 @@ After merging the prerequisite PRs, reapply the staging app definitions so the
 MediaMTX Application tracks infra main and Django/ImageUpdater track the main
 image again. Until then, preserve the test branch overrides when reconciling
 staging. Operators can issue their own source credentials in staging admin to
-repeat the public SRT test; the endpoint is already live.
+repeat the public SRT test; the SRT endpoint is already live. RTMP/RTSP listener and URL support is included in the follow-up change.

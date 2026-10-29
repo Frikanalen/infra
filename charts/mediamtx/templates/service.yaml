@@ -15,7 +15,10 @@ spec:
       port: 8890
       targetPort: srt
       protocol: UDP
-    # LAN-only: public firewall forwarding opens SRT, not RTSP.
+    - name: rtmp
+      port: 1935
+      targetPort: rtmp
+      protocol: TCP
     - name: rtsp
       port: 8554
       targetPort: rtsp

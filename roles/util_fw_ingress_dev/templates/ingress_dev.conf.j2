@@ -15,6 +15,10 @@ rdr on $ext_if proto tcp from any to $dev_ingress_ext_ip port { 80, 443 } -> $de
 rdr on $ext_if proto udp from any to $dev_ingress_ext_ip port 5004 -> $dev_ingress_live_int_ip
 
 # Authenticated SRT contribution, including hairpin access to the public URL.
+# RTMP and TCP-only RTSP use the same authenticated contribution service.
+rdr on $ext_if proto tcp from any to $dev_ingress_ext_ip port { 1935, 8554 } -> $dev_contribution_int_ip
+rdr on $int_if proto tcp from $lan_net to $dev_ingress_ext_ip port { 1935, 8554 } -> $dev_contribution_int_ip
+nat on $int_if proto tcp from $lan_net to $dev_contribution_int_ip port { 1935, 8554 } -> ($int_if:0)
 rdr on $ext_if proto udp from any to $dev_ingress_ext_ip port 8890 -> $dev_contribution_int_ip
 rdr on $int_if proto udp from $lan_net to $dev_ingress_ext_ip port 8890 -> $dev_contribution_int_ip
 nat on $int_if proto udp from $lan_net to $dev_contribution_int_ip port 8890 -> ($int_if:0)
@@ -32,3 +36,6 @@ pass in quick on $int_if proto udp from $lan_net to $dev_ingress_live_int_ip por
 
 pass in quick on $ext_if proto udp from any to $dev_contribution_int_ip port 8890
 pass in quick on $int_if proto udp from $lan_net to $dev_contribution_int_ip port 8890
+
+pass in quick on $ext_if proto tcp from any to $dev_contribution_int_ip port { 1935, 8554 }
+pass in quick on $int_if proto tcp from $lan_net to $dev_contribution_int_ip port { 1935, 8554 } scrub (max-mss 1400)
