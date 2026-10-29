@@ -156,6 +156,9 @@ frikanalen_apps:
         # address rather than the in-cluster service.
         - name: LIVE_INPUT_URL
           value: "rtsp://{{ mediamtx_loadbalancer_ip }}:8554"
+        # Playout watches the source's readers here to notice an encoder drop.
+        - name: LIVE_METRICS_URL
+          value: "http://mediamtx-metrics.default.svc.cluster.local:9998/metrics"
       envFrom:
         - secretRef:
             name: "{{ playout_live_secret_name }}"
