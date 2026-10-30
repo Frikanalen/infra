@@ -82,6 +82,11 @@ ingest_worker_pools:
         gpu.intel.com/i915: 1
 
 argocd_stream_cubemap_ip: "192.168.3.91"
+# Cubemap joins caspar-sw1's program-out group (host_vars/caspar-sw1.yml)
+# instead of listening unicast on the LoadBalancer IP above. Joining needs
+# the node's network namespace: Calico doesn't carry multicast into pods.
+argocd_stream_cubemap_host_network: true
+argocd_stream_cubemap_multicast_group: "239.1.1.50"
 
 # This is the cluster kube_prometheus_stack runs on, so the ServiceMonitors,
 # PodMonitors and Grafana dashboards the other roles ship are wanted here.
