@@ -11,8 +11,8 @@ casparcg_ffmpeg_path: "udp://239.1.1.50:5004"
 # latency, constant rate, no B-frames, a keyframe a second at 720p50.
 # See roles/casparcg/defaults/main.yml for how CasparCG parses these.
 casparcg_ffmpeg_args: >-
-  -format mpegts -codec:v h264_nvenc -preset p4 -tune ll -rc cbr
-  -b:v 8M -maxrate 8M -bufsize 4M -g 50 -bf 0
+  -format mpegts -codec:v h264_nvenc -preset:v p4 -tune:v ll -rc:v cbr
+  -b:v 8M -maxrate:v 8M -bufsize:v 4M -g:v 50 -bf:v 0
   -codec:a mp2 -b:a 192k -filter:a aformat=channel_layouts=stereo
 
 # The Tesla P4 is passed through (data/hosts.yml), so CasparCG renders on

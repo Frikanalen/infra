@@ -35,7 +35,9 @@ casparcg_ffmpeg_path: "udp://192.168.3.1:5568"
 # given as "-format", not ffmpeg's usual "-f" (that lands on an unrecognized
 # "f" key and gets silently dropped, leaving avformat_alloc_output_context2
 # unable to guess a format from a udp:// path). Likewise codec overrides
-# need "-codec:v"/"-codec:a", not "-c:v"/"-c:a".
+# need "-codec:v"/"-codec:a", not "-c:v"/"-c:a". Encoder options other
+# than bitrate also need a stream specifier ("-g:v 50", "-preset:v p4"):
+# unqualified ones are logged as "Unused option" and ignored.
 #
 # -filter:a is required, not optional: CasparCG's internal audio bus is
 # always 16-channel, and on ffmpeg builds with the new channel-layout API
