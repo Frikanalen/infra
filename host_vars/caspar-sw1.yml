@@ -1,14 +1,26 @@
 ---
 # caspar-sw1 is staging's playout box (see caspar_host in
 # group_vars/staging.yml, which points the playout app's AMCP control at
-# this host), so its ffmpeg consumer should stream to staging's stream
-# packager instead of the casparcg role's default test destination.
+# this host), so program out goes to two places, one ffmpeg consumer each:
 #
-# 192.168.3.91:5004 is staging's cubemap ingest: matches
-# argocd_stream_cubemap_ip in group_vars/staging.yml (the cubemap
-# component's LoadBalancer IP) and the dev_ingress_live_int_ip/:5004 rules
-# in playbooks/firewall.yml that front it.
-casparcg_ffmpeg_path: "udp://192.168.3.91:5004"
+# - 192.168.3.91:5004, staging's cubemap ingest for the front-page stream:
+#   matches argocd_stream_cubemap_ip in group_vars/staging.yml (the cubemap
+#   component's LoadBalancer IP) and the dev_ingress_live_int_ip/:5004 rules
+#   in playbooks/firewall.yml that front it. Cubemap listens unicast and
+#   cannot join a multicast group.
+# - 239.1.1.50:5004, multicast for anything else on the LAN to join.
+casparcg_ffmpeg_paths:
+  - "udp://192.168.3.91:5004"
+  - "udp://239.1.1.50:5004"
+
+# Encoded on the Tesla P4 (NVENC) rather than in software: H.264 at 8 Mbit/s
+# looks far better than the role's MPEG-2 default at the same rate. Low
+# latency, constant rate, no B-frames, a keyframe a second at 720p50.
+# See roles/casparcg/defaults/main.yml for how CasparCG parses these.
+casparcg_ffmpeg_args: >-
+  -format mpegts -codec:v h264_nvenc -preset p4 -tune ll -rc cbr
+  -b:v 8M -maxrate 8M -bufsize 4M -g 50 -bf 0
+  -codec:a mp2 -b:a 192k -filter:a aformat=channel_layouts=stereo
 
 # The Tesla P4 is passed through (data/hosts.yml), so CasparCG renders on
 # it with nvidia_driver instead of Mesa's llvmpipe (playbooks/caspar.yml).
