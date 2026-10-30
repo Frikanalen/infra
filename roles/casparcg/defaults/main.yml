@@ -28,8 +28,6 @@ casparcg_decklink_key_only: false
 casparcg_decklink_buffer_depth: 3
 
 casparcg_ffmpeg_path: "udp://192.168.3.1:5568"
-# Set casparcg_ffmpeg_paths (a list) instead to send the same encode to
-# several destinations, one ffmpeg consumer each.
 # The ffmpeg consumer's <args> aren't a real ffmpeg command line: it
 # regex-splits "-key value" pairs into a flat map, and only recognizes a
 # handful of literal key names of its own choosing (see

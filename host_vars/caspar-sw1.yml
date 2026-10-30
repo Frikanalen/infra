@@ -1,17 +1,10 @@
 ---
 # caspar-sw1 is staging's playout box (see caspar_host in
 # group_vars/staging.yml, which points the playout app's AMCP control at
-# this host), so program out goes to two places, one ffmpeg consumer each:
-#
-# - 192.168.3.91:5004, staging's cubemap ingest for the front-page stream:
-#   matches argocd_stream_cubemap_ip in group_vars/staging.yml (the cubemap
-#   component's LoadBalancer IP) and the dev_ingress_live_int_ip/:5004 rules
-#   in playbooks/firewall.yml that front it. Cubemap listens unicast and
-#   cannot join a multicast group.
-# - 239.1.1.50:5004, multicast for anything else on the LAN to join.
-casparcg_ffmpeg_paths:
-  - "udp://192.168.3.91:5004"
-  - "udp://239.1.1.50:5004"
+# this host). Program out goes to multicast 239.1.1.50:5004 only; staging's
+# cubemap joins that group (argocd_stream_cubemap_multicast_group), as can
+# anything else on the LAN.
+casparcg_ffmpeg_path: "udp://239.1.1.50:5004"
 
 # Encoded on the Tesla P4 (NVENC) rather than in software: H.264 at 8 Mbit/s
 # looks far better than the role's MPEG-2 default at the same rate. Low

@@ -23,12 +23,10 @@
                 <buffer-depth>{{ casparcg_decklink_buffer_depth }}</buffer-depth>
             </decklink>
 {% elif casparcg_consumer_type == 'ffmpeg' %}
-{% for path in casparcg_ffmpeg_paths | default([casparcg_ffmpeg_path], true) %}
             <ffmpeg>
-                <path>{{ path }}</path>
+                <path>{{ casparcg_ffmpeg_path }}</path>
                 <args>{{ casparcg_ffmpeg_args }}</args>
             </ffmpeg>
-{% endfor %}
 {% endif %}
         </consumers>
      </channel>
