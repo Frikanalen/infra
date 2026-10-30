@@ -289,6 +289,9 @@ frikanalen_apps:
       # only while someone watches. Off unless the environment turns it on.
       preview:
         enabled: "{{ mediamtx_preview_enabled | default(false) }}"
+      # Packets queued per reader before MediaMTX discards them; 512 is
+      # MediaMTX's own default. Raised where internet uplinks arrive in bursts.
+      writeQueueSize: "{{ mediamtx_write_queue_size | default(512) }}"
       # The metrics endpoint is internal-only (ClusterIP, port 9998), so it is
       # always on. The ServiceMonitor is a monitoring.coreos.com kind and is
       # gated like every other one here -- see data/cluster.yml. No release
