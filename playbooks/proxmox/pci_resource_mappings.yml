@@ -93,10 +93,20 @@
           - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
           - --hostpci0
           - "{{ proxmox_gpu_vm.hostpci0 }}"
-          - --hostpci1
-          - "{{ proxmox_gpu_vm.hostpci1 }}"
-      when: >-
-        (gpu_vm_config.stdout | from_json).hostpci0 | default('') != proxmox_gpu_vm.hostpci0 or
-        (gpu_vm_config.stdout | from_json).hostpci1 | default('') != proxmox_gpu_vm.hostpci1
+      when: (gpu_vm_config.stdout | from_json).hostpci0 | default('') != proxmox_gpu_vm.hostpci0
+      changed_when: true
+      run_once: true
+
+    # The Tesla P4 used to sit here; it is caspar-sw1's now. Takes effect
+    # at dev-kube-4's next power cycle.
+    - name: Remove the Tesla P4 from dev-kube-4
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/nodes/{{ proxmox_gpu_vm.node }}/qemu/{{ proxmox_gpu_vm.vmid }}/config"
+          - --delete
+          - hostpci1
+      when: "'hostpci1' in (gpu_vm_config.stdout | from_json)"
       changed_when: true
       run_once: true

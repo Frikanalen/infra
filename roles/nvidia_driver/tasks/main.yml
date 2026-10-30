@@ -34,7 +34,8 @@
 # BusID. Looked up dynamically rather than hardcoded, since it depends on
 # which/how-many PCI devices are passed through to this VM.
 - name: Find the NVIDIA GPU's PCI address
-  ansible.builtin.shell: "set -o pipefail && lspci -D -d 10de: | grep 'VGA compatible controller' | cut -d' ' -f1"
+  # Datacenter cards such as the Tesla P4 list as "3D controller".
+  ansible.builtin.shell: "set -o pipefail && lspci -D -d 10de: | grep -E 'VGA compatible controller|3D controller' | head -n1 | cut -d' ' -f1"
   args:
     executable: /bin/bash
   register: nvidia_pci_address

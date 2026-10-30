@@ -6,8 +6,9 @@
 #
 # caspar_hw hosts (e.g. caspar1) use a passed-through NVIDIA GPU and
 # Decklink card for output. caspar_sw hosts (e.g. caspar-sw1) are the
-# software-only alternative: Mesa (llvmpipe) for OpenGL and casparcg's
-# ffmpeg consumer streaming UDP instead, so they need neither GPU driver.
+# alternative without a Decklink: casparcg's ffmpeg consumer streams UDP
+# instead. They render with Mesa (llvmpipe) unless casparcg_gpu is
+# "nvidia" (caspar-sw1 has the Tesla P4), which gets nvidia_driver.
 - name: Provision hardware-accelerated CasparCG playout hosts
   hosts: caspar_hw
   become: true
@@ -18,11 +19,17 @@
     - nfs_client
     - casparcg
 
-- name: Provision software-only CasparCG playout hosts
+- name: Provision streaming-output CasparCG playout hosts
   hosts: caspar_sw
   become: true
   gather_facts: true
-  roles:
-    - mesa_driver
-    - nfs_client
-    - casparcg
+  tasks:
+    - name: Install the GPU driver, or Mesa where there is no GPU
+      ansible.builtin.include_role:
+        name: "{{ 'nvidia_driver' if casparcg_gpu | default('') == 'nvidia' else 'mesa_driver' }}"
+    - name: Mount the media archive
+      ansible.builtin.include_role:
+        name: nfs_client
+    - name: Install CasparCG
+      ansible.builtin.include_role:
+        name: casparcg

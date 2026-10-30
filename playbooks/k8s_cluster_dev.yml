@@ -40,7 +40,6 @@
     gpu_node_name: dev-kube-4
     gpu_node_labels:
       frikanalen.no/gpu-intel-arc-a310: "true"
-      frikanalen.no/gpu-nvidia-tesla-p4: "true"
   tasks:
     - name: Read GPU node labels
       ansible.builtin.command:
