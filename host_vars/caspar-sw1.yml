@@ -9,3 +9,7 @@
 # component's LoadBalancer IP) and the dev_ingress_live_int_ip/:5004 rules
 # in playbooks/firewall.yml that front it.
 casparcg_ffmpeg_path: "udp://192.168.3.91:5004"
+
+# The Tesla P4 is passed through (data/hosts.yml), so CasparCG renders on
+# it with nvidia_driver instead of Mesa's llvmpipe (playbooks/caspar.yml).
+casparcg_gpu: nvidia

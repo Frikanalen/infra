@@ -15,9 +15,10 @@ proxmox_pci_mappings:
     iommugroup: 12
     subsystem_id: "10de:11d8"
 
+# The Tesla P4 mapping above now belongs to caspar-sw1 (data/hosts.yml,
+# attached by Terraform); dev-kube-4 keeps only the A310.
 proxmox_gpu_vm:
   node: vmtx1
   vmid: 314
-  tags: "ubuntu;nvidia;a310"
+  tags: "ubuntu;a310"
   hostpci0: "mapping=intel-arc-a310,pcie=1"
-  hostpci1: "mapping=nvidia-tesla-p4,pcie=1"
