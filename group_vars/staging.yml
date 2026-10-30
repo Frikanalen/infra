@@ -28,6 +28,8 @@ mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.sp
 # Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
 # Off in prod until rehearsed here.
 mediamtx_preview_enabled: true
+# About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
+mediamtx_write_queue_size: 4096
 
 playout_media_path: /mnt/media/
 
