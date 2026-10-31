@@ -253,16 +253,17 @@ Proxmox has mostly been provisioned by hand.
 
 ### GPU PCIe passthrough
 
-Cluster PCI resource mappings, the `dev-kube-4` GPU assignments, and its
-Proxmox VM tags (`nvidia` and `a310`) are declared in `group_vars/proxmox.yml`
-and applied with:
+Cluster PCI resource mappings are declared in `group_vars/proxmox.yml` and
+applied with the playbook below, which also strips the GPUs dev-kube-4 used to
+hold. Terraform attaches each card to its VM through `pci_mappings` in
+`data/hosts.yml`: the Tesla P4 to caspar-sw1, the Arc A310 to prod-kube-4.
 
 ```sh
 ansible-playbook playbooks/proxmox/pci_resource_mappings.yml
 ```
 
-The dev-cluster playbook labels `dev-kube-4` with its A310. The Tesla P4
-now belongs to caspar-sw1 (data/hosts.yml), so it is no longer a pod target.
+The prod-cluster playbook labels `prod-kube-4` with its A310. The Tesla P4
+belongs to caspar-sw1, so it is not a pod target.
 Select the GPU host in a pod template with its label:
 
 ```yaml
@@ -283,14 +284,14 @@ resources:
 That takes two steps, host first:
 
 ```sh
-ansible-playbook playbooks/k8s_cluster_dev.yml --tags gpu        # roles/intel_gpu_node
-ansible-playbook playbooks/k8s_platform_dev.yml --tags gpu       # roles/intel_gpu_plugin
+ansible-playbook playbooks/k8s_cluster_prod.yml --tags gpu,gpu-labels  # roles/intel_gpu_node
+ansible-playbook playbooks/k8s_platform_prod.yml --tags gpu            # roles/intel_gpu_plugin
 ```
 
 `intel_gpu_node` checks the card is bound to i915 or xe with its HuC firmware
 loaded, and sets `device_ownership_from_security_context` in MicroK8s's
 containerd so unprivileged pods can open the device. `intel_gpu_plugin` runs
 the plugin on the labelled node and waits for the node to advertise the GPU,
-printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. Staging's
-ingest QSV worker pool (`ingest_worker_pools` in `group_vars/staging.yml`) is
-the consumer.
+printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. The ingest
+QSV worker pool (`ingest_worker_pools`) is the consumer. Staging has no Intel
+GPU since the A310 moved to prod.

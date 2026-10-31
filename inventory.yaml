@@ -23,6 +23,7 @@ all:
         prod-kube-1:
         prod-kube-2:
         prod-kube-3:
+        prod-kube-4:
 
     kubedev:
       hosts:

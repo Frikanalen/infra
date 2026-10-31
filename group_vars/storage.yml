@@ -27,6 +27,7 @@ archive_media_kube_clients:
   - prod-kube-1
   - prod-kube-2
   - prod-kube-3
+  - prod-kube-4
 
 archive_media_staging_kube_clients:
   - dev-kube-1
@@ -80,6 +81,9 @@ fk_archive_utils_profiles:
   - name: prod
     root: /archive/media
     manager: archive-manager
+    # /archive/media predates fk-archive and is group-writable by fkupload,
+    # as the old SFTP ingest account used; the manager gets in the same way.
+    groups: [fkupload]
   - name: staging
     root: "{{ archive_media_staging_export_path }}"
     manager: archive-manager-staging

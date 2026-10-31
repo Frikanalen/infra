@@ -62,7 +62,7 @@ on such a version sets `ingest_archive_fk_profile` to its profile name. The
 key's forced command becomes `fk-archive-ssh <profile>`, which pins the
 profile on the storage host's side, and step 5 asks sudo whether the account
 may run `fk-archive <profile>` as that profile's manager instead of testing
-the directory. Staging does this today; production still speaks SFTP.
+the directory. Both staging and production do this.
 
 POSIX ACLs would not improve on this. They add principals, not verbs: `w` on a
 directory still means create, delete and rename, so an ACL grants exactly what

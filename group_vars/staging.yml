@@ -56,30 +56,8 @@ ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 # The CPU ladder was OOM-killed at the chart's 4Gi, 14% into a 1080p encode.
 ingest_cpu_worker_memory_limit: 16Gi
 
-# One ingest worker encoding on the Arc A310 through Quick Sync, beside the
-# main CPU pool, while the GPU ladder is tried out in dev before production.
-# Needs the device plugin (roles/intel_gpu_plugin) and the host preparation
-# (roles/intel_gpu_node); the worker's own encoder self-test refuses to start
-# it if either is missing. If the plugin reports gpu.intel.com/xe rather than
-# i915, the resource names below have to follow.
-ingest_worker_pools:
-  qsv:
-    encoder: qsv
-    replicaCount: 1
-    nodeSelector:
-      frikanalen.no/gpu-intel-arc-a310: "true"
-    # One node, one card: spreading is meaningless and would only keep the
-    # worker Pending.
-    topologySpread:
-      enabled: false
-    resources:
-      requests:
-        cpu: "1"
-        memory: 1Gi
-        gpu.intel.com/i915: 1
-      limits:
-        memory: 4Gi
-        gpu.intel.com/i915: 1
+# No QSV ingest pool: the Arc A310 moved from dev-kube-4 to prod-kube-4, and
+# a pool requesting gpu.intel.com/i915 here would sit Pending forever.
 
 argocd_stream_cubemap_ip: "192.168.3.91"
 # Cubemap joins caspar-sw1's program-out group (host_vars/caspar-sw1.yml)

@@ -19,7 +19,7 @@ intel_gpu_plugin_version: "0.37.0"
 intel_gpu_plugin_shared_dev_num: 1
 
 # Only nodes carrying this label run the plugin. Set by
-# playbooks/k8s_cluster_dev.yml on the node the A310 is passed through to.
+# playbooks/k8s_cluster_prod.yml on the node the A310 is passed through to.
 intel_gpu_plugin_node_selector:
   frikanalen.no/gpu-intel-arc-a310: "true"
 
