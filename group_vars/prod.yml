@@ -22,7 +22,8 @@ k8s_monitoring_enabled: true
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.35"
+# caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
+caspar_host: "192.168.3.100"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
