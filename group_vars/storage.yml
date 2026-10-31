@@ -27,6 +27,7 @@ archive_media_kube_clients:
   - prod-kube-1
   - prod-kube-2
   - prod-kube-3
+  - prod-kube-4
 
 archive_media_staging_kube_clients:
   - dev-kube-1
