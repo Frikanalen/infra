@@ -15,7 +15,9 @@ cnpg_cluster_namespace: "{{ frikanalen_app_namespace }}"
 cnpg_cluster_name: pgcluster
 cnpg_cluster_image: "ghcr.io/cloudnative-pg/postgresql:16"
 cnpg_cluster_instances: 3
-cnpg_cluster_storage_size: 200Mi
+# WAL lives on the same volume, and WAL archiving keeps segments until they
+# are uploaded, so leave room above the database itself.
+cnpg_cluster_storage_size: 2Gi
 cnpg_cluster_storage_class: local-ssd
 
 cnpg_cluster_database_name: fkweb
@@ -29,3 +31,34 @@ cnpg_cluster_superuser_secret_name: "{{ cnpg_cluster_name }}-superuser"
 # app user and superuser credentials match the existing Kubegres database.
 cnpg_cluster_app_password: ""
 cnpg_cluster_superuser_password: ""
+
+# --- Backups ---------------------------------------------------------------
+#
+# Base backups and continuous WAL archiving through the Barman Cloud plugin
+# (roles/cnpg) to Garage on file01 (roles/garage). One bucket per
+# environment. Restore by bootstrapping a new Cluster with
+# bootstrap.recovery from the same ObjectStore -- see the plugin's docs.
+cnpg_cluster_backup_enabled: true
+cnpg_cluster_backup_bucket: ""
+cnpg_cluster_backup_endpoint: "http://{{ host_config['file01'].ip_cidr.split('/')[0] }}:3900"
+cnpg_cluster_backup_region: garage
+cnpg_cluster_backup_object_store_name: "{{ cnpg_cluster_name }}-backup"
+cnpg_cluster_backup_s3_secret_name: "{{ cnpg_cluster_name }}-backup-s3"
+# Must be set by caller, from the vault; the same key roles/garage imports.
+cnpg_cluster_backup_s3_key_id: ""
+cnpg_cluster_backup_s3_secret_key: ""
+# Point-in-time recovery reaches back this far.
+cnpg_cluster_backup_retention: 30d
+# Six fields: CNPG's schedule includes seconds. Daily base backup at 03:00.
+cnpg_cluster_backup_schedule: "0 0 3 * * *"
+
+# --- One-time import -------------------------------------------------------
+#
+# Set to the Kubegres service (django-postgres) to have the Cluster pull a
+# pg_dump of cnpg_cluster_database_name from it when the Cluster is first
+# created (bootstrap.initdb.import, "microservice" type). Bootstrap only
+# runs once, so this does nothing on a Cluster that already exists: delete
+# and recreate pgcluster to re-import. Leave empty otherwise.
+cnpg_cluster_import_host: ""
+cnpg_cluster_import_superuser_secret: "{{ django_db_secret_name }}"
+cnpg_cluster_import_superuser_secret_key: superUserPassword

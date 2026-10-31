@@ -100,6 +100,10 @@
     # before k8s_apps_prod.yml's cnpg_cluster role -- that creates a
     # postgresql.cnpg.io/v1 Cluster, a kind that does not exist until the
     # operator installs its CRDs.
+    # Needed by the cnpg role's Barman Cloud plugin, so it goes first.
+    - role: cert_manager
+      tags: [cert_manager, cnpg, database]
+
     - role: cnpg
       tags: [cnpg, database]
 

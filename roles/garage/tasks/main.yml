@@ -1,0 +1,154 @@
+---
+- name: Create the garage system user
+  ansible.builtin.user:
+    name: "{{ garage_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/garage
+    create_home: false
+  become: true
+
+- name: Create Garage's metadata and data directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ garage_user }}"
+    group: "{{ garage_user }}"
+    mode: "0750"
+  loop:
+    - /var/lib/garage
+    - "{{ garage_metadata_dir }}"
+    - "{{ garage_data_dir }}"
+  become: true
+
+- name: Install the Garage binary
+  # Versioned path, so changing garage_version downloads the new binary
+  # rather than get_url seeing the old file and skipping.
+  ansible.builtin.get_url:
+    url: "{{ garage_download_url }}"
+    dest: "{{ garage_binary }}-{{ garage_version }}"
+    mode: "0755"
+  become: true
+
+- name: Point the garage binary at the pinned version
+  ansible.builtin.file:
+    src: "{{ garage_binary }}-{{ garage_version }}"
+    dest: "{{ garage_binary }}"
+    state: link
+  become: true
+  notify: Restart garage
+
+- name: Write the Garage config
+  # Holds the RPC secret, so readable by garage only.
+  ansible.builtin.template:
+    src: garage.toml.j2
+    dest: "{{ garage_config_path }}"
+    owner: root
+    group: "{{ garage_user }}"
+    mode: "0640"
+  become: true
+  no_log: true
+  notify: Restart garage
+
+- name: Install the Garage systemd unit
+  ansible.builtin.template:
+    src: garage.service.j2
+    dest: /etc/systemd/system/garage.service
+    mode: "0644"
+  become: true
+  notify: Restart garage
+
+- name: Start Garage
+  ansible.builtin.systemd:
+    name: garage
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
+
+- name: Restart Garage now if anything above changed
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Garage's RPC port
+  ansible.builtin.wait_for:
+    port: "{{ garage_rpc_port }}"
+    timeout: 30
+
+- name: Read the node's status
+  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} status"
+  become: true
+  register: garage_status
+  changed_when: false
+
+- name: Assign this node a role in the layout
+  # A fresh node has no role, and Garage serves no S3 requests until it
+  # does. Only on first install: re-assigning would bump the layout version
+  # for nothing.
+  when: "'NO ROLE ASSIGNED' in garage_status.stdout"
+  become: true
+  block:
+    - name: Find this node's id
+      ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} node id -q"
+      register: garage_node_id
+      changed_when: false
+
+    - name: Assign the node to the layout
+      ansible.builtin.command: >-
+        {{ garage_binary }} -c {{ garage_config_path }} layout assign
+        -z {{ garage_zone }} -c {{ garage_capacity }} {{ garage_node_id.stdout.split('@')[0] }}
+      changed_when: true
+
+    - name: Apply the layout
+      ansible.builtin.shell: >-
+        set -o pipefail &&
+        v=$({{ garage_binary }} -c {{ garage_config_path }} layout show
+        | sed -n 's/.*layout apply --version \([0-9]*\).*/\1/p' | head -1) &&
+        {{ garage_binary }} -c {{ garage_config_path }} layout apply --version "$v"
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+- name: List keys
+  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} key list"
+  become: true
+  register: garage_keys
+  changed_when: false
+
+- name: Import each environment's access key from the vault
+  ansible.builtin.command: >-
+    {{ garage_binary }} -c {{ garage_config_path }} key import --yes
+    -n {{ item.key_name }} {{ item.key_id }} {{ item.secret_key }}
+  loop: "{{ garage_buckets }}"
+  loop_control:
+    label: "{{ item.key_name }}"
+  when: item.key_id not in garage_keys.stdout
+  become: true
+  no_log: true
+  changed_when: true
+
+- name: List buckets
+  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} bucket list"
+  become: true
+  register: garage_bucket_list
+  changed_when: false
+
+- name: Create each environment's bucket
+  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} bucket create {{ item.bucket }}"
+  loop: "{{ garage_buckets }}"
+  loop_control:
+    label: "{{ item.bucket }}"
+  when: item.bucket not in garage_bucket_list.stdout
+  become: true
+  changed_when: true
+
+- name: Give each key read and write on its own bucket only
+  # Idempotent on Garage's side; reported as unchanged since re-granting the
+  # same permissions changes nothing.
+  ansible.builtin.command: >-
+    {{ garage_binary }} -c {{ garage_config_path }} bucket allow
+    --read --write {{ item.bucket }} --key {{ item.key_name }}
+  loop: "{{ garage_buckets }}"
+  loop_control:
+    label: "{{ item.bucket }}"
+  become: true
+  changed_when: false

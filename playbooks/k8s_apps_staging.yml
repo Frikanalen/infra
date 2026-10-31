@@ -16,6 +16,10 @@
     # hostname change, not a credential rotation.
     cnpg_cluster_app_password: "{{ vault_dev_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_dev_django_postgres_super_password }}"
+    # Backups to Garage on file01 (roles/garage), one bucket per environment.
+    cnpg_cluster_backup_bucket: cnpg-staging
+    cnpg_cluster_backup_s3_key_id: "{{ vault_dev_cnpg_s3_key_id }}"
+    cnpg_cluster_backup_s3_secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
   roles:
     - role: django_db_secret
       tags: [django]

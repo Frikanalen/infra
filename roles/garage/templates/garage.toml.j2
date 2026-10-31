@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+metadata_dir = "{{ garage_metadata_dir }}"
+data_dir = "{{ garage_data_dir }}"
+db_engine = "lmdb"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:{{ garage_rpc_port }}"
+rpc_public_addr = "127.0.0.1:{{ garage_rpc_port }}"
+rpc_secret = "{{ garage_rpc_secret }}"
+
+[s3_api]
+s3_region = "{{ garage_s3_region }}"
+api_bind_addr = "[::]:{{ garage_s3_port }}"

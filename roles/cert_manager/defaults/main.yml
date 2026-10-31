@@ -1,0 +1,8 @@
+---
+# defaults for cert_manager role
+#
+# Only here because CloudNativePG's Barman Cloud plugin (roles/cnpg) needs
+# it: the operator and the plugin talk over mTLS with certificates
+# cert-manager issues. Nothing else in the cluster uses it.
+cert_manager_chart_version: "{{ helm_chart_versions.cert_manager }}"
+cert_manager_namespace: cert-manager

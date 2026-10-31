@@ -21,6 +21,9 @@ staging_db_sync_log_path: /var/log/staging-db-sync.log
 # cluster's own secret.
 staging_db_sync_namespace: "{{ frikanalen_app_namespace }}"
 staging_db_sync_db_service: "{{ django_db_host }}"
+# Prod's own database service, which differs from staging's while one of
+# them is on CloudNativePG and the other still on Kubegres.
+staging_db_sync_prod_db_service: "{{ hostvars[staging_db_sync_prod_host].django_db_host }}"
 staging_db_sync_db_secret_name: "{{ django_db_secret_name }}"
 
 # Fixed by the django-api Helm chart (chart/values.yaml: database.databaseName
