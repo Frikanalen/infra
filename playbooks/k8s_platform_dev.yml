@@ -129,6 +129,10 @@
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see
     # playbooks/k8s_apps_staging.yml.
+    # Needed by the cnpg role's Barman Cloud plugin, so it goes first.
+    - role: cert_manager
+      tags: [cert_manager, cnpg, database]
+
     - role: cnpg
       tags: [cnpg, database]
 

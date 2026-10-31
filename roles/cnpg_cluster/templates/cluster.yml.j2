@@ -15,6 +15,30 @@ spec:
       owner: "{{ cnpg_cluster_database_user }}"
       secret:
         name: "{{ cnpg_cluster_app_secret_name }}"
+{% if cnpg_cluster_import_host %}
+      import:
+        type: microservice
+        databases:
+          - "{{ cnpg_cluster_database_name }}"
+        source:
+          externalCluster: import-source
+  externalClusters:
+    - name: import-source
+      connectionParameters:
+        host: "{{ cnpg_cluster_import_host }}"
+        user: postgres
+        dbname: postgres
+      password:
+        name: "{{ cnpg_cluster_import_superuser_secret }}"
+        key: "{{ cnpg_cluster_import_superuser_secret_key }}"
+{% endif %}
+{% if cnpg_cluster_backup_enabled %}
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: "{{ cnpg_cluster_backup_object_store_name }}"
+{% endif %}
   storage:
     size: "{{ cnpg_cluster_storage_size }}"
     storageClass: "{{ cnpg_cluster_storage_class }}"

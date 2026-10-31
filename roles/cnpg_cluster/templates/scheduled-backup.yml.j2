@@ -1,0 +1,16 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: "{{ cnpg_cluster_name }}-daily"
+  namespace: "{{ cnpg_cluster_namespace }}"
+spec:
+  schedule: "{{ cnpg_cluster_backup_schedule }}"
+  backupOwnerReference: self
+  # Also take one as soon as this is created, so a fresh cluster has a base
+  # backup to recover from without waiting for 03:00.
+  immediate: true
+  cluster:
+    name: "{{ cnpg_cluster_name }}"
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
