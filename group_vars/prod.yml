@@ -65,10 +65,10 @@ app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
   graphics: v1.2.0
-  playout: v2.1.1
-  frontend: v3.1.1
-  django: v1.0.0
-  stream: v0.3.1
+  playout: v2.2.0
+  frontend: v3.2.0
+  django: v2.0.0
+  stream: v0.3.2
   ingest: v0.1.1
 
 helm_chart_versions:
