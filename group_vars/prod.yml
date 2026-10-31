@@ -22,7 +22,8 @@ k8s_monitoring_enabled: true
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.35"
+# caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
+caspar_host: "192.168.3.100"
 
 django_db_host: django-postgres
 django_db_secret_name: django-postgres-passwords
@@ -50,14 +51,19 @@ ingest_uploads_size: 500Gi
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
-# Prod does not run the in-cluster cubemap: the appliance pushes MPEG-TS to
-# simula (158.36.191.230:5565), whose cubemap (roles/cubemap) serves it over
-# HTTP, and ffmpeg pulls that via the chart's default inputSourceUrl. An
-# earlier attempt at a multicast-joined in-cluster cubemap dropped out of the
-# switch's IGMP snooping table, so it was abandoned.
-# argocd_stream_cubemap_ip is still required by data/apps.yml although unused
-# while the cubemap is disabled.
-argocd_stream_cubemap_enabled: false
+# The front-page stream takes caspar1's H.264 mezzanine (host_vars/caspar1.yml)
+# straight off multicast, as staging does with caspar-sw1: the in-cluster
+# cubemap joins 239.1.1.51 and ffmpeg re-encodes from it. This replaces the
+# old path through the SDI encoder appliance and simula's cubemap
+# (158.36.191.230:5565). An earlier multicast-joined cubemap here dropped
+# out of the switch's IGMP snooping table; staging's has held since
+# 2026-10-31, but watch for the same symptom (input goes stale after a few
+# minutes) after deploying this. Joining needs the node's network
+# namespace: Calico doesn't carry multicast into pods.
+argocd_stream_cubemap_enabled: true
+argocd_stream_cubemap_host_network: true
+argocd_stream_cubemap_multicast_group: "239.1.1.51"
+# Unused with a multicast group, but data/apps.yml requires it.
 argocd_stream_cubemap_ip: "192.168.3.105"
 
 # Every app the cluster runs must have a key here. The roles no longer carry
