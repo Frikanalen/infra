@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ cnpg_backup_cluster_name }}-backup
+  namespace: {{ cnpg_backup_namespace }}
+spec:
+  schedule: "{{ cnpg_backup_schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsUser: {{ cnpg_backup_uid }}
+            runAsGroup: {{ cnpg_backup_uid }}
+          containers:
+            - name: pg-dump
+              image: {{ cnpg_backup_image }}
+              env:
+                - name: PGHOST
+                  value: {{ cnpg_backup_cluster_name }}-rw
+                - name: PGDATABASE
+                  value: {{ cnpg_backup_database_name }}
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ cnpg_backup_secret_name }}
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ cnpg_backup_secret_name }}
+                      key: password
+              command:
+                - /bin/bash
+                - -euo
+                - pipefail
+                - -c
+                - |
+                  out=/backup/{{ cnpg_backup_cluster_name }}-backup-$(date -u +%Y%m%dT%H%M%SZ).pgdump
+                  # Write under a temp name and rename, so a failed run
+                  # never leaves a truncated dump that looks complete.
+                  pg_dump -Fc -f "$out.partial"
+                  # Prove the archive is readable before keeping it.
+                  pg_restore -l "$out.partial" > /dev/null
+                  mv "$out.partial" "$out"
+                  ls -l "$out"
+                  find /backup -maxdepth 1 -name '{{ cnpg_backup_cluster_name }}-backup-*.pgdump*' \
+                    -mtime +{{ cnpg_backup_retention_days }} -delete
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: {{ cnpg_backup_pvc_name }}

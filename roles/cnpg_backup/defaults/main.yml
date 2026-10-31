@@ -1,0 +1,40 @@
+---
+# defaults for cnpg_backup role
+#
+# Nightly pg_dump of the CloudNativePG "pgcluster" database (roles/
+# cnpg_cluster) into file01's NFS export. CNPG's own backups need an object
+# store (S3, Azure, GCS) or CSI volume snapshots, and we have neither, so
+# this is a plain CronJob instead -- same idea as roles/kubegres_backup, one
+# self-contained dump file per night.
+#
+# Restore one with:
+#   pg_restore --no-owner --no-acl -d <url> pgcluster-backup-<stamp>.pgdump
+
+cnpg_backup_namespace: "{{ frikanalen_app_namespace }}"
+cnpg_backup_cluster_name: "{{ cnpg_cluster_name | default('pgcluster') }}"
+cnpg_backup_database_name: fkweb
+# The CNPG app secret (roles/cnpg_cluster), a kubernetes.io/basic-auth
+# secret with username and password keys.
+cnpg_backup_secret_name: "{{ cnpg_backup_cluster_name }}-app"
+
+# Same Postgres major version as the cluster, so pg_dump matches the server.
+cnpg_backup_image: "postgres:16"
+
+cnpg_backup_nfs_host: file01
+# Per environment: prod writes to db_backup_export_path, staging to
+# db_backup_staging_export_path (both in data/storage.yml).
+cnpg_backup_nfs_path: "{{ db_backup_export_path }}"
+
+cnpg_backup_pv_name: "{{ cnpg_backup_cluster_name }}-backup"
+cnpg_backup_pvc_name: "{{ cnpg_backup_cluster_name }}-backup"
+# Bookkeeping for the PV/PVC capacity fields; NFS enforces no quota.
+cnpg_backup_capacity: 50Gi
+
+# file01 chowns the export to uid/gid 999 (roles/db_backup_retention) and
+# postgres:16's own "postgres" user is 999, so run as that.
+cnpg_backup_uid: 999
+
+# Daily at 03:00. The dump also prunes its own old files, so retention does
+# not depend on file01's cron (roles/db_backup_retention) having run.
+cnpg_backup_schedule: "0 3 * * *"
+cnpg_backup_retention_days: 14

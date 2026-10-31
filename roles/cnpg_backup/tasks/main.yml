@@ -1,0 +1,21 @@
+---
+- name: Create PersistentVolume for CNPG backups on file01
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'pv.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Create PersistentVolumeClaim binding the backup PV
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'pvc.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Create nightly pg_dump CronJob
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'cronjob.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"

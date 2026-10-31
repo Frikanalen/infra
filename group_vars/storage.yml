@@ -104,6 +104,11 @@ nfs_exports:
       {{ db_backup_kube_clients
          | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
          | join(' ') }}
+  - path: "{{ db_backup_staging_export_path }}"
+    clients: >-
+      {{ archive_media_staging_kube_clients
+         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
+         | join(' ') }}
   - path: "{{ chwiki_images_export_path }}"
     clients: >-
       {{ chwiki_images_clients

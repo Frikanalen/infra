@@ -5,7 +5,9 @@
 # logic of its own -- it just writes another timestamped dump on every run
 # -- so this is what keeps /util/k8s from growing forever.
 
-db_backup_retention_path: "{{ db_backup_export_path }}"
+db_backup_retention_paths:
+  - "{{ db_backup_export_path }}"
+  - "{{ db_backup_staging_export_path }}"
 
 # Matches the "postgres" user (uid/gid 999) that Kubegres's backup CronJob
 # runs as -- see the comment on db_backup_export_path in

@@ -140,7 +140,7 @@ Three axes, applied consistently across the Kubernetes playbooks:
 | Axis | Tags |
 | --- | --- |
 | Layer, one per play | `bootstrap`, `platform`, `apps` |
-| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup`, `cnpg_backup` |
 | Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
 
 So a single component can be advanced on its own, which is the usual way to
@@ -182,6 +182,12 @@ Kubegres's built-in daily backup CronJob for prod's `django-postgres`
 (`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
 a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
 `playbooks/storage.yml`).
+
+`roles/cnpg_backup` does the same for `pgcluster`: a nightly `pg_dump -Fc`
+CronJob (03:00, 14 days kept) writing to `/util/k8s` on prod and
+`/util/k8s-staging` on staging. Each dump is checked with `pg_restore -l`
+before it is kept. Restore with
+`pg_restore --no-owner --no-acl -d <url> <file>.pgdump`.
 
 ```sh
 ansible-playbook playbooks/junos_exporter_key.yml

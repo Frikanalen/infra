@@ -35,6 +35,12 @@
     - role: cnpg_cluster
       tags: [cnpg_cluster, database]
 
+    # Nightly pg_dump of pgcluster to file01; see roles/cnpg_backup.
+    - role: cnpg_backup
+      tags: [cnpg_backup, database]
+      vars:
+        cnpg_backup_nfs_path: "{{ db_backup_staging_export_path }}"
+
     - role: argocd_app
       tags: [frontend]
       vars:

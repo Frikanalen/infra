@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ cnpg_backup_pv_name }}
+spec:
+  capacity:
+    storage: {{ cnpg_backup_capacity }}
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: {{ cnpg_backup_nfs_host }}
+    path: {{ cnpg_backup_nfs_path }}
