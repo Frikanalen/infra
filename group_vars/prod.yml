@@ -65,6 +65,12 @@ argocd_stream_cubemap_host_network: true
 argocd_stream_cubemap_multicast_group: "239.1.1.51"
 # Unused with a multicast group, but data/apps.yml requires it.
 argocd_stream_cubemap_ip: "192.168.3.105"
+# Decoding caspar1's 20 Mbit/s 4:2:2 720p50 mezzanine and encoding both HLS
+# renditions takes more than the chart's 6-core limit: at 6 the transcoder
+# was throttled in ~93% of CFS periods, fell behind cubemap, and cubemap
+# dropped data under it ("corrupt input packet"). prod-kube-3 has 24 cores.
+argocd_stream_ffmpeg_cpu_request: "6"
+argocd_stream_ffmpeg_cpu_limit: "12"
 
 # Every app the cluster runs must have a key here. The roles no longer carry
 # a fallback: a missing key is now an undefined-variable error rather than a

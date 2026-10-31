@@ -194,6 +194,12 @@ frikanalen_apps:
         multicastGroup: "{{ argocd_stream_cubemap_multicast_group | default('') }}"
       ffmpeg:
         inputSourceUrl: "{{ argocd_stream_input_source_url | default('http://192.168.3.1:9094/frikanalen.ts') }}"
+      resources:
+        ffmpeg:
+          requests:
+            cpu: "{{ argocd_stream_ffmpeg_cpu_request | default('1') }}"
+          limits:
+            cpu: "{{ argocd_stream_ffmpeg_cpu_limit | default('6') }}"
       ingress:
         host: "{{ frikanalen_domain }}"
 
