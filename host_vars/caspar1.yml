@@ -1,0 +1,18 @@
+---
+# caspar1 is meant to take over prod playout from tx3 (caspar_host in
+# group_vars/prod.yml still points at tx3 until the cutover). It keeps the
+# DeckLink SDI out for the encoder appliance and also sends program out as
+# a mezzanine to multicast 239.1.1.51:5004, like caspar-sw1 does for staging
+# on 239.1.1.50 (host_vars/caspar-sw1.yml). Nothing joins it yet.
+casparcg_consumers: ["decklink", "ffmpeg"]
+casparcg_ffmpeg_path: "udp://239.1.1.51:5004"
+
+# H.264 in software: the GT 1030 (GP108) renders the mixer but has no NVENC,
+# so caspar-sw1's h264_nvenc args would fail here. libx264 at veryfast with
+# zerolatency is a few of caspar1's 8 cores at 720p50. Same rate, GOP and
+# audio as caspar-sw1; see roles/casparcg/defaults/main.yml for why each
+# option needs its stream specifier.
+casparcg_ffmpeg_args: >-
+  -format mpegts -codec:v libx264 -preset:v veryfast -tune:v zerolatency
+  -b:v 8M -maxrate:v 8M -bufsize:v 4M -g:v 50 -bf:v 0
+  -codec:a mp2 -b:a 192k -filter:a aformat=channel_layouts=stereo

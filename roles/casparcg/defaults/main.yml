@@ -14,10 +14,11 @@ casparcg_media_path: "/mnt/media/"
 nodm_enabled: true
 
 # Channel/consumer configuration. Defaults reproduce caspar1's Decklink
-# output; caspar_sw hosts override casparcg_consumer_type to "ffmpeg" (see
-# group_vars/caspar_sw.yml) to stream to a UDP destination instead.
+# output; caspar_sw hosts set casparcg_consumers to ["ffmpeg"] (see
+# group_vars/caspar_sw.yml) to stream to a UDP destination instead, and a
+# host can list both to do SDI and UDP at once (host_vars/caspar1.yml).
 casparcg_video_mode: "720p5000"
-casparcg_consumer_type: "decklink" # decklink | ffmpeg
+casparcg_consumers: ["decklink"] # any of decklink, ffmpeg
 
 casparcg_decklink_device: 1
 casparcg_decklink_key_device: "device"
