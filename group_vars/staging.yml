@@ -26,7 +26,6 @@ django_db_secret_name: django-postgres-passwords
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
 # Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
-# Off in prod until rehearsed here.
 mediamtx_preview_enabled: true
 # About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
 mediamtx_write_queue_size: 4096
