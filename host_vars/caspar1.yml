@@ -11,8 +11,11 @@ casparcg_ffmpeg_path: "udp://239.1.1.51:5004"
 # so caspar-sw1's h264_nvenc args would fail here. libx264 at veryfast with
 # zerolatency is a few of caspar1's 8 cores at 720p50. Same rate, GOP and
 # audio as caspar-sw1; see roles/casparcg/defaults/main.yml for why each
-# option needs its stream specifier.
+# option needs its stream specifier. The format filter is required: libx264
+# accepts the mixer's 4:4:4 frames as-is and encodes High 4:4:4 Predictive,
+# which most decoders (browsers, hardware, the encoder appliance) can't play.
 casparcg_ffmpeg_args: >-
   -format mpegts -codec:v libx264 -preset:v veryfast -tune:v zerolatency
+  -filter:v format=yuv420p
   -b:v 8M -maxrate:v 8M -bufsize:v 4M -g:v 50 -bf:v 0
   -codec:a mp2 -b:a 192k -filter:a aformat=channel_layouts=stereo

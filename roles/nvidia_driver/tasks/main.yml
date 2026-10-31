@@ -40,6 +40,8 @@
     executable: /bin/bash
   register: nvidia_pci_address
   changed_when: false
+  # Read-only, and the BusID below needs its output even under --check.
+  check_mode: false
 
 - name: Compute Xorg BusID for the NVIDIA GPU
   ansible.builtin.set_fact:
