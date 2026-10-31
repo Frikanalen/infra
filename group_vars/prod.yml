@@ -44,6 +44,42 @@ ingest_archive_dir: /archive/media
 # /archive/media is already group-writable by fkupload, so membership is all
 # the ingest account needs. Deliberately not set for staging.
 ingest_archive_group: fkupload
+# Ingest v1 has no write access of its own: it asks fk-archive on file01
+# (roles/fk_archive_utils, profile "prod" in group_vars/storage.yml) to make
+# each change, as staging has done since September.
+ingest_archive_fk_profile: prod
+
+# Workers must see a published original at once, so the archive mount keeps no
+# attribute, directory or negative-lookup cache. See group_vars/staging.yml.
+ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
+
+# The CPU ladder was OOM-killed at the chart's 4Gi on staging, 14% into a
+# 1080p encode.
+ingest_cpu_worker_memory_limit: 16Gi
+
+# One ingest worker encoding on the Arc A310 on prod-kube-4 through Quick Sync,
+# beside the main CPU pool. Needs the device plugin (roles/intel_gpu_plugin)
+# and the host preparation (roles/intel_gpu_node); the worker's own encoder
+# self-test refuses to start it if either is missing. If the plugin reports
+# gpu.intel.com/xe rather than i915, the resource names below have to follow.
+ingest_worker_pools:
+  qsv:
+    encoder: qsv
+    replicaCount: 1
+    nodeSelector:
+      frikanalen.no/gpu-intel-arc-a310: "true"
+    # One node, one card: spreading is meaningless and would only keep the
+    # worker Pending.
+    topologySpread:
+      enabled: false
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+        gpu.intel.com/i915: 1
+      limits:
+        memory: 4Gi
+        gpu.intel.com/i915: 1
 
 # tusd runs alongside ingest in the same pod, served at /upload on
 # frikanalen_domain. Django's FK_UPLOAD_URL must point there.
@@ -83,7 +119,8 @@ app_versions:
   frontend: v3.2.0
   django: v2.0.0
   stream: v0.3.2
-  ingest: v0.1.1
+  # v1.0.0 is Frikanalen/ingest#26, the release of what staging runs as main.
+  ingest: v1.0.0
 
 helm_chart_versions:
   traefik: "41.6.0"
