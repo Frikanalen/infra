@@ -37,10 +37,13 @@ archive_media_staging_kube_clients:
 
 # Destination for the daily prod Kubegres backup CronJob (see
 # roles/kubegres_backup): a plain rw export, not part of the ZFS media
-# archive above. The backup pod runs the operator's own postgres:latest
-# image with no securityContext, which means it inherits that image's
-# built-in "postgres" user (uid/gid 999) -- see
-# playbooks/storage.yml, which chowns the directory to match. Writable by
+# archive above. The backup pod runs the operator's postgres image with no
+# securityContext, and that image starts as root (it only drops to its
+# "postgres" user, uid/gid 999, for the server itself). root_squash turned
+# that root into nobody, which can't write to the 999-owned 0750 directory
+# roles/db_backup_retention creates, so every nightly backup failed. The
+# export below therefore squashes every client user to 999 (all_squash +
+# anonuid/anongid, matching db_backup_retention_owner/_group). Writable by
 # every kubeprod node for the same reason as archive_media_kube_clients:
 # the backup CronJob's pod can land on any of them.
 #
@@ -106,7 +109,7 @@ nfs_exports:
   - path: "{{ db_backup_export_path }}"
     clients: >-
       {{ db_backup_kube_clients
-         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
+         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check,all_squash,anonuid=999,anongid=999)')
          | join(' ') }}
   - path: "{{ chwiki_images_export_path }}"
     clients: >-
