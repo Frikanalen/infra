@@ -61,13 +61,11 @@ node_exporter_scrape_timeout: 10s
 # --- alerting thresholds ----------------------------------------------------
 #
 # All of these fire into the Alertmanager installed by
-# roles/kube_prometheus_stack, which at the time of writing has no receiver
-# configured -- they show up in its UI and in Grafana, and nowhere else. That
-# is worth fixing, and is not this role's job.
+# roles/kube_prometheus_stack, which sends them to Telegram.
 
-# Filesystem space. Two levels: one to notice, one to act on.
+# Filesystem space: an early warning. The mixin's
+# NodeFilesystemAlmostOutOfSpace covers the critical end.
 node_exporter_fs_warning_ratio: 0.15
-node_exporter_fs_critical_ratio: 0.05
 
 # ZFS pool capacity. Lower than the filesystem thresholds on purpose: a
 # copy-on-write pool degrades badly on allocation well before it is actually

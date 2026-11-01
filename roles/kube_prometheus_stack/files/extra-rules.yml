@@ -1,0 +1,60 @@
+# Rules of our own, loaded on both clusters through the chart's
+# additionalPrometheusRulesMap (see tasks/main.yml).
+groups:
+  - name: frikanalen-node
+    rules:
+      - alert: NodeMemoryHighUtilization
+        # The mixin's rule minus its blind spot: ZFS's ARC shrinks under
+        # memory pressure like the page cache does, but the kernel doesn't
+        # count it in MemAvailable. Count the ARC above its floor (c_min) as
+        # available. Hosts without ZFS fall through the `or` and add 0.
+        expr: >-
+          100 * (1 - (
+            node_memory_MemAvailable_bytes{job="node-exporter"}
+            + on(instance) group_left()
+              (
+                clamp_min(node_zfs_arc_size{job="node-exporter"} - node_zfs_arc_c_min{job="node-exporter"}, 0)
+                or 0 * node_memory_MemAvailable_bytes{job="node-exporter"}
+              )
+          ) / node_memory_MemTotal_bytes{job="node-exporter"}) > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host is running out of memory.
+          description: >-
+            Memory on {{ $labels.instance }} has been above 90% for 15
+            minutes, not counting reclaimable ZFS ARC, and is at
+            {{ $value | printf "%.2f" }}%.
+
+  - name: frikanalen-cronjobs
+    rules:
+      # KubeJobFailed only says that one run failed, and goes quiet once the
+      # failed Job is cleaned up. These say how long it has been since a
+      # run last worked, which is what matters for backups. Every CronJob on
+      # both clusters runs daily, hence 26 hours.
+      - alert: KubeCronJobNoRecentSuccess
+        expr: >-
+          (time() - kube_cronjob_status_last_successful_time) > 26 * 3600
+          and on(namespace, cronjob) kube_cronjob_spec_suspend == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: CronJob has not succeeded for over a day.
+          description: >-
+            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} last
+            succeeded {{ $value | humanizeDuration }} ago.
+
+      - alert: KubeCronJobNeverSucceeded
+        expr: >-
+          kube_cronjob_status_last_schedule_time > 0
+          unless on(namespace, cronjob) kube_cronjob_status_last_successful_time > 0
+        for: 2h
+        labels:
+          severity: critical
+        annotations:
+          summary: CronJob has run but never succeeded.
+          description: >-
+            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has been
+            scheduled but has no successful run on record.

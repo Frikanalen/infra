@@ -18,6 +18,7 @@ frikanalen_intern_ingress_class: internal
 # traefik/argocd/cnpg/metallb would otherwise skip -- see data/apps.yml and
 # each role's tasks.
 k8s_monitoring_enabled: true
+kube_prometheus_stack_environment: production
 
 frikanalen_domain: frikanalen.no
 frikanalen_scheme: https
