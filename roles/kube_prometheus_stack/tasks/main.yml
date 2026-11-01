@@ -58,6 +58,26 @@
       crds:
         upgradeJob:
           enabled: true
+      # microk8s runs the controller manager, scheduler and kube-proxy
+      # inside kubelite rather than as pods, so the chart's ServiceMonitors
+      # for them never find a target and KubeControllerManagerDown,
+      # KubeSchedulerDown and KubeProxyDown fire forever.
+      kubeControllerManager:
+        enabled: false
+      kubeScheduler:
+        enabled: false
+      kubeProxy:
+        enabled: false
+      # Replaced by a ZFS-aware NodeMemoryHighUtilization in
+      # files/extra-rules.yml: the mixin's version counts the ZFS ARC as
+      # used, so file01 and the Proxmox hosts sit permanently above 90%.
+      defaultRules:
+        disabled:
+          NodeMemoryHighUtilization: true
+      # A file lookup, not a template, so the rules' own {{ $labels }} pass
+      # through to Prometheus untouched.
+      additionalPrometheusRulesMap:
+        frikanalen-extra: "{{ lookup('ansible.builtin.file', 'extra-rules.yml') | from_yaml }}"
       grafana:
         # microk8s's cluster CA cert has no X509v3 Key Usage extension
         # (only Basic Constraints: CA:TRUE). The k8s-sidecar image's Python

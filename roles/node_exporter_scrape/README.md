@@ -67,20 +67,19 @@ every target missing the label.
 
 ## Alerts
 
-A `PrometheusRule` in two groups: general host health (down, filesystems full
-or filling, memory, load, reboots, failed systemd units) and ZFS (pool not
-`ONLINE`, data errors, per-disk error counters, capacity, fragmentation,
-overdue scrubs).
+A `PrometheusRule` in two groups: general host health (down, filesystems low
+or filling, load, reboots) and ZFS (pool not `ONLINE`, data errors, per-disk
+error counters, capacity, fragmentation, overdue scrubs).
 
 Because the job is now shared, the mixin's ~21 node rules apply to these hosts
-too, and several overlap with the general group here:
-`NodeFilesystemAlmostOutOfSpace` against `NodeFilesystemAlmostFull`,
-`NodeMemoryHighUtilization` against `NodeMemoryPressure`,
-`NodeSystemdServiceFailed` against `NodeSystemdUnitFailed`,
-`NodeSystemSaturation` against `NodeLoadHigh`. That duplication is deliberate —
-these thresholds are ours to tune — but it does mean two alerts for one
-problem. Drop the local rule if the mixin's turns out to say it better. The ZFS
-group has no upstream equivalent and duplicates nothing.
+too. Local copies of `NodeFilesystemAlmostOutOfSpace`, `NodeMemoryHighUtilization`
+and `NodeSystemdServiceFailed` used to sit here as well and sent two alerts for
+every problem, so they were dropped in favour of the mixin's. The mixin's memory
+rule counts the ZFS ARC as used memory, so it is replaced by a ZFS-aware version
+in `roles/kube_prometheus_stack/files/extra-rules.yml`. `NodeFilesystemLowOnSpace`
+stays as an earlier (15%) warning, and `NodeLoadHigh` still overlaps
+`NodeSystemSaturation`. The ZFS group has no upstream equivalent and duplicates
+nothing.
 
 Two of the ZFS rules watch the collector rather than the pools.
 `ZfsMetricsStale` fires on `node_textfile_mtime_seconds` for `zfs.prom` going
