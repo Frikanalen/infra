@@ -117,7 +117,7 @@ app_versions:
   mediamtx: main
   graphics: v1.2.0
   playout: v2.3.0
-  frontend: v3.2.0
+  frontend: main
   django: v2.0.0
   stream: v0.3.2
   # v1.0.0 is Frikanalen/ingest#26, the release of what staging runs as main.
