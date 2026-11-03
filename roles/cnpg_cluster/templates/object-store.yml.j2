@@ -1,0 +1,32 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: "{{ cnpg_cluster_backup_object_store_name }}"
+  namespace: "{{ cnpg_cluster_namespace }}"
+spec:
+  retentionPolicy: "{{ cnpg_cluster_backup_retention }}"
+  configuration:
+    destinationPath: "s3://{{ cnpg_cluster_backup_bucket }}/"
+    endpointURL: "{{ cnpg_cluster_backup_endpoint }}"
+    s3Credentials:
+      accessKeyId:
+        name: "{{ cnpg_cluster_backup_s3_secret_name }}"
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: "{{ cnpg_cluster_backup_s3_secret_name }}"
+        key: ACCESS_SECRET_KEY
+      region:
+        name: "{{ cnpg_cluster_backup_s3_secret_name }}"
+        key: REGION
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  instanceSidecarConfiguration:
+    env:
+      # Newer boto3 sends checksum headers that S3-compatible stores other
+      # than AWS can reject; the plugin's docs recommend this for them.
+      - name: AWS_REQUEST_CHECKSUM_CALCULATION
+        value: when_required
+      - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+        value: when_required

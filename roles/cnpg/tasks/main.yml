@@ -42,3 +42,14 @@
     wait_timeout: 120
   become: true
   run_once: true
+
+- name: Install the Barman Cloud plugin via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: plugin-barman-cloud
+    chart_ref: cnpg/plugin-barman-cloud
+    chart_version: "{{ cnpg_barman_plugin_chart_version }}"
+    release_namespace: cnpg-system
+    wait: true
+  become: true
+  run_once: true

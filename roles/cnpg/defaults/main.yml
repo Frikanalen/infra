@@ -1,2 +1,8 @@
 ---
 cnpg_chart_version: "{{ helm_chart_versions.cnpg }}"
+
+# Barman Cloud plugin, which does pgcluster's base backups and WAL archiving
+# (roles/cnpg_cluster). The operator's own in-tree barmanObjectStore is
+# deprecated and goes away in 1.32. Needs cert-manager (roles/cert_manager)
+# and must live in the operator's namespace.
+cnpg_barman_plugin_chart_version: "{{ helm_chart_versions.cnpg_barman_plugin }}"

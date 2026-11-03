@@ -1,0 +1,48 @@
+---
+# defaults for garage role
+#
+# Garage (https://garagehq.deuxfleurs.fr), a small S3-compatible object
+# store, run as a single node on file01. Its one job is to be the object
+# store CloudNativePG's Barman Cloud plugin backs pgcluster up to -- base
+# backups plus continuous WAL archiving, see roles/cnpg_cluster. One bucket
+# and one key per environment, so staging can never read or overwrite a
+# prod backup.
+#
+# Single node, replication factor 1: the durability comes from file01's ZFS
+# pool underneath, the same as the media archive.
+
+garage_version: "v2.5.0"
+garage_download_url: "https://garagehq.deuxfleurs.fr/_releases/{{ garage_version }}/x86_64-unknown-linux-musl/garage"
+garage_binary: /usr/local/bin/garage
+
+garage_user: garage
+garage_config_path: /etc/garage.toml
+# Metadata is a small LMDB database; data is the actual backup objects.
+garage_metadata_dir: /var/lib/garage/meta
+garage_data_dir: /util/garage
+
+# Capacity Garage is told this node has. Bookkeeping for its layout, not a
+# quota -- the pool's free space is the real limit.
+garage_capacity: 200G
+garage_zone: dc1
+
+garage_s3_port: 3900
+garage_rpc_port: 3901
+garage_s3_region: garage
+
+# 32 random bytes, hex. From the vault: openssl rand -hex 32
+garage_rpc_secret: "{{ vault_garage_rpc_secret }}"
+
+# One entry per environment. Key ids are "GK" + 24 hex characters and
+# secrets 64 hex characters; Garage imports them as given, so the vault
+# stays the only place they live. Generate with:
+#   echo "GK$(openssl rand -hex 12)"; openssl rand -hex 32
+garage_buckets:
+  - bucket: cnpg-prod
+    key_name: cnpg-prod
+    key_id: "{{ vault_prod_cnpg_s3_key_id }}"
+    secret_key: "{{ vault_prod_cnpg_s3_secret_key }}"
+  - bucket: cnpg-staging
+    key_name: cnpg-staging
+    key_id: "{{ vault_dev_cnpg_s3_key_id }}"
+    secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"

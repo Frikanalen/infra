@@ -140,7 +140,7 @@ Three axes, applied consistently across the Kubernetes playbooks:
 | Axis | Tags |
 | --- | --- |
 | Layer, one per play | `bootstrap`, `platform`, `apps` |
-| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup`, `cert_manager`, `garage` |
 | Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
 
 So a single component can be advanced on its own, which is the usual way to
@@ -176,8 +176,12 @@ before Argo CD syncs them, so they keep a small role of their own:
 existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
 storage class, `fkweb` db/user, and the same credentials as Kubegres's
 `django-postgres` secret, so the eventual Django cutover is just a
-`DATABASE_URL` hostname change. Data migration into it is manual and
-Kubegres stays in place until that migration is done. Also enables
+`DATABASE_URL` hostname change. pgcluster archives WAL continuously and takes a daily
+base backup to Garage, an S3 store on file01 (`roles/garage`, run by
+`playbooks/storage.yml`), through CloudNativePG's Barman Cloud plugin. Data
+comes over from Kubegres with a one-time import, and Kubegres stays in place
+until Django has moved; see `docs/cnpg.md` for the cutover and restore
+steps. Also enables
 Kubegres's built-in daily backup CronJob for prod's `django-postgres`
 (`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
 a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
