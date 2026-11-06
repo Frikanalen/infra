@@ -7,7 +7,7 @@ frikanalen_dyndns_server: "192.168.3.2"
 # Internal-only zone for VPN-reachable ingresses on this cluster -- see
 # roles/dns_server_zones_dynamic and the "ingress" play in
 # playbooks/k8s_cluster_prod.yml for how external-dns/Traefik pick it up.
-frikanalen_intern_zone: intern.frikanalen.no
+frikanalen_intern_zone: intern.frikanalen.tv
 frikanalen_intern_tsig_keyname: prod-cluster-update-key
 frikanalen_intern_owner_id: prod-internal-external-dns
 frikanalen_intern_ingress_class: internal
@@ -20,7 +20,7 @@ frikanalen_intern_ingress_class: internal
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: production
 
-frikanalen_domain: frikanalen.no
+frikanalen_domain: frikanalen.tv
 frikanalen_scheme: https
 
 # caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
@@ -68,7 +68,7 @@ ingest_worker_pools:
     encoder: qsv
     replicaCount: 1
     nodeSelector:
-      frikanalen.no/gpu-intel-arc-a310: "true"
+      frikanalen.tv/gpu-intel-arc-a310: "true"
     # One node, one card: spreading is meaningless and would only keep the
     # worker Pending.
     topologySpread:

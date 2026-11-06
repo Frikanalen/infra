@@ -38,7 +38,7 @@ if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
   # out of `exportfs -s`, rather than by the hostnames the export was
   # configured with. exportfs canonicalises names as it exports, so the
   # kernel and /var/lib/nfs/etab key the entry on
-  # caspar-sw1.dc1.frikanalen.no while /etc/exports (and this role's
+  # caspar-sw1.dc1.frikanalen.tv while /etc/exports (and this role's
   # variables) say caspar-sw1. `exportfs -u` matches that string literally
   # and exits 0 having done nothing when it does not match, so passing the
   # short name leaves every client exported and surfaces here, several lines

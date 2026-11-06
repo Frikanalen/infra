@@ -34,7 +34,7 @@
   vars:
     gpu_node_name: prod-kube-4
     gpu_node_labels:
-      frikanalen.no/gpu-intel-arc-a310: "true"
+      frikanalen.tv/gpu-intel-arc-a310: "true"
   tasks:
     - name: Read GPU node labels
       ansible.builtin.command:
