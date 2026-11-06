@@ -30,7 +30,7 @@ argument_specs:
       external_dns_domain_filter:
         type: str
         required: false
-        default: staging.frikanalen.no
+        default: staging.frikanalen.tv
         description: Domain to manage DNS records for
       external_dns_ingress_class:
         type: str
@@ -64,7 +64,7 @@ argument_specs:
       external_dns_rfc2136_zone:
         type: str
         required: false
-        default: staging.frikanalen.no
+        default: staging.frikanalen.tv
         description: DNS zone to update
       external_dns_rfc2136_tsig_keyname:
         type: str

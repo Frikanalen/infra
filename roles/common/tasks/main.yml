@@ -4,7 +4,7 @@
     dest: /etc/resolv.conf
     mode: "0644"
     content: |
-      search dc1.frikanalen.no frikanalen.no
+      search dc1.frikanalen.tv frikanalen.tv
       nameserver 192.168.3.2
       nameserver 129.240.2.3
       nameserver 129.240.2.27

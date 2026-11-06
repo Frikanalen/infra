@@ -268,7 +268,7 @@ Select the GPU host in a pod template with its label:
 
 ```yaml
 nodeSelector:
-  frikanalen.no/gpu-intel-arc-a310: "true"
+  frikanalen.tv/gpu-intel-arc-a310: "true"
 ```
 
 A pod that needs the A310 itself, rather than just its node, requests it as a
