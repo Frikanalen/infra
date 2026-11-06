@@ -80,7 +80,7 @@
       tags: [external_dns, dns]
 
     # Second external-dns instance: watches ingressClassName: internal and
-    # writes to intern.dev.frikanalen.no instead of staging.frikanalen.no,
+    # writes to intern.dev.frikanalen.tv instead of staging.frikanalen.tv,
     # targeting the separate internal Traefik IP. Reuses
     # staging-update-key (role default), which
     # roles/dns_server_zones_dynamic also authorizes on this zone.

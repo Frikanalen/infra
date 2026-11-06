@@ -1,7 +1,7 @@
 ---
 
 # Zone we are managing
-dns_zone_name: "dc1.frikanalen.no"
+dns_zone_name: "dc1.frikanalen.tv"
 
 # SOA defaults
 dns_soa_mname: "ns1.{{ dns_zone_name }}."

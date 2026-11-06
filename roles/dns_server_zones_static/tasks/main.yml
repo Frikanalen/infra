@@ -20,7 +20,7 @@
 - name: Render forward zone for {{ dns_zone_name }}
   become: true
   ansible.builtin.template:
-    src: "db.dc1.frikanalen.no.j2"
+    src: "db.dc1.frikanalen.tv.j2"
     dest: "{{ dns_zone_dir }}/db.{{ dns_zone_name }}"
     owner: bind
     group: bind
