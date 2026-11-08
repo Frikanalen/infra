@@ -7,7 +7,7 @@ fw_ext_if: "vtnet1"
 fw_lan_net: "192.168.3.0/24"
 
 # Public address clients dial -- util1's primary WAN address, the same one
-# frikanalen.no resolves to (roles/util_wan).
+# frikanalen.tv resolves to (roles/util_wan).
 wireguard_listen_ip: "158.36.191.229"
 wireguard_listen_port: 51820
 

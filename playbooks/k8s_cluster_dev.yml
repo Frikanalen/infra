@@ -34,7 +34,7 @@
 # dev-kube-4 had the Arc A310 until it moved to prod-kube-4; the GPU label
 # and host preparation now live in playbooks/k8s_cluster_prod.yml. Once the
 # card is gone, drop the stale label by hand:
-#   microk8s kubectl label node dev-kube-4 frikanalen.no/gpu-intel-arc-a310-
+#   microk8s kubectl label node dev-kube-4 frikanalen.tv/gpu-intel-arc-a310-
 
 - name: Install node prerequisites across kubedev
   hosts: kubedev

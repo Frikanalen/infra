@@ -61,7 +61,7 @@ argument_specs:
         type: str
         required: false
         default: ""
-        description: Host to match for the dashboard IngressRoute, e.g. traefik.intern.frikanalen.no
+        description: Host to match for the dashboard IngressRoute, e.g. traefik.intern.frikanalen.tv
       traefik_ingress_class:
         type: str
         required: false

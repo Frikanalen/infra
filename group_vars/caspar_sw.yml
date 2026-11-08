@@ -19,4 +19,4 @@ nfs_client_mounts:
 # frikanalen_intern_zone from group_vars/staging.yml -- roles/alloy_journal
 # needs it directly to reach the dev cluster's Loki (see
 # group_vars/staging.yml for the value this must match).
-frikanalen_intern_zone: intern.dev.frikanalen.no
+frikanalen_intern_zone: intern.dev.frikanalen.tv

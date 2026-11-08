@@ -75,9 +75,9 @@
         traefik_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         traefik_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
 
-    # external-dns for intern.frikanalen.no: watches ingressClassName:
+    # external-dns for intern.frikanalen.tv: watches ingressClassName:
     # internal and targets the cluster's internal ingress IP. There is
-    # deliberately no "public" external-dns instance here -- frikanalen.no
+    # deliberately no "public" external-dns instance here -- frikanalen.tv
     # is a static record managed outside this repo (see isp7/isp8.imc.as).
     - role: external_dns
       tags: [external_dns, dns, internal_dns]

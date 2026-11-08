@@ -7,7 +7,7 @@ frikanalen_dyndns_server: "192.168.3.2"
 # Internal-only zone for VPN-reachable ingresses on this cluster -- see
 # roles/dns_server_zones_dynamic and the "ingress" play in
 # playbooks/k8s_cluster_prod.yml for how external-dns/Traefik pick it up.
-frikanalen_intern_zone: intern.frikanalen.no
+frikanalen_intern_zone: intern.frikanalen.tv
 frikanalen_intern_tsig_keyname: prod-cluster-update-key
 frikanalen_intern_owner_id: prod-internal-external-dns
 frikanalen_intern_ingress_class: internal
@@ -20,7 +20,7 @@ frikanalen_intern_ingress_class: internal
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: production
 
-frikanalen_domain: frikanalen.no
+frikanalen_domain: frikanalen.tv
 frikanalen_scheme: https
 
 # caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
@@ -68,7 +68,7 @@ ingest_worker_pools:
     encoder: qsv
     replicaCount: 1
     nodeSelector:
-      frikanalen.no/gpu-intel-arc-a310: "true"
+      frikanalen.tv/gpu-intel-arc-a310: "true"
     # One node, one card: spreading is meaningless and would only keep the
     # worker Pending.
     topologySpread:
@@ -115,13 +115,13 @@ argocd_stream_ffmpeg_cpu_limit: "12"
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
-  graphics: v1.2.0
+  graphics: v1.3.0
   playout: v2.3.0
-  frontend: v3.3.0
-  django: v2.0.0
-  stream: v0.3.2
-  # v1.0.0 is Frikanalen/ingest#26, the release of what staging runs as main.
-  ingest: v1.0.0
+  frontend: v3.4.0
+  django: v2.1.0
+  stream: v0.4.0
+  # v1.1.0 = v1.0.0 (Frikanalen/ingest#26) plus the frikanalen.tv move.
+  ingest: v1.1.0
 
 helm_chart_versions:
   traefik: "41.6.0"

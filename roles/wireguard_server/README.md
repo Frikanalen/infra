@@ -1,6 +1,6 @@
 # wireguard_server
 
-A road-warrior WireGuard endpoint on `util1`, listening on `frikanalen.no`'s
+A road-warrior WireGuard endpoint on `util1`, listening on `frikanalen.tv`'s
 public address and giving connected clients a route to `192.168.3.0/24`.
 Nothing else -- no split-DNS, no internet routing through the tunnel, and
 client provisioning is one helper script (`wg-add-client`), not automation.

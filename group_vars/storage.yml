@@ -3,7 +3,7 @@
 # production playout host, and a weekly-reset clone of it
 # (archive/media-staging, see roles/media_staging_reset) to the staging
 # playout host, over NFSv4. Client hostnames resolve via the
-# dc1.frikanalen.no search domain set up by roles/common.
+# dc1.frikanalen.tv search domain set up by roles/common.
 # The staging clone is destroyed and recreated every week by
 # roles/media_staging_reset, which is why its export pins an explicit fsid.
 # NFSv4 otherwise derives the filesystem id from the dataset, so each reset
