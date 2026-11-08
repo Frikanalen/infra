@@ -6,7 +6,7 @@
 #
 #   ansible-playbook playbooks/mail.yml
 #
-# The public side -- 158.36.191.233 mapped 1:1 onto mail1 -- is
+# The public side -- 158.36.191.253 mapped 1:1 onto mail1 -- is
 # roles/util_fw_mail, applied by playbooks/firewall.yml --tags mail. Backups
 # are taken at the Proxmox layer by playbooks/proxmox/backup_jobs.yml.
 #

@@ -6,7 +6,7 @@ argument_specs:
       mail_ext_ip:
         type: str
         required: false
-        default: 158.36.191.233
+        default: 158.36.191.253
         description: Public address of the mail server, aliased onto the external interface.
       mail_ext_netmask:
         type: str

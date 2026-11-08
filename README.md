@@ -226,7 +226,7 @@ docker-compose stack and needs a fixed public address whose PTR, MX and SPF
 records agree. The data disk is mounted at `/var/lib/docker` first, so every
 mailbox and database lands on it. `generate_config.sh` runs once, and later
 upgrades go through mailcow's own `update.sh` on the host. The public
-address, 158.36.191.233, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
+address, 158.36.191.253, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
 (`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
 leave from that address instead of util1's own.
 

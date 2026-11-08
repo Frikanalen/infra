@@ -5,7 +5,7 @@ fw_lan_net: "192.168.3.0/24"
 
 # Public address of the mail server: what mail.frikanalen.tv resolves to and
 # what its PTR record must name.
-mail_ext_ip: "158.36.191.233"
+mail_ext_ip: "158.36.191.253"
 mail_ext_netmask: "255.255.255.128"
 
 mail_int_ip: "{{ host_config['mail1'].ip_cidr.split('/')[0] }}"
