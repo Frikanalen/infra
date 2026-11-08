@@ -1,0 +1,15 @@
+---
+fw_int_if: "vtnet0"
+fw_ext_if: "vtnet1"
+fw_lan_net: "192.168.3.0/24"
+
+# Public address of the mail server: what mail.frikanalen.tv resolves to and
+# what its PTR record must name.
+mail_ext_ip: "158.36.191.253"
+mail_ext_netmask: "255.255.255.128"
+
+mail_int_ip: "{{ host_config['mail1'].ip_cidr.split('/')[0] }}"
+
+# SMTP, HTTP (ACME) and HTTPS (web UI, webmail, autodiscover), SMTPS,
+# submission and IMAPS. Plain IMAP/POP3 and ManageSieve stay closed.
+mail_tcp_ports: [25, 80, 443, 465, 587, 993]

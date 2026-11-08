@@ -1,0 +1,59 @@
+---
+# Ubuntu's own Docker packages rather than Docker's apt repository: noble's
+# docker.io and docker-compose-v2 meet mailcow's floor (Docker >= 24, Compose
+# v2 as a CLI plugin), and they need no third-party repository or key.
+- name: Install Docker and mailcow's prerequisites
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - docker-compose-v2
+      - git
+      - openssl
+      - curl
+      - gawk
+      - jq
+    state: present
+    update_cache: true
+
+- name: Ensure Docker is running
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Clone mailcow-dockerized
+  ansible.builtin.git:
+    repo: "{{ mailcow_repo }}"
+    dest: "{{ mailcow_dir }}"
+    version: "{{ mailcow_branch }}"
+    # Cloned once. After that, mailcow's update.sh pulls and migrates; a git
+    # update from here would move the code under a running stack without the
+    # migrations update.sh runs alongside it.
+    update: false
+
+# generate_config.sh writes mailcow.conf with fresh random database and API
+# passwords, so it runs exactly once (creates:). Every question it would ask
+# is answered by environment variable; stdin is empty and the timeout bounds
+# it, so a prompt added in a later mailcow release fails the task rather than
+# hanging it.
+- name: Generate mailcow.conf
+  ansible.builtin.command:
+    cmd: timeout 600 ./generate_config.sh
+    chdir: "{{ mailcow_dir }}"
+    creates: "{{ mailcow_dir }}/mailcow.conf"
+    stdin: ""
+  environment:
+    MAILCOW_HOSTNAME: "{{ mailcow_hostname }}"
+    MAILCOW_TZ: "{{ mailcow_tz }}"
+    MAILCOW_BRANCH: "{{ mailcow_branch }}"
+    SKIP_CLAMD: "n"
+
+- name: Start the mailcow stack
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ mailcow_dir }}"
+  register: mailcow_compose_up
+  changed_when: >-
+    'Started' in mailcow_compose_up.stderr or
+    'Created' in mailcow_compose_up.stderr or
+    'Recreated' in mailcow_compose_up.stderr

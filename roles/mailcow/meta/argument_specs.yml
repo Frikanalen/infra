@@ -1,0 +1,34 @@
+---
+argument_specs:
+  main:
+    short_description: Install Docker and mailcow-dockerized, and start the stack
+    options:
+      mailcow_dir:
+        type: str
+        required: false
+        default: /opt/mailcow-dockerized
+        description: Where the mailcow checkout and mailcow.conf live.
+      mailcow_repo:
+        type: str
+        required: false
+        default: https://github.com/mailcow/mailcow-dockerized
+        description: Git URL of mailcow-dockerized.
+      mailcow_branch:
+        type: str
+        required: false
+        default: master
+        description: >-
+          Branch for the first clone and for generate_config.sh. Later
+          upgrades go through mailcow's own update.sh, not this role.
+      mailcow_hostname:
+        type: str
+        required: false
+        default: mail.frikanalen.tv
+        description: >-
+          The server's FQDN (not the mail domain): what MX points at, what
+          the PTR record names, and what mailcow requests a certificate for.
+      mailcow_tz:
+        type: str
+        required: false
+        default: Europe/Oslo
+        description: Time zone written to mailcow.conf.

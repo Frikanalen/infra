@@ -11,3 +11,11 @@
 # roles/kubegres_backup failed with "'db_backup_export_path' is undefined"
 # on the only host that actually runs it.
 db_backup_export_path: /util/k8s
+
+# Destination for Proxmox's vzdump backups (playbooks/proxmox/backup_jobs.yml).
+# The cluster already has this NFS storage ("file01", /util/proxmox, made by
+# hand), but it sat inactive on every node because /etc/exports, rendered by
+# roles/nfs_server, never listed the path. group_vars/storage.yml now exports
+# it to the hypervisors.
+proxmox_backup_export_path: /util/proxmox
+proxmox_backup_storage: file01

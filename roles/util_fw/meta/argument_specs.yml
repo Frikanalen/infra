@@ -28,3 +28,9 @@ argument_specs:
           nat:
             type: bool
             default: false
+          binat:
+            type: bool
+            default: false
+            description: >-
+              With nat, also hook the anchor into the binat stage (1:1 NAT,
+              e.g. roles/util_fw_mail).

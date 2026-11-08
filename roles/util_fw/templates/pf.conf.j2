@@ -20,12 +20,19 @@ set loginterface $ext_if
 scrub on $ext_if all no-df fragment reassemble
 
 # NAT for internal network (exclude hairpin NAT destinations handled by anchors)
-nat on $ext_if from $int_net to ! $dev_ingress_ext_ip -> ($ext_if)
+# ($ext_if:0), not ($ext_if): vtnet1 carries alias addresses too (prod
+# ingress, mail), and a bare ($ext_if) makes a round-robin pool of all of
+# them, so ordinary LAN traffic could leave from the mail server's address.
+nat on $ext_if from $int_net to ! $dev_ingress_ext_ip -> ($ext_if:0)
 
-# Translation anchors (util_fw_anchors with nat: true)
+# Translation anchors (util_fw_anchors with nat: true; binat: true also
+# hooks the anchor's binat rules in)
 {% for anchor in util_fw_anchors if anchor.nat | default(false) %}
 rdr-anchor "{{ anchor.name }}"
 nat-anchor "{{ anchor.name }}"
+{% if anchor.binat | default(false) %}
+binat-anchor "{{ anchor.name }}"
+{% endif %}
 {% endfor %}
 
 # Drop-in configuration files, written to /etc/pf.conf.d by their roles
