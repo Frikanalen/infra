@@ -83,6 +83,11 @@ all:
       hosts:
         file01:
 
+    # mailcow for frikanalen.tv; see playbooks/mail.yml.
+    mail:
+      hosts:
+        mail1:
+
     # Hosts that get node_exporter installed on them by roles/node_exporter and
     # scraped by roles/node_exporter_scrape. The Kubernetes nodes are absent on
     # purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
@@ -93,6 +98,7 @@ all:
       children:
         proxmox:
         storage:
+        mail:
 
     # Hosts that get roles/alloy_journal: a native systemd Alloy agent
     # shipping the systemd journal to Loki's internal-only ingress. Not
@@ -102,9 +108,11 @@ all:
     alloy_journal_hosts:
       children:
         caspar:
+        mail:
 
     qemu_guest:
       children:
         kubeprod:
         kubedev:
         caspar:
+        mail:

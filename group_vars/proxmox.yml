@@ -22,3 +22,20 @@ proxmox_former_gpu_vm:
   node: vmtx1
   vmid: 314
   tags: "ubuntu"
+
+# Nightly vzdump jobs, applied by playbooks/proxmox/backup_jobs.yml onto the
+# NFS storage file01 exports (proxmox_backup_storage, data/storage.yml).
+# Guests are named rather than listed by VMID so the number stays in
+# data/hosts.yml. mode snapshot backs a running VM up with no downtime;
+# with the guest agent (Terraform sets agent = 1) Proxmox freezes the guest's
+# filesystems for the snapshot, so MariaDB and the maildirs are captured
+# consistently. Every dump is a full one -- there is no deduplication
+# without a Proxmox Backup Server -- so retention is what bounds the space.
+proxmox_backup_jobs:
+  - id: mail-nightly
+    comment: mailcow (mail1), see playbooks/mail.yml
+    guests: [mail1]
+    schedule: "02:30"
+    mode: snapshot
+    compress: zstd
+    prune_backups: keep-daily=7,keep-weekly=4

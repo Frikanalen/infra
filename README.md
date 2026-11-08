@@ -217,6 +217,20 @@ than 14 days (see `roles/db_backup_retention`), since Kubegres's own backup
 CronJob never deletes old ones itself.
 
 ```sh
+ansible-playbook playbooks/mail.yml
+```
+
+Installs mailcow-dockerized on `mail1`, the mail server for frikanalen.tv: a
+VM of its own rather than a cluster workload, since mailcow is a
+docker-compose stack and needs a fixed public address whose PTR, MX and SPF
+records agree. The data disk is mounted at `/var/lib/docker` first, so every
+mailbox and database lands on it. `generate_config.sh` runs once, and later
+upgrades go through mailcow's own `update.sh` on the host. The public
+address, 158.36.191.233, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
+(`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
+leave from that address instead of util1's own.
+
+```sh
 ansible-playbook playbooks/staging_db_sync.yml
 ```
 
@@ -250,6 +264,19 @@ usual `terraform init`, `terraform plan`, and `terraform apply` flow.
 ## Proxmox
 
 Proxmox has mostly been provisioned by hand.
+
+### Backups
+
+Proxmox writes nightly vzdump backups to an NFS storage on file01
+(`/util/proxmox-backup`, exported by `playbooks/storage.yml`). The jobs are
+listed in `proxmox_backup_jobs` in `group_vars/proxmox.yml`; so far only
+`mail1` is backed up this way. Snapshot mode with the guest agent's
+filesystem freeze, kept 7 daily and 4 weekly.
+
+```sh
+ansible-playbook playbooks/storage.yml --tags nfs,proxmox_backup
+ansible-playbook playbooks/proxmox/backup_jobs.yml
+```
 
 ### GPU PCIe passthrough
 

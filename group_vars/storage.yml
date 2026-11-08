@@ -91,6 +91,17 @@ fk_archive_utils_profiles:
     root: "{{ archive_media_staging_export_path }}"
     manager: archive-manager-staging
 
+# Proxmox vzdump backups (playbooks/proxmox/backup_jobs.yml). no_root_squash
+# because vzdump runs as root on the hypervisor and Proxmox creates its dump/
+# subdirectory and lock files as root; squashed, the storage never activates.
+# Every hypervisor, since a backup job runs on whichever node holds the guest.
+proxmox_backup_clients:
+  - vm1
+  - vm2
+  - vm3
+  - vm4
+  - vmtx1
+
 nfs_exports:
   - path: /archive/media
     clients: >-
@@ -115,4 +126,9 @@ nfs_exports:
     clients: >-
       {{ chwiki_images_clients
          | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check)')
+         | join(' ') }}
+  - path: "{{ proxmox_backup_export_path }}"
+    clients: >-
+      {{ proxmox_backup_clients
+         | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check,no_root_squash)')
          | join(' ') }}

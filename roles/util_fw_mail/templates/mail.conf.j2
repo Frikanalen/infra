@@ -1,0 +1,29 @@
+# {{ ansible_managed }}
+# Mail server (mailcow on mail1): 1:1 NAT onto its own public address
+
+mail_ext_ip = "{{ mail_ext_ip }}"
+mail_int_ip = "{{ mail_int_ip }}"
+int_if = "{{ fw_int_if }}"
+ext_if = "{{ fw_ext_if }}"
+lan_net = "{{ fw_lan_net }}"
+mail_tcp_ports = "{ {{ mail_tcp_ports | join(', ') }} }"
+
+# binat rather than rdr + nat. Receiving mail would work with rdr, but
+# mail1 also sends, and its outbound SMTP must leave from mail_ext_ip so the
+# connection matches the PTR, MX and SPF records. pf.conf's catch-all
+# "nat on $ext_if from $int_net" comes first in the file, and nat is
+# first-match, so a nat rule here would never be reached. binat is tried
+# before any nat rule for outbound traffic, wherever it sits, so this one
+# wins for mail1 and leaves every other host on util1's own address.
+# Hooked in by pf.conf's binat-anchor (util_fw_anchors entry binat: true).
+binat on $ext_if from $mail_int_ip to any -> $mail_ext_ip
+
+# Hairpin: LAN hosts (including mail1 itself, whose ACME client checks it can
+# reach its own public name) using mail.frikanalen.tv.
+rdr on $int_if proto tcp from $lan_net to $mail_ext_ip port $mail_tcp_ports -> $mail_int_ip
+nat on $int_if proto tcp from $lan_net to $mail_int_ip port $mail_tcp_ports -> ($int_if:0)
+
+# Filter rules (pass). binat maps every port, so these are what keep the rest
+# of mail1 closed.
+pass in quick on $ext_if proto tcp from any to $mail_int_ip port $mail_tcp_ports
+pass in quick on $int_if proto tcp from $lan_net to $mail_int_ip port $mail_tcp_ports scrub (max-mss 1400)
