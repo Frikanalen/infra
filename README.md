@@ -267,14 +267,14 @@ Proxmox has mostly been provisioned by hand.
 
 ### Backups
 
-Proxmox writes nightly vzdump backups to an NFS storage on file01
-(`/util/proxmox-backup`, exported by `playbooks/storage.yml`). The jobs are
+Proxmox writes nightly vzdump backups to the cluster's NFS storage `file01`
+(`/util/proxmox` on file01, exported by `playbooks/storage.yml`). The jobs are
 listed in `proxmox_backup_jobs` in `group_vars/proxmox.yml`; so far only
 `mail1` is backed up this way. Snapshot mode with the guest agent's
 filesystem freeze, kept 7 daily and 4 weekly.
 
 ```sh
-ansible-playbook playbooks/storage.yml --tags nfs,proxmox_backup
+ansible-playbook playbooks/storage.yml --tags nfs
 ansible-playbook playbooks/proxmox/backup_jobs.yml
 ```
 

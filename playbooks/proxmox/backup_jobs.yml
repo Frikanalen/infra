@@ -5,7 +5,7 @@
 #
 # Needs file01's export in place first:
 #
-#   ansible-playbook playbooks/storage.yml --tags nfs,proxmox_backup
+#   ansible-playbook playbooks/storage.yml --tags nfs
 #   ansible-playbook playbooks/proxmox/backup_jobs.yml
 #
 - name: Ensure Proxmox backup storage and jobs
@@ -21,6 +21,8 @@
       changed_when: false
       run_once: true
 
+    # The storage already exists on cluster1; this only recreates it on a
+    # cluster that lacks it.
     - name: Add file01 backup storage
       ansible.builtin.command:
         argv:

@@ -91,10 +91,12 @@ fk_archive_utils_profiles:
     root: "{{ archive_media_staging_export_path }}"
     manager: archive-manager-staging
 
-# Proxmox vzdump backups (playbooks/proxmox/backup_jobs.yml). no_root_squash
-# because vzdump runs as root on the hypervisor and Proxmox creates its dump/
-# subdirectory and lock files as root; squashed, the storage never activates.
-# Every hypervisor, since a backup job runs on whichever node holds the guest.
+# The Proxmox cluster's NFS storage "file01" (ISOs, templates, and vzdump
+# backups via playbooks/proxmox/backup_jobs.yml). It was missing from this
+# list, so it went unexported and the storage was inactive on every node.
+# no_root_squash because Proxmox writes as root; squashed, the storage never
+# activates. Every hypervisor, since a backup job runs on whichever node
+# holds the guest.
 proxmox_backup_clients:
   - vm1
   - vm2

@@ -1,8 +1,0 @@
----
-- name: Ensure the Proxmox backup directory exists
-  ansible.builtin.file:
-    path: "{{ proxmox_backup_export_path }}"
-    state: directory
-    owner: root
-    group: root
-    mode: "{{ proxmox_backup_target_mode }}"
