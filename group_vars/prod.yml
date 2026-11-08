@@ -118,7 +118,7 @@ argocd_stream_ffmpeg_cpu_limit: "12"
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
-  graphics: v1.3.0
+  graphics: v1.3.1
   playout: v2.3.0
   frontend: v3.4.0
   django: v2.1.0
