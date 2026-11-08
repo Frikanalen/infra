@@ -5,3 +5,8 @@
 # Docker is installed, so Docker never writes to the root disk's copy of
 # this directory first.
 local_ssd_mount_path: /var/lib/docker
+
+# mail1 is in neither prod nor staging, so it inherits no
+# frikanalen_intern_zone; roles/alloy_journal needs it to reach the prod
+# cluster's Loki (same reasoning as group_vars/caspar_hw.yml).
+frikanalen_intern_zone: intern.frikanalen.tv
