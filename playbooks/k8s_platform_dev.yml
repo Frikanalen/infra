@@ -60,13 +60,25 @@
     - role: metallb
       tags: [metallb, ingress]
 
+    # Issues Traefik's certificates (roles/traefik, traefik_tls_mode) and the
+    # Barman Cloud plugin's mTLS certificates (roles/cnpg), so it goes before
+    # both.
+    - role: cert_manager
+      tags: [cert_manager, traefik, ingress, cnpg, database]
+
     - role: traefik
       tags: [traefik, ingress]
+      vars:
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
 
     - role: traefik
       tags: [traefik, ingress, internal_ingress]
       vars:
         traefik_release_name: traefik-internal
+        traefik_namespace: traefik-internal
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["*.{{ frikanalen_intern_zone }}"]
         traefik_ingress_class: "{{ frikanalen_intern_ingress_class }}"
         traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
         traefik_manage_ingress_class: false
@@ -123,10 +135,6 @@
     # CloudNativePG operator -- stands up alongside Kubegres as the
     # migration target for roles/cnpg_cluster's pgcluster; see
     # playbooks/k8s_apps_staging.yml.
-    # Needed by the cnpg role's Barman Cloud plugin, so it goes first.
-    - role: cert_manager
-      tags: [cert_manager, cnpg, database]
-
     - role: cnpg
       tags: [cnpg, database]
 

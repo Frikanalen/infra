@@ -19,6 +19,175 @@
   become: true
   run_once: true
 
+- name: Issue the default certificate with cert-manager
+  when: traefik_tls_mode == 'cert-manager'
+  become: true
+  run_once: true
+  vars:
+    traefik_cert_manager_solver: >-
+      {{
+        {'dns01': {'rfc2136': {
+          'nameserver': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port,
+          'tsigKeyName': traefik_rfc2136_tsig_keyname,
+          'tsigAlgorithm': traefik_rfc2136_tsig_algorithm | upper | replace('-', ''),
+          'tsigSecretSecretRef': {'name': traefik_release_name ~ '-rfc2136-tsig', 'key': 'secret'}
+        }}}
+        if traefik_acme_challenge == 'dns' else
+        {'http01': {'ingress': {'ingressClassName': traefik_ingress_class}}}
+      }}
+  block:
+    - name: Assert the default certificate has names
+      ansible.builtin.assert:
+        that: traefik_tls_dns_names | length > 0
+        fail_msg: traefik_tls_mode cert-manager needs traefik_tls_dns_names.
+
+    - name: Create the Traefik namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ traefik_namespace }}"
+
+    - name: Store the RFC2136 TSIG secret for the DNS-01 solver
+      when: traefik_acme_challenge == 'dns'
+      no_log: true
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ traefik_release_name }}-rfc2136-tsig"
+            namespace: "{{ traefik_namespace }}"
+          type: Opaque
+          stringData:
+            secret: "{{ traefik_rfc2136_tsig_secret }}"
+
+    - name: Define the Let's Encrypt Issuer
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Issuer
+          metadata:
+            name: "{{ traefik_tls_issuer_name }}"
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            acme:
+              email: "{{ traefik_acme_email }}"
+              server: "{{ traefik_acme_server }}"
+              privateKeySecretRef:
+                name: "{{ traefik_tls_issuer_name }}-account-key"
+              solvers:
+                - "{{ traefik_cert_manager_solver }}"
+
+    - name: Look for the default certificate's Secret
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        namespace: "{{ traefik_namespace }}"
+        name: "{{ traefik_tls_secret_name }}"
+      register: traefik_tls_secret
+
+    - name: Seed the Secret from the release's acme.json
+      when:
+        - traefik_tls_seed_from_acme_domain | length > 0
+        - traefik_tls_secret.resources | length == 0
+      block:
+        - name: Find a running Traefik pod of this release
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            kind: Pod
+            namespace: "{{ traefik_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/name=traefik
+              - app.kubernetes.io/instance={{ traefik_release_name }}-{{ traefik_namespace }}
+            field_selectors:
+              - status.phase=Running
+          register: traefik_acme_pods
+
+        - name: Read acme.json
+          kubernetes.core.k8s_exec:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            namespace: "{{ traefik_namespace }}"
+            pod: "{{ traefik_acme_pods.resources[0].metadata.name }}"
+            command: cat {{ traefik_acme_storage }}
+          register: traefik_acme_json
+          no_log: true
+
+        - name: Store the seed certificate
+          no_log: true
+          kubernetes.core.k8s:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Secret
+              type: kubernetes.io/tls
+              metadata:
+                name: "{{ traefik_tls_secret_name }}"
+                namespace: "{{ traefik_namespace }}"
+              data:
+                tls.crt: "{{ traefik_seed_cert.certificate }}"
+                tls.key: "{{ traefik_seed_cert.key }}"
+          vars:
+            traefik_seed_cert: >-
+              {{ (traefik_acme_json.stdout | from_json).letsencrypt.Certificates
+                 | selectattr('domain.main', 'equalto', traefik_tls_seed_from_acme_domain)
+                 | first }}
+
+    - name: Request the default certificate
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: "{{ traefik_tls_secret_name }}"
+            namespace: "{{ traefik_namespace }}"
+          spec:
+            secretName: "{{ traefik_tls_secret_name }}"
+            dnsNames: "{{ traefik_tls_dns_names }}"
+            issuerRef:
+              kind: Issuer
+              name: "{{ traefik_tls_issuer_name }}"
+
+    # Traefik must not switch to the TLSStore before there is a certificate
+    # in it, or it serves its self-signed fallback.
+    - name: Wait for the default certificate to be issued
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        api_version: cert-manager.io/v1
+        kind: Certificate
+        namespace: "{{ traefik_namespace }}"
+        name: "{{ traefik_tls_secret_name }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 600
+      # A seeded Secret is enough to switch on; see traefik_tls_seed_from_acme_domain.
+      when: traefik_tls_seed_from_acme_domain | length == 0 or traefik_tls_secret.resources | length > 0
+
+# After the certificate exists, so the move costs only the reinstall.
+- name: Uninstall this release from its old namespace
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: "{{ traefik_release_name }}"
+    release_namespace: "{{ traefik_legacy_namespace }}"
+    state: absent
+    wait: true
+  become: true
+  run_once: true
+  when: traefik_legacy_namespace | length > 0
+
 - name: Install Traefik via Helm
   kubernetes.core.helm:
     kubeconfig: "{{ k8s_kubeconfig }}"
@@ -31,7 +200,33 @@
     wait: true
     values:
       persistence:
-        enabled: true
+        enabled: "{{ traefik_tls_mode == 'acme' }}"
+
+      deployment:
+        replicas: "{{ traefik_replicas | int }}"
+
+      podDisruptionBudget:
+        enabled: "{{ traefik_replicas | int > 1 }}"
+        maxUnavailable: 1
+
+      # One replica per node, so draining a node takes out at most one.
+      affinity: >-
+        {{
+          {'podAntiAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': [{
+            'topologyKey': 'kubernetes.io/hostname',
+            'labelSelector': {'matchLabels': {
+              'app.kubernetes.io/name': 'traefik',
+              'app.kubernetes.io/instance': traefik_release_name ~ '-' ~ traefik_namespace
+            }}
+          }]}}
+          if traefik_replicas | int > 1 else {}
+        }}
+
+      tlsStore: >-
+        {{
+          {'default': {'defaultCertificate': {'secretName': traefik_tls_secret_name}}}
+          if traefik_tls_mode == 'cert-manager' else {}
+        }}
 
       securityContext:
         readOnlyRootFilesystem: true
@@ -57,10 +252,10 @@
               {'name': 'RFC2136_TSIG_ALGORITHM', 'value': traefik_internal_rfc2136_tsig_algorithm},
               {'name': 'RFC2136_TSIG_SECRET', 'value': traefik_internal_rfc2136_tsig_secret}
             ] if traefik_internal_acme_enabled else []
-          )
+          ) if traefik_tls_mode == 'acme' else []
         }}
 
-      certificatesResolvers: "{{ traefik_cert_resolvers }}"
+      certificatesResolvers: "{{ traefik_cert_resolvers if traefik_tls_mode == 'acme' else {} }}"
 
       service:
         spec:
@@ -80,8 +275,7 @@
             - web
             - websecure
           matchRule: "Host(`{{ traefik_dashboard_host }}`)"
-          tls:
-            certResolver: letsencrypt
+          tls: "{{ traefik_ingressroute_tls }}"
 
       metrics:
         prometheus:
@@ -105,6 +299,9 @@
         kubernetesCRD:
           enabled: "{{ traefik_enable_crd_provider }}"
           ingressClass: "{{ traefik_ingress_class }}"
+          # See traefik_tls_mode in defaults: keeps each release's TLSStore
+          # "default" out of the other release's view.
+          namespaces: ["{{ traefik_namespace }}"]
         kubernetesIngress:
           ingressClass: "{{ traefik_ingress_class }}"
           publishedService:
@@ -186,11 +383,23 @@
             services:
               - name: noop@internal
                 kind: TraefikService
-        tls:
-          certResolver: letsencrypt
+        tls: "{{ traefik_ingressroute_tls }}"
   become: true
   run_once: true
   when: traefik_manage_www_redirect
+
+- name: Remove the ACME volumes cert-manager mode no longer uses
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: absent
+    api_version: v1
+    kind: PersistentVolumeClaim
+    name: "{{ traefik_release_name }}"
+    namespace: "{{ item }}"
+  loop: "{{ [traefik_namespace, traefik_legacy_namespace] | select | list }}"
+  become: true
+  run_once: true
+  when: traefik_tls_mode == 'cert-manager'
 
 - name: Create Traefik Grafana dashboard ConfigMap
   kubernetes.core.k8s:
