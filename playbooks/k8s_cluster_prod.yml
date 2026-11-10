@@ -6,7 +6,8 @@
 #
 #   ansible-playbook playbooks/k8s_cluster_prod.yml
 #
-# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs / gpu-labels / gpu.
+# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs / gpu-labels / gpu /
+# cubemap-sysctl.
 
 - name: Seed the kubeprod cluster
   hosts: kubeprod_admin
@@ -89,3 +90,20 @@
     # mount.nfs present on every node, not a host-level fstab entry.
     - role: nfs_client
       tags: [nfs]
+
+# cubemap's hostNetwork pod can land on any node (it moves when its node is
+# drained), so every node gets the larger UDP receive buffers it needs. See
+# argocd_stream_cubemap_node_sysctls in group_vars/prod.yml.
+- name: Size UDP receive buffers for cubemap's multicast ingest
+  hosts: kubeprod
+  become: true
+  gather_facts: false
+  tags: [bootstrap, cubemap-sysctl]
+  tasks:
+    - name: Set and persist cubemap's UDP receive buffer sysctls
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/90-cubemap-rmem.conf
+        sysctl_set: true
+      loop: "{{ argocd_stream_cubemap_node_sysctls | dict2items }}"

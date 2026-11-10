@@ -110,6 +110,14 @@ argocd_stream_cubemap_host_network: true
 argocd_stream_cubemap_multicast_group: "239.1.1.51"
 # Unused with a multicast group, but data/apps.yml requires it.
 argocd_stream_cubemap_ip: "192.168.3.105"
+# With hostNetwork, cubemap's multicast socket gets the node's default UDP
+# receive buffer (212992 bytes), which overflowed at ~20 Mbit/s: UDP
+# RcvbufErrors lined up with ffmpeg's "corrupt input packet" about once a
+# minute. Set on every kubeprod node by playbooks/k8s_cluster_prod.yml
+# (--tags cubemap-sysctl), since cubemap moves when its node is drained.
+argocd_stream_cubemap_node_sysctls:
+  net.core.rmem_max: 33554432
+  net.core.rmem_default: 16777216
 # Decoding caspar1's 20 Mbit/s 4:2:2 720p50 mezzanine and encoding both HLS
 # renditions takes more than the chart's 6-core limit: at 6 the transcoder
 # was throttled in ~93% of CFS periods, fell behind cubemap, and cubemap
