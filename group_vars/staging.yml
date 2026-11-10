@@ -24,7 +24,7 @@ caspar_host: "192.168.3.101"
 # resource the django-api chart still renders keeps its own name below, so
 # switching this to pgcluster-rw moves Django to CloudNativePG without
 # touching Kubegres.
-django_db_host: django-postgres
+django_db_host: pgcluster-rw
 django_kubegres_name: django-postgres
 django_db_secret_name: django-postgres-passwords
 

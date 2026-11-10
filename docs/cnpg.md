@@ -34,7 +34,7 @@ the import are lost. With 3 instances the import takes a few minutes.
 
 ```sh
 # 1. Stop writes. Argo would scale it back up, so pause its sync first.
-kubectl -n argocd patch application django --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
+kubectl -n argocd patch application django-api --type merge -p '{"spec":{"syncPolicy":{"automated":null}}}'
 kubectl scale deploy/django deploy/django-events --replicas=0
 
 # 2. Recreate pgcluster with a one-time import from Kubegres. Bootstrap only
@@ -43,13 +43,24 @@ kubectl delete cluster pgcluster --ignore-not-found
 ansible-playbook playbooks/k8s_apps_staging.yml --tags cnpg_cluster -e cnpg_cluster_import_host=django-postgres
 kubectl get cluster pgcluster -w           # until "Cluster in healthy state"
 
-# 3. Compare row counts between the two, e.g. fk_video and fk_scheduleitem.
+# 3. Compare row counts of every public table between the two. Kubegres
+#    wants a password even over the socket:
+#      kubectl exec -i django-postgres-1-0 -- sh -c 'PGPASSWORD=$POSTGRES_PASSWORD psql -h 127.0.0.1 -U postgres -d fkweb -At' < counts.sql
+#      kubectl exec -i pgcluster-1 -c postgres -- psql -U postgres -d fkweb -At < counts.sql
+#    where counts.sql prints table=count for each table in public.
 
 # 4. Point Django at pgcluster: set django_db_host: pgcluster-rw in
 #    group_vars, then
 ansible-playbook playbooks/k8s_apps_staging.yml --tags django
-# This re-enables Argo's automated sync, which scales Django back up.
-kubectl rollout restart deploy/django deploy/django-events
+# This re-enables Argo's automated sync. The chart doesn't set django's
+# replica count, so Argo leaves it at 0: scale it back up by hand.
+kubectl scale deploy/django deploy/django-events --replicas=1
+kubectl rollout restart deploy/django-events
+kubectl exec deploy/django -c django -- printenv DATABASE_URL   # ...@pgcluster-rw:5432/fkweb
+
+# 5. Re-template the weekly prod -> staging sync so it reads/writes the
+#    right service on each side.
+ansible-playbook playbooks/staging_db_sync.yml
 ```
 
 Rollback: set `django_db_host` back to `django-postgres` and run the django
