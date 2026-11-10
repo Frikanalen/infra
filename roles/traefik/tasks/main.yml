@@ -74,6 +74,62 @@
               solvers:
                 - "{{ traefik_cert_manager_solver }}"
 
+    - name: Look for the default certificate's Secret
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        namespace: "{{ traefik_namespace }}"
+        name: "{{ traefik_tls_secret_name }}"
+      register: traefik_tls_secret
+
+    - name: Seed the Secret from the release's acme.json
+      when:
+        - traefik_tls_seed_from_acme_domain | length > 0
+        - traefik_tls_secret.resources | length == 0
+      block:
+        - name: Find a running Traefik pod of this release
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            kind: Pod
+            namespace: "{{ traefik_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/name=traefik
+              - app.kubernetes.io/instance={{ traefik_release_name }}-{{ traefik_namespace }}
+            field_selectors:
+              - status.phase=Running
+          register: traefik_acme_pods
+
+        - name: Read acme.json
+          kubernetes.core.k8s_exec:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            namespace: "{{ traefik_namespace }}"
+            pod: "{{ traefik_acme_pods.resources[0].metadata.name }}"
+            command: cat {{ traefik_acme_storage }}
+          register: traefik_acme_json
+          no_log: true
+
+        - name: Store the seed certificate
+          no_log: true
+          kubernetes.core.k8s:
+            kubeconfig: "{{ k8s_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Secret
+              type: kubernetes.io/tls
+              metadata:
+                name: "{{ traefik_tls_secret_name }}"
+                namespace: "{{ traefik_namespace }}"
+              data:
+                tls.crt: "{{ traefik_seed_cert.certificate }}"
+                tls.key: "{{ traefik_seed_cert.key }}"
+          vars:
+            traefik_seed_cert: >-
+              {{ (traefik_acme_json.stdout | from_json).letsencrypt.Certificates
+                 | selectattr('domain.main', 'equalto', traefik_tls_seed_from_acme_domain)
+                 | first }}
+
     - name: Request the default certificate
       kubernetes.core.k8s:
         kubeconfig: "{{ k8s_kubeconfig }}"
@@ -105,6 +161,8 @@
           type: Ready
           status: "True"
         wait_timeout: 600
+      # A seeded Secret is enough to switch on; see traefik_tls_seed_from_acme_domain.
+      when: traefik_tls_seed_from_acme_domain | length == 0 or traefik_tls_secret.resources | length > 0
   vars:
     traefik_cert_manager_solver: >-
       {{

@@ -75,6 +75,14 @@ traefik_tls_dns_names: []
 traefik_tls_secret_name: "{{ traefik_release_name }}-default-tls"
 traefik_tls_issuer_name: letsencrypt
 traefik_replicas: "{{ 2 if traefik_tls_mode == 'cert-manager' else 1 }}"
+# HTTP-01 can't complete while this release still runs its own ACME
+# resolver: Traefik answers every /.well-known/acme-challenge/ request itself
+# and 404s cert-manager's tokens. For that first switch, name a domain here
+# and its certificate is copied out of the running release's acme.json into
+# traefik_tls_secret_name, so Traefik has something to serve until
+# cert-manager's own certificate (all of traefik_tls_dns_names) lands in the
+# same Secret a few minutes later. Only acts while that Secret is missing.
+traefik_tls_seed_from_acme_domain: ""
 # Set when moving a release to a new traefik_namespace: the old release of
 # the same name in this namespace is uninstalled first, freeing its
 # LoadBalancer IP for the new one.
