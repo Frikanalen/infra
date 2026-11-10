@@ -53,3 +53,33 @@ traefik_internal_rfc2136_port: "53"
 traefik_internal_rfc2136_tsig_keyname: ""
 traefik_internal_rfc2136_tsig_algorithm: "hmac-sha256"
 traefik_internal_rfc2136_tsig_secret: ""
+
+# --- Where certificates come from ------------------------------------------
+#
+# acme: Traefik's own ACME resolver, keeping certificates in acme.json on a
+#   PersistentVolume. The volume is hostpath, so the single replica is pinned
+#   to one node and ingress goes down whenever that node is drained.
+# cert-manager: an Issuer and a Certificate in traefik_namespace (same
+#   challenge settings as above), served as Traefik's default certificate
+#   through the TLSStore named "default". Traefik keeps no state, so it runs
+#   traefik_replicas replicas on different nodes behind a PDB.
+#
+# A TLSStore named "default" is cluster-wide to Traefik, and two in one
+# cluster cancel each other out ("Default TLS Stores defined in multiple
+# namespaces"). Each release therefore lives in its own namespace and only
+# watches CRDs there (providers.kubernetesCRD.namespaces below).
+traefik_tls_mode: acme
+# Names on the default certificate; every host this release serves must be
+# covered, e.g. [frikanalen.tv, www.frikanalen.tv] or ["*.intern.frikanalen.tv"].
+traefik_tls_dns_names: []
+traefik_tls_secret_name: "{{ traefik_release_name }}-default-tls"
+traefik_tls_issuer_name: letsencrypt
+traefik_replicas: "{{ 2 if traefik_tls_mode == 'cert-manager' else 1 }}"
+# Set when moving a release to a new traefik_namespace: the old release of
+# the same name in this namespace is uninstalled first, freeing its
+# LoadBalancer IP for the new one.
+traefik_legacy_namespace: ""
+# IngressRoutes this role creates: name the ACME resolver, or serve the
+# TLSStore's default certificate. An empty certResolver rather than none, as
+# the k8s module merges into the existing object and would keep the old one.
+traefik_ingressroute_tls: "{{ {'certResolver': 'letsencrypt' if traefik_tls_mode == 'acme' else ''} }}"
