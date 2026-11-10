@@ -23,6 +23,18 @@
   when: traefik_tls_mode == 'cert-manager'
   become: true
   run_once: true
+  vars:
+    traefik_cert_manager_solver: >-
+      {{
+        {'dns01': {'rfc2136': {
+          'nameserver': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port,
+          'tsigKeyName': traefik_rfc2136_tsig_keyname,
+          'tsigAlgorithm': traefik_rfc2136_tsig_algorithm | upper | replace('-', ''),
+          'tsigSecretSecretRef': {'name': traefik_release_name ~ '-rfc2136-tsig', 'key': 'secret'}
+        }}}
+        if traefik_acme_challenge == 'dns' else
+        {'http01': {'ingress': {'ingressClassName': traefik_ingress_class}}}
+      }}
   block:
     - name: Assert the default certificate has names
       ansible.builtin.assert:
@@ -163,18 +175,6 @@
         wait_timeout: 600
       # A seeded Secret is enough to switch on; see traefik_tls_seed_from_acme_domain.
       when: traefik_tls_seed_from_acme_domain | length == 0 or traefik_tls_secret.resources | length > 0
-  vars:
-    traefik_cert_manager_solver: >-
-      {{
-        {'dns01': {'rfc2136': {
-          'nameserver': traefik_rfc2136_host ~ ':' ~ traefik_rfc2136_port,
-          'tsigKeyName': traefik_rfc2136_tsig_keyname,
-          'tsigAlgorithm': traefik_rfc2136_tsig_algorithm | upper | replace('-', ''),
-          'tsigSecretSecretRef': {'name': traefik_release_name ~ '-rfc2136-tsig', 'key': 'secret'}
-        }}}
-        if traefik_acme_challenge == 'dns' else
-        {'http01': {'ingress': {'ingressClassName': traefik_ingress_class}}}
-      }}
 
 # After the certificate exists, so the move costs only the reinstall.
 - name: Uninstall this release from its old namespace
