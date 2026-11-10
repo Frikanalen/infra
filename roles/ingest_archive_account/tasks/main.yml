@@ -102,7 +102,7 @@
         home: "/home/{{ ingest_archive_user }}"
         shell: "{{ '/bin/sh' if ingest_archive_fk_profile else '/usr/sbin/nologin' }}"
         groups: "{{ [ingest_archive_group] if ingest_archive_group else omit }}"
-        append: true
+        append: "{{ true if ingest_archive_group else omit }}"
         state: present
 
     - name: Check whether the archive directory exists

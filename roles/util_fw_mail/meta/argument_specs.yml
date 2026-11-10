@@ -1,0 +1,40 @@
+---
+argument_specs:
+  main:
+    short_description: 1:1 NAT of a public address onto the mail server
+    options:
+      mail_ext_ip:
+        type: str
+        required: false
+        default: 158.36.191.253
+        description: Public address of the mail server, aliased onto the external interface.
+      mail_ext_netmask:
+        type: str
+        required: false
+        default: 255.255.255.128
+        description: Netmask for the alias, as for prod_ingress_ext_ip.
+      mail_int_ip:
+        type: str
+        required: false
+        description: Internal address of the mail server; defaults to mail1's in data/hosts.yml.
+      mail_tcp_ports:
+        type: list
+        elements: int
+        required: false
+        default: [25, 80, 443, 465, 587, 993]
+        description: TCP ports let in from outside and hairpinned from the LAN.
+      fw_int_if:
+        type: str
+        required: false
+        default: vtnet0
+        description: Internal interface on the utility host.
+      fw_ext_if:
+        type: str
+        required: false
+        default: vtnet1
+        description: External interface on the utility host.
+      fw_lan_net:
+        type: str
+        required: false
+        default: 192.168.3.0/24
+        description: Internal network, in CIDR form.

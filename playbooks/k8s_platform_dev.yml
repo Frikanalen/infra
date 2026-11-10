@@ -80,7 +80,7 @@
       tags: [external_dns, dns]
 
     # Second external-dns instance: watches ingressClassName: internal and
-    # writes to intern.dev.frikanalen.no instead of staging.frikanalen.no,
+    # writes to intern.dev.frikanalen.tv instead of staging.frikanalen.tv,
     # targeting the separate internal Traefik IP. Reuses
     # staging-update-key (role default), which
     # roles/dns_server_zones_dynamic also authorizes on this zone.
@@ -116,12 +116,6 @@
     # including the ZFS ones for the media archive on file01.
     - role: node_exporter_scrape
       tags: [node_exporter, monitoring]
-
-    # Advertises the Arc A310 on dev-kube-4 as gpu.intel.com/i915 (or /xe),
-    # which the ingest QSV worker pool requests. Needs the host prepared by
-    # playbooks/k8s_cluster_dev.yml --tags gpu first.
-    - role: intel_gpu_plugin
-      tags: [intel_gpu_plugin, gpu]
 
     - role: kubegres
       tags: [kubegres, database]

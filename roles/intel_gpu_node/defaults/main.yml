@@ -1,6 +1,6 @@
 ---
 # Prepares a Kubernetes node with an Intel GPU passed through for hardware
-# video encoding (Quick Sync) by pods -- today the Arc A310 on dev-kube-4.
+# video encoding (Quick Sync) by pods -- today the Arc A310 on prod-kube-4.
 #
 # The firmware matters more than it looks: on DG2 (Arc) the encoder only does
 # bitrate control with the HuC firmware loaded and authenticated, and without

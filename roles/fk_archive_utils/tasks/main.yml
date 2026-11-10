@@ -201,6 +201,10 @@
     system: true
     create_home: false
     shell: /usr/sbin/nologin
+    # A profile whose root it does not own (prod's /archive/media, which is
+    # group-writable by fkupload) names the groups that give it write access.
+    groups: "{{ item.groups | default(omit) }}"
+    append: true
     state: present
   loop: "{{ fk_archive_utils_profiles }}"
   loop_control:

@@ -9,7 +9,7 @@ dns_soa_minimum: 86400
 
 # TSIG keys available for RFC2136 updates. Keyed by name (not by zone) so a
 # single key can be authorized on more than one zone -- see
-# dns_dynamic_zones below, where intern.dev.frikanalen.no reuses
+# dns_dynamic_zones below, where intern.dev.frikanalen.tv reuses
 # staging-update-key rather than minting a key per zone. Defining the same
 # key twice (once per zone that uses it) would make named.conf.d declare
 # the same key name twice and fail to reload.
@@ -27,23 +27,23 @@ dns_dynamic_tsig_keys:
 # public IP -- Let's Encrypt and any external resolver need to reach this
 # server on port 53 regardless of what the zone itself is used for.
 #
-# apex_address is the zone's root A record. For staging.frikanalen.no this
+# apex_address is the zone's root A record. For staging.frikanalen.tv this
 # is the same public ingress IP the zone's other records point at. For the
 # intern.* zones it is deliberately the cluster's internal-only ingress IP:
 # these zones exist so hosts under them resolve to VPN-reachable addresses,
 # never the public one.
 dns_dynamic_zones:
-  - name: staging.frikanalen.no
+  - name: staging.frikanalen.tv
     tsig_key_name: staging-update-key
     ns1_address: "158.36.191.229"
     apex_address: "158.36.191.229"
 
-  - name: intern.frikanalen.no
+  - name: intern.frikanalen.tv
     tsig_key_name: prod-cluster-update-key
     ns1_address: "158.36.191.229"
     apex_address: "{{ host_config['ingress-prod-internal'].ip_cidr.split('/')[0] }}"
 
-  - name: intern.dev.frikanalen.no
+  - name: intern.dev.frikanalen.tv
     tsig_key_name: staging-update-key
     ns1_address: "158.36.191.229"
     apex_address: "{{ host_config['ingress-dev-internal'].ip_cidr.split('/')[0] }}"

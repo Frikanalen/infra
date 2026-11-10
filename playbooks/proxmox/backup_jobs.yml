@@ -1,0 +1,137 @@
+---
+# Proxmox-layer backups: the NFS storage on file01 and the vzdump jobs that
+# write to it (proxmox_backup_jobs in group_vars/proxmox.yml). Storage and
+# jobs are cluster-wide objects, so everything here runs once.
+#
+# Needs file01's export in place first:
+#
+#   ansible-playbook playbooks/storage.yml --tags nfs
+#   ansible-playbook playbooks/proxmox/backup_jobs.yml
+#
+- name: Ensure Proxmox backup storage and jobs
+  hosts: proxmox
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Read cluster storage
+      ansible.builtin.command:
+        argv: [pvesh, get, /storage, --output-format, json]
+      register: proxmox_storage_current
+      changed_when: false
+      check_mode: false
+      run_once: true
+
+    # The storage already exists on cluster1; this only recreates it on a
+    # cluster that lacks it.
+    - name: Add file01 backup storage
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - create
+          - /storage
+          - --storage
+          - "{{ proxmox_backup_storage }}"
+          - --type
+          - nfs
+          - --server
+          - "{{ host_config['file01'].ip_cidr.split('/')[0] }}"
+          - --export
+          - "{{ proxmox_backup_export_path }}"
+          - --content
+          - backup
+      when: >-
+        proxmox_backup_storage not in
+        (proxmox_storage_current.stdout | from_json | map(attribute='storage') | list)
+      changed_when: true
+      run_once: true
+
+    - name: Read cluster backup jobs
+      ansible.builtin.command:
+        argv: [pvesh, get, /cluster/backup, --output-format, json]
+      register: proxmox_backup_jobs_current
+      changed_when: false
+      check_mode: false
+      run_once: true
+
+    - name: Create missing backup jobs
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - create
+          - /cluster/backup
+          - --id
+          - "{{ item.id }}"
+          - --schedule
+          - "{{ item.schedule }}"
+          - --storage
+          - "{{ proxmox_backup_storage }}"
+          - --vmid
+          - "{{ vmids }}"
+          - --mode
+          - "{{ item.mode }}"
+          - --compress
+          - "{{ item.compress }}"
+          - --prune-backups
+          - "{{ item.prune_backups }}"
+          - --comment
+          - "{{ item.comment }}"
+          - --enabled
+          - "1"
+      vars:
+        vmids: >-
+          {{ item.guests | map('extract', host_config) | map(attribute='vm')
+             | map(attribute='vmid') | map('string') | join(',') }}
+      loop: "{{ proxmox_backup_jobs }}"
+      loop_control:
+        label: "{{ item.id }}"
+      when: >-
+        item.id not in
+        (proxmox_backup_jobs_current.stdout | from_json | map(attribute='id') | list)
+      changed_when: true
+      run_once: true
+
+    - name: Update backup jobs that differ from desired state
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/cluster/backup/{{ item.id }}"
+          - --schedule
+          - "{{ item.schedule }}"
+          - --storage
+          - "{{ proxmox_backup_storage }}"
+          - --vmid
+          - "{{ vmids }}"
+          - --mode
+          - "{{ item.mode }}"
+          - --compress
+          - "{{ item.compress }}"
+          - --prune-backups
+          - "{{ item.prune_backups }}"
+          - --comment
+          - "{{ item.comment }}"
+          - --enabled
+          - "1"
+      vars:
+        existing: >-
+          {{ (proxmox_backup_jobs_current.stdout | from_json
+              | selectattr('id', 'equalto', item.id) | list | first) | default({}) }}
+        vmids: >-
+          {{ item.guests | map('extract', host_config) | map(attribute='vm')
+             | map(attribute='vmid') | map('string') | join(',') }}
+      loop: "{{ proxmox_backup_jobs }}"
+      loop_control:
+        label: "{{ item.id }}"
+      # Compares the fields Proxmox echoes back verbatim; prune-backups and
+      # comment are re-sent with any update.
+      when:
+        - existing | length > 0
+        - >-
+          existing.schedule | default('') != item.schedule or
+          existing.storage | default('') != proxmox_backup_storage or
+          existing.vmid | default('') | string != vmids or
+          existing.mode | default('') != item.mode or
+          existing.enabled | default(1) | int != 1
+      changed_when: true
+      run_once: true

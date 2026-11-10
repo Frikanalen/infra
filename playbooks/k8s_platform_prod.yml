@@ -75,9 +75,9 @@
         traefik_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         traefik_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
 
-    # external-dns for intern.frikanalen.no: watches ingressClassName:
+    # external-dns for intern.frikanalen.tv: watches ingressClassName:
     # internal and targets the cluster's internal ingress IP. There is
-    # deliberately no "public" external-dns instance here -- frikanalen.no
+    # deliberately no "public" external-dns instance here -- frikanalen.tv
     # is a static record managed outside this repo (see isp7/isp8.imc.as).
     - role: external_dns
       tags: [external_dns, dns, internal_dns]
@@ -92,6 +92,12 @@
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
         external_dns_sources: [ingress, traefik-proxy]
+
+    # Advertises the Arc A310 on prod-kube-4 as gpu.intel.com/i915 (or /xe),
+    # which the ingest QSV worker pool requests. Needs the host prepared by
+    # playbooks/k8s_cluster_prod.yml --tags gpu first.
+    - role: intel_gpu_plugin
+      tags: [intel_gpu_plugin, gpu]
 
     - role: kubegres
       tags: [kubegres, database]

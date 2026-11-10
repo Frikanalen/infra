@@ -18,14 +18,13 @@ spec:
     # which means the job label no longer distinguishes the two sets of hosts
     # and nodeclass does.
     #
-    # The mixin's ~21 node rules therefore also apply to these hosts, and
-    # several overlap with what is below: NodeFilesystemAlmostOutOfSpace
-    # against NodeFilesystemAlmostFull, NodeMemoryHighUtilization against
-    # NodeMemoryPressure, NodeSystemdServiceFailed against
-    # NodeSystemdUnitFailed, NodeSystemSaturation against NodeLoadHigh. That
-    # duplication is deliberate -- these thresholds are ours to tune -- but it
-    # does mean two alerts for one problem. Drop the local one if the mixin's
-    # turns out to say it better.
+    # The mixin's ~21 node rules therefore also apply to these hosts. Local
+    # copies of NodeFilesystemAlmostOutOfSpace, NodeMemoryHighUtilization and
+    # NodeSystemdServiceFailed used to sit here too, and sent two alerts for
+    # every problem on file01; they were dropped in favour of the mixin's
+    # (memory via the ZFS-aware replacement in roles/kube_prometheus_stack's
+    # files/extra-rules.yml). NodeFilesystemLowOnSpace stays as the earlier
+    # 15% warning, and NodeLoadHigh still overlaps NodeSystemSaturation.
     - name: node-exporter-external
       rules:
         - alert: NodeDown
@@ -57,24 +56,9 @@ spec:
               {{ '{{ $labels.mountpoint }}' }} has
               {{ '{{ $value | humanizePercentage }}' }} of its space left.
 
-        - alert: NodeFilesystemAlmostFull
-          expr: >-
-            node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
-            / node_filesystem_size_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
-            < {{ node_exporter_fs_critical_ratio }}
-            and node_filesystem_readonly{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
-          for: 15m
-          labels:
-            severity: critical
-          annotations:
-            summary: "{{ '{{ $labels.mountpoint }}' }} on {{ '{{ $labels.instance }}' }} is nearly full"
-            description: >-
-              {{ '{{ $labels.mountpoint }}' }} has
-              {{ '{{ $value | humanizePercentage }}' }} of its space left.
-
         - alert: NodeFilesystemFillingUp
           # The rate-of-change rule that catches a runaway log or an
-          # unpruned backup directory long before either threshold above.
+          # unpruned backup directory long before the threshold above.
           expr: >-
             predict_linear(node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}[6h], 24*3600) < 0
             and node_filesystem_avail_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}",fstype!~"tmpfs|ramfs|squashfs|overlay"}
@@ -88,20 +72,6 @@ spec:
             description: >-
               Extrapolating the last 6 hours, {{ '{{ $labels.mountpoint }}' }}
               runs out of space within 24 hours.
-
-        - alert: NodeMemoryPressure
-          # Available, not free: Linux is supposed to use the rest for cache.
-          expr: >-
-            node_memory_MemAvailable_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"}
-            / node_memory_MemTotal_bytes{nodeclass="{{ node_exporter_scrape_nodeclass }}"} < 0.10
-          for: 30m
-          labels:
-            severity: warning
-          annotations:
-            summary: "{{ '{{ $labels.instance }}' }} is low on memory"
-            description: >-
-              Only {{ '{{ $value | humanizePercentage }}' }} of memory is
-              available.
 
         - alert: NodeLoadHigh
           # Per-core, so this means the same thing on a 4-core VM and a
@@ -129,16 +99,6 @@ spec:
             description: >-
               Uptime is under ten minutes. Expected after maintenance; not
               otherwise.
-
-        - alert: NodeSystemdUnitFailed
-          expr: node_systemd_unit_state{nodeclass="{{ node_exporter_scrape_nodeclass }}",state="failed"} == 1
-          for: 15m
-          labels:
-            severity: warning
-          annotations:
-            summary: "{{ '{{ $labels.name }}' }} has failed on {{ '{{ $labels.instance }}' }}"
-            description: >-
-              systemd reports {{ '{{ $labels.name }}' }} in the failed state.
 
     - name: node-exporter-external-zfs
       # These come from the textfile collector that roles/node_exporter

@@ -20,8 +20,8 @@ move retargets the existing Application rather than creating a second service.
 
 | Environment | Public SRT listener | Reserved LAN IP | RTSP (public hostname or LAN) |
 | --- | --- | --- | --- |
-| Staging | `srt://staging.frikanalen.no:8890` | `192.168.3.93` | `rtsp://192.168.3.93:8554` |
-| Production | `srt://frikanalen.no:8890` | `192.168.3.107` | `rtsp://192.168.3.107:8554` |
+| Staging | `srt://staging.frikanalen.tv:8890` | `192.168.3.93` | `rtsp://192.168.3.93:8554` |
+| Production | `srt://frikanalen.tv:8890` | `192.168.3.107` | `rtsp://192.168.3.107:8554` |
 
 PF forwards UDP 8890 (SRT), TCP 1935 (RTMP), and TCP 8554 (RTSP) from the
 environment's existing public web IP to the new MetalLB address, including hairpin
@@ -30,8 +30,8 @@ no separate RTP/RTCP UDP ports needed. HLS, MoQ, the management API,
 and recording remain disabled. Django advertises the configured contribution and WebRTC
 listeners in its one-time credential dialog.
 
-Production URLs are `srt://frikanalen.no:8890`, `rtmp://frikanalen.no:1935` and
-`rtsp://frikanalen.no:8554`. Staging uses `staging.frikanalen.no` on the same ports.
+Production URLs are `srt://frikanalen.tv:8890`, `rtmp://frikanalen.tv:1935` and
+`rtsp://frikanalen.tv:8554`. Staging uses `staging.frikanalen.tv` on the same ports.
 Each full URL includes the issued source path and the appropriate authentication.
 These RTMP/RTSP listeners do not have TLS; use a trusted route/VPN when required.
 
@@ -135,7 +135,7 @@ Application image parameter and its ImageUpdater track that test tag. Only
 staging's ingress_dev PF anchor was loaded; production was not changed.
 
 An external FFmpeg publisher sent a synthetic 640x360 50fps H.264 picture and
-48kHz stereo AAC to `staging.frikanalen.no:8890`. An independently authenticated
+48kHz stereo AAC to `staging.frikanalen.tv:8890`. An independently authenticated
 SRT reader received both tracks through the public forwarding path. Publish-only
 credentials used for reading and a revoked read credential were rejected.
 Temporary test organization, source and credentials were removed afterward.
@@ -165,7 +165,7 @@ picture and stereo AAC audio:
 | RTMP TCP 1935 | SRT UDP 8890 | Passed |
 | RTSP TCP 8554 | SRT UDP 8890 | Passed |
 
-All connections used `staging.frikanalen.no`, exercising public forwarding and
+All connections used `staging.frikanalen.tv`, exercising public forwarding and
 Django authentication rather than an internal shortcut. RTSP used interleaved
 TCP. The temporary test organization, source and credentials were removed after
 testing. Production was not deployed or tested.

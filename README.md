@@ -221,6 +221,20 @@ than 14 days (see `roles/db_backup_retention`), since Kubegres's own backup
 CronJob never deletes old ones itself.
 
 ```sh
+ansible-playbook playbooks/mail.yml
+```
+
+Installs mailcow-dockerized on `mail1`, the mail server for frikanalen.tv: a
+VM of its own rather than a cluster workload, since mailcow is a
+docker-compose stack and needs a fixed public address whose PTR, MX and SPF
+records agree. The data disk is mounted at `/var/lib/docker` first, so every
+mailbox and database lands on it. `generate_config.sh` runs once, and later
+upgrades go through mailcow's own `update.sh` on the host. The public
+address, 158.36.191.253, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
+(`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
+leave from that address instead of util1's own.
+
+```sh
 ansible-playbook playbooks/staging_db_sync.yml
 ```
 
@@ -255,23 +269,37 @@ usual `terraform init`, `terraform plan`, and `terraform apply` flow.
 
 Proxmox has mostly been provisioned by hand.
 
+### Backups
+
+Proxmox writes nightly vzdump backups to the cluster's NFS storage `file01`
+(`/util/proxmox` on file01, exported by `playbooks/storage.yml`). The jobs are
+listed in `proxmox_backup_jobs` in `group_vars/proxmox.yml`; so far only
+`mail1` is backed up this way. Snapshot mode with the guest agent's
+filesystem freeze, kept 7 daily and 4 weekly.
+
+```sh
+ansible-playbook playbooks/storage.yml --tags nfs
+ansible-playbook playbooks/proxmox/backup_jobs.yml
+```
+
 ### GPU PCIe passthrough
 
-Cluster PCI resource mappings, the `dev-kube-4` GPU assignments, and its
-Proxmox VM tags (`nvidia` and `a310`) are declared in `group_vars/proxmox.yml`
-and applied with:
+Cluster PCI resource mappings are declared in `group_vars/proxmox.yml` and
+applied with the playbook below, which also strips the GPUs dev-kube-4 used to
+hold. Terraform attaches each card to its VM through `pci_mappings` in
+`data/hosts.yml`: the Tesla P4 to caspar-sw1, the Arc A310 to prod-kube-4.
 
 ```sh
 ansible-playbook playbooks/proxmox/pci_resource_mappings.yml
 ```
 
-The dev-cluster playbook labels `dev-kube-4` with its A310. The Tesla P4
-now belongs to caspar-sw1 (data/hosts.yml), so it is no longer a pod target.
+The prod-cluster playbook labels `prod-kube-4` with its A310. The Tesla P4
+belongs to caspar-sw1, so it is not a pod target.
 Select the GPU host in a pod template with its label:
 
 ```yaml
 nodeSelector:
-  frikanalen.no/gpu-intel-arc-a310: "true"
+  frikanalen.tv/gpu-intel-arc-a310: "true"
 ```
 
 A pod that needs the A310 itself, rather than just its node, requests it as a
@@ -287,14 +315,14 @@ resources:
 That takes two steps, host first:
 
 ```sh
-ansible-playbook playbooks/k8s_cluster_dev.yml --tags gpu        # roles/intel_gpu_node
-ansible-playbook playbooks/k8s_platform_dev.yml --tags gpu       # roles/intel_gpu_plugin
+ansible-playbook playbooks/k8s_cluster_prod.yml --tags gpu,gpu-labels  # roles/intel_gpu_node
+ansible-playbook playbooks/k8s_platform_prod.yml --tags gpu            # roles/intel_gpu_plugin
 ```
 
 `intel_gpu_node` checks the card is bound to i915 or xe with its HuC firmware
 loaded, and sets `device_ownership_from_security_context` in MicroK8s's
 containerd so unprivileged pods can open the device. `intel_gpu_plugin` runs
 the plugin on the labelled node and waits for the node to advertise the GPU,
-printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. Staging's
-ingest QSV worker pool (`ingest_worker_pools` in `group_vars/staging.yml`) is
-the consumer.
+printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. The ingest
+QSV worker pool (`ingest_worker_pools`) is the consumer. Staging has no Intel
+GPU since the A310 moved to prod.
