@@ -16,6 +16,10 @@
     # hostname change, not a credential rotation.
     cnpg_cluster_app_password: "{{ vault_dev_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_dev_django_postgres_super_password }}"
+    # Backups to Garage on file01 (roles/garage), one bucket per environment.
+    cnpg_cluster_backup_bucket: cnpg-staging
+    cnpg_cluster_backup_s3_key_id: "{{ vault_dev_cnpg_s3_key_id }}"
+    cnpg_cluster_backup_s3_secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
   roles:
     - role: django_db_secret
       tags: [django]
@@ -45,6 +49,12 @@
       vars:
         argocd_app: "{{ frikanalen_apps.graphics }}"
 
+    # Issues playout's MediaMTX reader credential through Django and stores it
+    # in the Secret playout reads; must follow the django app and precede
+    # playout's, which rolls when the key changes.
+    - role: playout_live_secret
+      tags: [playout, playout_live]
+
     - role: argocd_app
       tags: [playout]
       vars:
@@ -60,6 +70,9 @@
     - role: ingest_archive_account
       tags: [ingest, ingest_account]
 
+    - role: ingest_archive_mount
+      tags: [ingest, ingest_app]
+
     - role: ingest_api_secret
       tags: [ingest, ingest_app]
       vars:
@@ -72,3 +85,8 @@
 
     - role: media_server
       tags: [media_server]
+
+    - role: argocd_app
+      tags: [mediamtx]
+      vars:
+        argocd_app: "{{ frikanalen_apps.mediamtx }}"

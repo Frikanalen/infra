@@ -12,7 +12,7 @@
      <channel>
 	     <video-mode>{{ casparcg_video_mode }}</video-mode>
         <consumers>
-{% if casparcg_consumer_type == 'decklink' %}
+{% if 'decklink' in casparcg_consumers %}
             <decklink>
                 <device>{{ casparcg_decklink_device }}</device>
                 <key-device>{{ casparcg_decklink_key_device }}</key-device>
@@ -22,7 +22,8 @@
                 <key-only>{{ casparcg_decklink_key_only | lower }}</key-only>
                 <buffer-depth>{{ casparcg_decklink_buffer_depth }}</buffer-depth>
             </decklink>
-{% elif casparcg_consumer_type == 'ffmpeg' %}
+{% endif %}
+{% if 'ffmpeg' in casparcg_consumers %}
             <ffmpeg>
                 <path>{{ casparcg_ffmpeg_path }}</path>
                 <args>{{ casparcg_ffmpeg_args }}</args>

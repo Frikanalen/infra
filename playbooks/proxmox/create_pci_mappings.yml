@@ -56,6 +56,36 @@
       loop_control:
         label: "{{ item.id }}"
 
+    # IOMMU groups renumber when a card is added to the host, and Proxmox
+    # then refuses to start the VMs that use the stale mapping. Compare
+    # field by field, since Proxmox may not echo the map in our order.
+    - name: Correct PCI resource mappings that differ from data/hosts.yml
+      ansible.builtin.command: >-
+        pvesh set /cluster/mapping/pci/{{ item.id }}
+        --description {{ item.description | quote }}
+        --map
+        node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},subsystem-id={{ item.subsystem_id }},iommugroup={{ item.iommu_group }}
+      vars:
+        existing: >-
+          {{ (existing_pci_mappings.stdout | from_json)
+             | selectattr('id', 'equalto', item.id) | first | default({}) }}
+        existing_fields: >-
+          {{ dict((existing.map | default([''])) | first | split(',')
+             | select | map('split', '=') | list) }}
+        desired_fields:
+          node: "{{ item.node }}"
+          path: "{{ item.path }}"
+          id: "{{ item.pci_id }}"
+          subsystem-id: "{{ item.subsystem_id }}"
+          iommugroup: "{{ item.iommu_group | string }}"
+      when:
+        - item.id in existing_mapping_ids
+        - existing_fields != desired_fields or existing.description | default('') != item.description
+      changed_when: true
+      loop: "{{ pci_mappings }}"
+      loop_control:
+        label: "{{ item.id }}"
+
     - name: Determine Proxmox nodes with PCI resource mappings
       ansible.builtin.set_fact:
         pci_mapping_nodes: "{{ pci_mappings | map(attribute='node') | unique | list }}"

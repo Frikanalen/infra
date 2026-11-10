@@ -30,13 +30,23 @@ argument_specs:
       external_dns_domain_filter:
         type: str
         required: false
-        default: staging.frikanalen.no
+        default: staging.frikanalen.tv
         description: Domain to manage DNS records for
       external_dns_ingress_class:
         type: str
         required: false
         default: public
         description: Ingress class to watch for DNS records
+      external_dns_sources:
+        type: list
+        elements: str
+        required: false
+        default: ["ingress"]
+        description: >-
+          Resource kinds to watch for hostnames. Add traefik-proxy to also
+          pick up Traefik IngressRoute/IngressRouteTCP/UDP CRDs; those need
+          an explicit external-dns.kubernetes.io/target annotation since
+          IngressRoute has no status.loadBalancer for --default-targets.
       external_dns_default_target:
         type: str
         required: true
@@ -54,7 +64,7 @@ argument_specs:
       external_dns_rfc2136_zone:
         type: str
         required: false
-        default: staging.frikanalen.no
+        default: staging.frikanalen.tv
         description: DNS zone to update
       external_dns_rfc2136_tsig_keyname:
         type: str

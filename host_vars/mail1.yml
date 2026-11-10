@@ -1,0 +1,12 @@
+---
+# The backed-up data disk (data/hosts.yml local_ssd_size, scsi2) goes under
+# Docker, so every mailcow volume -- vmail, MariaDB, Redis, rspamd -- lands on
+# it rather than on the 40G root disk. playbooks/mail.yml mounts it before
+# Docker is installed, so Docker never writes to the root disk's copy of
+# this directory first.
+local_ssd_mount_path: /var/lib/docker
+
+# mail1 is in neither prod nor staging, so it inherits no
+# frikanalen_intern_zone; roles/alloy_journal needs it to reach the prod
+# cluster's Loki (same reasoning as group_vars/caspar_hw.yml).
+frikanalen_intern_zone: intern.frikanalen.tv

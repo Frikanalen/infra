@@ -1,0 +1,30 @@
+---
+- name: Read vtnet1's addresses
+  ansible.builtin.command: ifconfig {{ fw_ext_if }} inet
+  register: ifconfig_current
+  changed_when: false
+  check_mode: false
+
+# As in util_fw_ingress_prod: FreeBSD accepts re-adding an existing address,
+# so look first.
+- name: Add mail IP alias to vtnet1
+  ansible.builtin.command: >
+    ifconfig {{ fw_ext_if }} alias {{ mail_ext_ip }}
+    netmask {{ mail_ext_netmask }}
+  changed_when: true
+  when: ('inet ' ~ mail_ext_ip ~ ' ') not in ifconfig_current.stdout
+
+# alias0 is prod ingress's (roles/util_fw_ingress_prod).
+- name: Ensure mail IP alias persists across reboots
+  ansible.builtin.lineinfile:
+    path: /etc/rc.conf
+    regexp: '^ifconfig_{{ fw_ext_if }}_alias[0-9]+="inet {{ mail_ext_ip }}'
+    line: 'ifconfig_{{ fw_ext_if }}_alias1="inet {{ mail_ext_ip }} netmask {{ mail_ext_netmask }}"'
+    create: false
+
+- name: Deploy mail server NAT rules
+  ansible.builtin.template:
+    src: mail.conf.j2
+    dest: /etc/pf.conf.d/mail.conf
+    mode: "0600"
+  notify: Reload pf

@@ -22,6 +22,8 @@
     label: "{{ item.path }}"
   register: nfs_client_current_sources
   changed_when: false
+  # Read-only; without it --check reports every mount as about to move.
+  check_mode: false
   failed_when: false
   become: true
 

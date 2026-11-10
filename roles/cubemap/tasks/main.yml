@@ -1,0 +1,26 @@
+---
+- name: Install cubemap
+  ansible.builtin.apt:
+    name: cubemap
+    state: present
+  become: true
+
+- name: Configure cubemap
+  ansible.builtin.template:
+    src: cubemap.config.j2
+    dest: /etc/cubemap.config
+    owner: root
+    group: root
+    mode: "0644"
+    # Refuse to install a config cubemap itself rejects; a bad one would
+    # otherwise only surface as a failed reload.
+    validate: /usr/bin/cubemap --test-config %s
+  become: true
+  notify: Reload cubemap
+
+- name: Ensure cubemap is started and enabled
+  ansible.builtin.service:
+    name: cubemap
+    state: started
+    enabled: true
+  become: true

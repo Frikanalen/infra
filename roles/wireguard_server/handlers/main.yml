@@ -1,0 +1,11 @@
+---
+- name: Reload pf
+  become: true
+  ansible.builtin.command: pfctl -f /etc/pf.conf
+  changed_when: true
+
+- name: Restart wireguard
+  become: true
+  ansible.builtin.service:
+    name: wireguard
+    state: restarted

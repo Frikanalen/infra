@@ -7,18 +7,40 @@ frikanalen_dyndns_server: "192.168.3.2"
 # Internal-only zone for VPN-reachable ingresses on this cluster -- see
 # roles/dns_server_zones_dynamic and the "ingress" play in
 # playbooks/k8s_cluster_prod.yml for how external-dns/Traefik pick it up.
-frikanalen_intern_zone: intern.frikanalen.no
+frikanalen_intern_zone: intern.frikanalen.tv
 frikanalen_intern_tsig_keyname: prod-cluster-update-key
 frikanalen_intern_owner_id: prod-internal-external-dns
 frikanalen_intern_ingress_class: internal
 
-frikanalen_domain: frikanalen.no
+# Prometheus Operator + Prometheus + Alertmanager + Grafana via
+# roles/kube_prometheus_stack, exposed only on frikanalen_intern_zone -- see
+# playbooks/k8s_platform_prod.yml. Also turns on the ServiceMonitors that
+# traefik/argocd/cnpg/metallb would otherwise skip -- see data/apps.yml and
+# each role's tasks.
+k8s_monitoring_enabled: true
+kube_prometheus_stack_environment: production
+
+frikanalen_domain: frikanalen.tv
 frikanalen_scheme: https
 
-caspar_host: "192.168.3.35"
+# caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
+caspar_host: "192.168.3.100"
 
-django_db_host: django-postgres
+# Where Django's DATABASE_URL points (roles/django_db_secret). The Kubegres
+# resource the django-api chart still renders keeps its own name below, so
+# switching this to pgcluster-rw moves Django to CloudNativePG without
+# touching Kubegres.
+django_db_host: pgcluster-rw
+django_kubegres_name: django-postgres
 django_db_secret_name: django-postgres-passwords
+
+# Dedicated contribution endpoint; SRT shares the site's public IP via PF.
+mediamtx_loadbalancer_ip: "{{ host_config['ingress-prod-contribution'].ip_cidr.split('/')[0] }}"
+# Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
+# On in prod since 2026-10-31.
+mediamtx_preview_enabled: true
+# About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
+mediamtx_write_queue_size: 4096
 
 playout_media_path: /mnt/media/
 
@@ -31,6 +53,42 @@ ingest_archive_dir: /archive/media
 # /archive/media is already group-writable by fkupload, so membership is all
 # the ingest account needs. Deliberately not set for staging.
 ingest_archive_group: fkupload
+# Ingest v1 has no write access of its own: it asks fk-archive on file01
+# (roles/fk_archive_utils, profile "prod" in group_vars/storage.yml) to make
+# each change, as staging has done since September.
+ingest_archive_fk_profile: prod
+
+# Workers must see a published original at once, so the archive mount keeps no
+# attribute, directory or negative-lookup cache. See group_vars/staging.yml.
+ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
+
+# The CPU ladder was OOM-killed at the chart's 4Gi on staging, 14% into a
+# 1080p encode.
+ingest_cpu_worker_memory_limit: 16Gi
+
+# One ingest worker encoding on the Arc A310 on prod-kube-4 through Quick Sync,
+# beside the main CPU pool. Needs the device plugin (roles/intel_gpu_plugin)
+# and the host preparation (roles/intel_gpu_node); the worker's own encoder
+# self-test refuses to start it if either is missing. If the plugin reports
+# gpu.intel.com/xe rather than i915, the resource names below have to follow.
+ingest_worker_pools:
+  qsv:
+    encoder: qsv
+    replicaCount: 1
+    nodeSelector:
+      frikanalen.tv/gpu-intel-arc-a310: "true"
+    # One node, one card: spreading is meaningless and would only keep the
+    # worker Pending.
+    topologySpread:
+      enabled: false
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+        gpu.intel.com/i915: 1
+      limits:
+        memory: 4Gi
+        gpu.intel.com/i915: 1
 
 # tusd runs alongside ingest in the same pod, served at /upload on
 # frikanalen_domain. Django's FK_UPLOAD_URL must point there.
@@ -38,26 +96,52 @@ ingest_uploads_size: 500Gi
 
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
-# Prod's live feed is already served as MPEG-TS over HTTP by simula
-# (192.168.3.1:9094/frikanalen.ts), so the stream app pulls it directly
-# instead of running the in-cluster cubemap UDP reflector.
-argocd_stream_cubemap_enabled: false
+# The front-page stream takes caspar1's H.264 mezzanine (host_vars/caspar1.yml)
+# straight off multicast, as staging does with caspar-sw1: the in-cluster
+# cubemap joins 239.1.1.51 and ffmpeg re-encodes from it. This replaces the
+# old path through the SDI encoder appliance and simula's cubemap
+# (158.36.191.230:5565). An earlier multicast-joined cubemap here dropped
+# out of the switch's IGMP snooping table; staging's has held since
+# 2026-10-31, but watch for the same symptom (input goes stale after a few
+# minutes) after deploying this. Joining needs the node's network
+# namespace: Calico doesn't carry multicast into pods.
+argocd_stream_cubemap_enabled: true
+argocd_stream_cubemap_host_network: true
+argocd_stream_cubemap_multicast_group: "239.1.1.51"
+# Unused with a multicast group, but data/apps.yml requires it.
 argocd_stream_cubemap_ip: "192.168.3.105"
+# With hostNetwork, cubemap's multicast socket gets the node's default UDP
+# receive buffer (212992 bytes), which overflowed at ~20 Mbit/s: UDP
+# RcvbufErrors lined up with ffmpeg's "corrupt input packet" about once a
+# minute. Set on every kubeprod node by playbooks/k8s_cluster_prod.yml
+# (--tags cubemap-sysctl), since cubemap moves when its node is drained.
+argocd_stream_cubemap_node_sysctls:
+  net.core.rmem_max: 33554432
+  net.core.rmem_default: 16777216
+# Decoding caspar1's 20 Mbit/s 4:2:2 720p50 mezzanine and encoding both HLS
+# renditions takes more than the chart's 6-core limit: at 6 the transcoder
+# was throttled in ~93% of CFS periods, fell behind cubemap, and cubemap
+# dropped data under it ("corrupt input packet"). prod-kube-3 has 24 cores.
+argocd_stream_ffmpeg_cpu_request: "6"
+argocd_stream_ffmpeg_cpu_limit: "12"
 
 # Every app the cluster runs must have a key here. The roles no longer carry
 # a fallback: a missing key is now an undefined-variable error rather than a
 # silent deploy of whatever the fallback happened to name.
 app_versions:
-  graphics: staging
-  playout: v2.0.1
-  frontend: v2.0.4
-  django: v0.1.3
-  stream: main
-  ingest: main
+  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
+  mediamtx: main
+  graphics: v1.3.1
+  playout: v2.3.0
+  frontend: v3.4.1
+  django: v2.1.0
+  stream: v0.4.0
+  # v1.1.0 = v1.0.0 (Frikanalen/ingest#26) plus the frikanalen.tv move.
+  ingest: v1.1.0
 
 helm_chart_versions:
-  traefik: "38.0.2"
-  argocd: "9.1.7"
+  traefik: "41.6.0"
+  argocd: "10.9.2"
   argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
@@ -65,3 +149,10 @@ helm_chart_versions:
   # CloudNativePG Helm chart version, not the operator's app version (chart
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"
+  # Barman Cloud plugin chart (app v0.15.1); backups for pgcluster.
+  cnpg_barman_plugin: "0.8.1"
+  # Only for the Barman Cloud plugin; see roles/cert_manager.
+  cert_manager: "v1.19.1"
+  kube_prometheus_stack: "91.4.1"
+  loki: "7.3.0"
+  alloy: "1.12.1"

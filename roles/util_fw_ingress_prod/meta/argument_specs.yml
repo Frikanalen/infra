@@ -17,16 +17,6 @@ argument_specs:
         description: >-
           Internal address of the cluster's web ingress -- Traefik's
           LoadBalancer IP (traefik_loadbalancer_ip in k8s_platform_prod.yml).
-      prod_media_ext_ip:
-        type: str
-        required: false
-        default: 158.36.191.231
-        description: Public address the media server answers on.
-      prod_media_ingress_int_ip:
-        type: str
-        required: false
-        default: 192.168.3.105
-        description: Internal address of the media server's ingress.
       prod_ingress_ext_netmask:
         type: str
         required: false

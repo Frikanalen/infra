@@ -16,7 +16,6 @@
     create_namespace: true
     chart_version: "{{ argocd_chart_version | default(omit) }}"
     values: "{{ argocd_chart_values }}"
-    update_repo_cache: true
     wait: true
     kubeconfig: "{{ k8s_kubeconfig }}"
     state: present

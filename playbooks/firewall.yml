@@ -8,8 +8,36 @@
     dev_ingress_live_int_ip: "192.168.3.91"
     pbx_ext_ip: "158.36.191.229"
     pbx_int_ip: "192.168.3.3"
+    # Every anchor pf.conf loads, in evaluation order; each is
+    # /etc/pf.conf.d/<name>.conf, written by the role of the same purpose
+    # below. nat: true also hooks the anchor into the rdr/nat stage. A role
+    # added here needs its anchor listed, and vice versa: pfctl -n refuses
+    # an anchor whose file does not exist.
+    util_fw_anchors:
+      - {name: wireguard}
+      - {name: pbx, nat: true}
+      - {name: ingress_dev, nat: true}
+      - {name: ingress_prod, nat: true}
+      - {name: mail, nat: true, binat: true}
+  # Tags re-apply one piece without the rest. pf.conf itself is rendered in
+  # post_tasks on every run, whatever the tags, so it always lists the full
+  # set of anchors -- a partial run can no longer drop the others.
   roles:
-    - util_fw
-    - util_fw_ingress_dev
-    - util_fw_pbx
-    - util_fw_ingress_prod
+    - role: util_fw
+      tags: [firewall, base]
+    - role: util_fw_ingress_dev
+      tags: [firewall, dev]
+    - role: util_fw_pbx
+      tags: [firewall, pbx]
+    - role: util_fw_ingress_prod
+      tags: [firewall, prod]
+    - role: util_fw_mail
+      tags: [firewall, mail]
+    - role: wireguard_server
+      tags: [firewall, wireguard]
+  post_tasks:
+    - name: Render pf.conf with every anchor
+      ansible.builtin.import_role:
+        name: util_fw
+        tasks_from: pf_conf
+      tags: [always]

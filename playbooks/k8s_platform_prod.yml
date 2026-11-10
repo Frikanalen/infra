@@ -5,11 +5,8 @@
 #   ansible-playbook playbooks/k8s_platform_prod.yml
 #   ansible-playbook playbooks/k8s_platform_prod.yml --tags traefik
 #
-# Prod runs no kube-prometheus-stack, so k8s_monitoring_enabled stays false
-# here and the ServiceMonitors these roles would otherwise render are
-# skipped -- see data/cluster.yml. Prod is also some way behind this file:
-# advancing it a component at a time with --tags is a good deal calmer than
-# a single run of everything.
+# Prod is some way behind this file: advancing it a component at a time
+# with --tags is a good deal calmer than a single run of everything.
 
 - name: Install platform services on the kubeprod cluster
   hosts: kubeprod_admin
@@ -17,25 +14,82 @@
   vars:
     metallb_ingress_ip: "192.168.3.104/30"
     traefik_loadbalancer_ip: "192.168.3.104"
+    traefik_internal_loadbalancer_ip: "{{ host_config['ingress-prod-internal'].ip_cidr.split('/')[0] }}"
     traefik_public_ip: "158.36.191.231"
     traefik_acme_challenge: http
-    # frikanalen.no stays on HTTP-01 above (unchanged). intern.frikanalen.no
-    # is internal-only, so it needs its own DNS-01 resolver -- see the
-    # conflict assertion in roles/traefik/tasks/main.yml for why this can't
-    # just flip traefik_acme_challenge to dns instead.
-    traefik_internal_acme_enabled: true
-    traefik_internal_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
-    traefik_internal_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+    # The public release uses HTTP-01; the internal release uses DNS-01.
+  pre_tasks:
+    - name: Refresh local Helm repository caches
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      become: true
+      run_once: true
+      tags: [always]
+
+    - name: Keep public and internal ingress endpoints distinct
+      ansible.builtin.assert:
+        that:
+          - traefik_internal_loadbalancer_ip != traefik_loadbalancer_ip
+          - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
+      tags: [always]
   roles:
+    # Prometheus Operator CRDs must exist before any role below that
+    # conditionally creates a ServiceMonitor (metallb, traefik, argocd,
+    # cnpg -- all gated on k8s_monitoring_enabled), so this runs first.
+    # Its own Ingress objects reference frikanalen_intern_ingress_class/
+    # frikanalen_intern_zone from group_vars rather than anything the
+    # ingress/DNS roles below produce, so there's no dependency the other
+    # way -- Grafana/Prometheus/Alertmanager just aren't reachable until
+    # traefik and external-dns are up.
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack, monitoring]
+
+    # Loki + Alloy for log aggregation. Runs after kube_prometheus_stack so
+    # its Grafana datasource ConfigMap lands in an already-existing
+    # namespace and Grafana's sidecar is up to pick it up.
+    - role: loki
+      tags: [loki, monitoring, logging]
+
+    - role: grafana_alloy
+      tags: [grafana_alloy, monitoring, logging]
+
     - role: metallb
       tags: [metallb, ingress]
 
+    # Issues Traefik's certificates (roles/traefik, traefik_tls_mode) and the
+    # Barman Cloud plugin's mTLS certificates (roles/cnpg), so it goes before
+    # both.
+    - role: cert_manager
+      tags: [cert_manager, traefik, ingress, cnpg, database]
+
     - role: traefik
       tags: [traefik, ingress]
+      vars:
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
 
-    # external-dns for intern.frikanalen.no: watches ingressClassName:
+    - role: traefik
+      tags: [traefik, ingress, internal_ingress]
+      vars:
+        traefik_release_name: traefik-internal
+        traefik_namespace: traefik-internal
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["*.{{ frikanalen_intern_zone }}"]
+        traefik_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
+        traefik_manage_ingress_class: false
+        traefik_manage_www_redirect: false
+        traefik_enable_crd_provider: true
+        traefik_skip_crds: true
+        traefik_dashboard_ingressroute_enabled: true
+        traefik_dashboard_host: "traefik.{{ frikanalen_intern_zone }}"
+        traefik_acme_challenge: dns
+        traefik_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
+        traefik_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
+
+    # external-dns for intern.frikanalen.tv: watches ingressClassName:
     # internal and targets the cluster's internal ingress IP. There is
-    # deliberately no "public" external-dns instance here -- frikanalen.no
+    # deliberately no "public" external-dns instance here -- frikanalen.tv
     # is a static record managed outside this repo (see isp7/isp8.imc.as).
     - role: external_dns
       tags: [external_dns, dns, internal_dns]
@@ -43,12 +97,19 @@
         external_dns_release_name: external-dns-internal
         external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
         external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
-        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_default_target: "{{ traefik_internal_loadbalancer_ip }}"
         external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
         external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         external_dns_rfc2136_tsig_secret: "{{ vault_prod_dns_tsig_secret }}"
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
+        external_dns_sources: [ingress, traefik-proxy]
+
+    # Advertises the Arc A310 on prod-kube-4 as gpu.intel.com/i915 (or /xe),
+    # which the ingest QSV worker pool requests. Needs the host prepared by
+    # playbooks/k8s_cluster_prod.yml --tags gpu first.
+    - role: intel_gpu_plugin
+      tags: [intel_gpu_plugin, gpu]
 
     - role: kubegres
       tags: [kubegres, database]

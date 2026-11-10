@@ -23,12 +23,14 @@ all:
         prod-kube-1:
         prod-kube-2:
         prod-kube-3:
+        prod-kube-4:
 
     kubedev:
       hosts:
         dev-kube-1:
         dev-kube-2:
         dev-kube-3:
+        dev-kube-4:
 
     # The single node each cluster is driven from: it holds the kubeconfig,
     # and the platform and application playbooks run their kubernetes.core
@@ -58,10 +60,7 @@ all:
 
     tx:
       hosts:
-        tx1:
-        tx2:
         tx3:
-        tx4:
 
     proxmox:
       hosts:
@@ -84,6 +83,11 @@ all:
       hosts:
         file01:
 
+    # mailcow for frikanalen.tv; see playbooks/mail.yml.
+    mail:
+      hosts:
+        mail1:
+
     # Hosts that get node_exporter installed on them by roles/node_exporter and
     # scraped by roles/node_exporter_scrape. The Kubernetes nodes are absent on
     # purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
@@ -94,9 +98,21 @@ all:
       children:
         proxmox:
         storage:
+        mail:
+
+    # Hosts that get roles/alloy_journal: a native systemd Alloy agent
+    # shipping the systemd journal to Loki's internal-only ingress. Not
+    # folded into node_exporter_hosts -- that group is metrics-scrape
+    # targets for the dev cluster's Prometheus specifically, whereas this
+    # is a push path any cluster's Loki can receive.
+    alloy_journal_hosts:
+      children:
+        caspar:
+        mail:
 
     qemu_guest:
       children:
         kubeprod:
         kubedev:
         caspar:
+        mail:

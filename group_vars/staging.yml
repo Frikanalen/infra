@@ -4,24 +4,37 @@ frikanalen_app_namespace: default
 frikanalen_public_ingress_class: public
 frikanalen_dyndns_server: "192.168.3.2"
 frikanalen_dyndns_tsig_keyname: staging-update-key
-frikanalen_dyndns_zone: staging.frikanalen.no
+frikanalen_dyndns_zone: staging.frikanalen.tv
 frikanalen_dyndns_owner_id: staging-external-dns
 
 # Internal-only zone for VPN-reachable ingresses on this cluster. Reuses
 # staging-update-key above rather than a separate key -- same cluster, same
-# trust boundary as staging.frikanalen.no already uses.
-frikanalen_intern_zone: intern.dev.frikanalen.no
+# trust boundary as staging.frikanalen.tv already uses.
+frikanalen_intern_zone: intern.dev.frikanalen.tv
 frikanalen_intern_tsig_keyname: staging-update-key
 frikanalen_intern_owner_id: dev-internal-external-dns
 frikanalen_intern_ingress_class: internal
 
-frikanalen_domain: staging.frikanalen.no
+frikanalen_domain: staging.frikanalen.tv
 frikanalen_scheme: https
 
 caspar_host: "192.168.3.101"
 
-django_db_host: django-postgres
+# Where Django's DATABASE_URL points (roles/django_db_secret). The Kubegres
+# resource the django-api chart still renders keeps its own name below, so
+# switching this to pgcluster-rw moves Django to CloudNativePG without
+# touching Kubegres.
+django_db_host: pgcluster-rw
+django_kubegres_name: django-postgres
 django_db_secret_name: django-postgres-passwords
+
+# Dedicated contribution endpoint; SRT shares the site's public IP via PF.
+mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
+# Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
+# Off in prod until rehearsed here.
+mediamtx_preview_enabled: true
+# About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
+mediamtx_write_queue_size: 4096
 
 playout_media_path: /mnt/media/
 
@@ -31,17 +44,38 @@ playout_media_path: /mnt/media/
 ingest_archive_host: file01
 ingest_archive_user: ingest-staging
 ingest_archive_dir: /archive/media-staging
+# Staging runs ingest main, which writes through fk-archive rather than over
+# SFTP; the directory belongs to the profile's manager, not to this account.
+ingest_archive_fk_profile: staging
 
 # tusd runs alongside ingest in the same pod, served at /upload on
 # frikanalen_domain. Django's FK_UPLOAD_URL must point there.
 ingest_uploads_size: 100Gi
 
+# Workers must see a published original at once, so the archive mount keeps no
+# attribute, directory or negative-lookup cache. The default ~30 s directory
+# cache let a worker claim a job before the file it had just been given showed
+# up. Reads are a few large sequential fetches, so the lost caching costs little.
+ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
+
+# The CPU ladder was OOM-killed at the chart's 4Gi, 14% into a 1080p encode.
+ingest_cpu_worker_memory_limit: 16Gi
+
+# No QSV ingest pool: the Arc A310 moved from dev-kube-4 to prod-kube-4, and
+# a pool requesting gpu.intel.com/i915 here would sit Pending forever.
+
 argocd_stream_cubemap_ip: "192.168.3.91"
+# Cubemap joins caspar-sw1's program-out group (host_vars/caspar-sw1.yml)
+# instead of listening unicast on the LoadBalancer IP above. Joining needs
+# the node's network namespace: Calico doesn't carry multicast into pods.
+argocd_stream_cubemap_host_network: true
+argocd_stream_cubemap_multicast_group: "239.1.1.50"
 
 # This is the cluster kube_prometheus_stack runs on, so the ServiceMonitors,
 # PodMonitors and Grafana dashboards the other roles ship are wanted here.
 # See data/cluster.yml for what this gates and why prod leaves it false.
 k8s_monitoring_enabled: true
+kube_prometheus_stack_environment: development
 
 # Auto-roll staging deployments when a new image is pushed to the tracked
 # floating tag (see argocd_image_updater role and each argocd_* app role).
@@ -49,6 +83,8 @@ argocd_image_updater_enabled: true
 
 # Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
+  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
+  mediamtx: main
   graphics: main
   playout: main
   frontend: main
@@ -57,8 +93,8 @@ app_versions:
   ingest: main
 
 helm_chart_versions:
-  traefik: "38.0.2"
-  argocd: "9.1.7"
+  traefik: "41.6.0"
+  argocd: "10.9.2"
   argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
@@ -66,4 +102,10 @@ helm_chart_versions:
   # CloudNativePG Helm chart version, not the operator's app version (chart
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"
-  kube_prometheus_stack: "88.5.3"
+  # Barman Cloud plugin chart (app v0.15.1); backups for pgcluster.
+  cnpg_barman_plugin: "0.8.1"
+  # Only for the Barman Cloud plugin; see roles/cert_manager.
+  cert_manager: "v1.19.1"
+  kube_prometheus_stack: "91.4.1"
+  loki: "7.3.0"
+  alloy: "1.12.1"

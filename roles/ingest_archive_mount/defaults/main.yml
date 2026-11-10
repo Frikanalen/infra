@@ -1,0 +1,11 @@
+---
+ingest_archive_mount_namespace: "{{ frikanalen_app_namespace }}"
+
+# Name of the PersistentVolume and PersistentVolumeClaim. data/apps.yml hands
+# the claim's name to the ingest chart as archive.mount.existingClaim.
+ingest_archive_mount_claim: ingest-archive
+
+# NFS client options for the read-only archive mount. An inline `nfs:` volume
+# in a pod cannot carry any, so setting this swaps it for a PV/PVC that can.
+# Empty keeps the chart's inline mount and the client's default caching.
+ingest_archive_nfs_mount_options: []

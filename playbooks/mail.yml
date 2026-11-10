@@ -1,0 +1,19 @@
+---
+#
+# Provisioning for the mail server (mail1): mailcow-dockerized for
+# frikanalen.tv. Run after Terraform has created the VM and playbooks/site.yml
+# has done the common setup:
+#
+#   ansible-playbook playbooks/mail.yml
+#
+# The public side -- 158.36.191.253 mapped 1:1 onto mail1 -- is
+# roles/util_fw_mail, applied by playbooks/firewall.yml --tags mail. Backups
+# are taken at the Proxmox layer by playbooks/proxmox/backup_jobs.yml.
+#
+- name: Provision the mailcow mail server
+  hosts: mail
+  become: true
+  gather_facts: true
+  roles:
+    - local_ssd_mount
+    - mailcow

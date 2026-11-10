@@ -1,0 +1,47 @@
+---
+- name: Ensure /etc/apt/keyrings exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Add the Grafana apt signing key
+  ansible.builtin.get_url:
+    url: "{{ alloy_journal_gpg_key_url }}"
+    dest: /etc/apt/keyrings/grafana.asc
+    mode: '0644'
+  become: true
+
+- name: Add the Grafana apt repository
+  ansible.builtin.apt_repository:
+    repo: "{{ alloy_journal_apt_repo }}"
+    filename: grafana
+    state: present
+  become: true
+
+- name: Install Alloy
+  ansible.builtin.apt:
+    name: alloy
+    state: present
+    update_cache: true
+  become: true
+
+- name: Configure Alloy to ship the systemd journal to Loki
+  # The package's postinst puts the alloy user in the systemd-journal group
+  # and chowns /etc/alloy to root:alloy, mode 0770 -- this file follows that.
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: root
+    group: alloy
+    mode: '0640'
+  become: true
+  notify: Restart alloy
+
+- name: Ensure Alloy is started and enabled
+  ansible.builtin.service:
+    name: alloy
+    state: started
+    enabled: true
+  become: true

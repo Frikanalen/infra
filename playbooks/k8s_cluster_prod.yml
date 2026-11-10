@@ -6,7 +6,8 @@
 #
 #   ansible-playbook playbooks/k8s_cluster_prod.yml
 #
-# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs.
+# Tags: bootstrap (everything here), plus seed / join / kubectl / helm / nfs / gpu-labels / gpu /
+# cubemap-sysctl.
 
 - name: Seed the kubeprod cluster
   hosts: kubeprod_admin
@@ -26,6 +27,54 @@
   roles:
     - microk8s_cluster_join
 
+- name: Label prod-kube-4 GPU capabilities
+  hosts: kubeprod_admin
+  become: true
+  gather_facts: false
+  tags: [bootstrap, gpu-labels]
+  vars:
+    gpu_node_name: prod-kube-4
+    gpu_node_labels:
+      frikanalen.tv/gpu-intel-arc-a310: "true"
+  tasks:
+    - name: Read GPU node labels
+      ansible.builtin.command:
+        argv:
+          - microk8s
+          - kubectl
+          - get
+          - node
+          - "{{ gpu_node_name }}"
+          - -o
+          - json
+      register: gpu_node
+      changed_when: false
+
+    - name: Apply missing GPU capability labels
+      ansible.builtin.command:
+        argv:
+          - microk8s
+          - kubectl
+          - label
+          - node
+          - "{{ gpu_node_name }}"
+          - "{{ item.key }}={{ item.value }}"
+          - --overwrite
+      vars:
+        current_gpu_node_labels: "{{ (gpu_node.stdout | from_json).metadata.labels | default({}) }}"
+      loop: "{{ gpu_node_labels | dict2items }}"
+      when: current_gpu_node_labels.get(item.key) != item.value
+      changed_when: true
+
+# The A310's host half: driver, firmware and device ownership. The cluster
+# half, Intel's device plugin, is in playbooks/k8s_platform_prod.yml.
+- name: Prepare prod-kube-4's Intel GPU for pods
+  hosts: prod-kube-4
+  become: true
+  tags: [bootstrap, gpu]
+  roles:
+    - role: intel_gpu_node
+
 - name: Install node prerequisites across kubeprod
   hosts: kubeprod
   become: true
@@ -41,3 +90,20 @@
     # mount.nfs present on every node, not a host-level fstab entry.
     - role: nfs_client
       tags: [nfs]
+
+# cubemap's hostNetwork pod can land on any node (it moves when its node is
+# drained), so every node gets the larger UDP receive buffers it needs. See
+# argocd_stream_cubemap_node_sysctls in group_vars/prod.yml.
+- name: Size UDP receive buffers for cubemap's multicast ingest
+  hosts: kubeprod
+  become: true
+  gather_facts: false
+  tags: [bootstrap, cubemap-sysctl]
+  tasks:
+    - name: Set and persist cubemap's UDP receive buffer sysctls
+      ansible.posix.sysctl:
+        name: "{{ item.key }}"
+        value: "{{ item.value }}"
+        sysctl_file: /etc/sysctl.d/90-cubemap-rmem.conf
+        sysctl_set: true
+      loop: "{{ argocd_stream_cubemap_node_sysctls | dict2items }}"

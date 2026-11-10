@@ -1,10 +1,10 @@
 ---
-# caspar_sw hosts have no GPU or Decklink card passed through (see
-# roles/mesa_driver and playbooks/caspar.yml): CasparCG renders with Mesa's
-# llvmpipe software rasterizer and streams output over UDP instead of SDI,
+# caspar_sw hosts have no Decklink card passed through (see
+# playbooks/caspar.yml): CasparCG renders on a GPU if casparcg_gpu says so,
+# else Mesa's llvmpipe, and streams output over UDP instead of SDI,
 # using the casparcg role's casparcg_ffmpeg_path/casparcg_ffmpeg_args
 # defaults.
-casparcg_consumer_type: "ffmpeg"
+casparcg_consumers: ["ffmpeg"]
 
 # caspar_sw1 is the staging playout host, so it mounts the weekly-reset
 # clone of the archive (see roles/media_staging_reset and
@@ -14,3 +14,9 @@ casparcg_consumer_type: "ffmpeg"
 nfs_client_mounts:
   - src: "file01:/archive/media-staging"
     path: /mnt/media
+
+# caspar-sw1 is not a kubedev node, so it does not inherit
+# frikanalen_intern_zone from group_vars/staging.yml -- roles/alloy_journal
+# needs it directly to reach the dev cluster's Loki (see
+# group_vars/staging.yml for the value this must match).
+frikanalen_intern_zone: intern.dev.frikanalen.tv

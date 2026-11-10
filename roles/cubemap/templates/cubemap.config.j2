@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+num_servers 1
+
+{% for addr in cubemap_listen %}
+listen {{ addr }}
+{% endfor %}
+
+stats_file /var/lib/cubemap/cubemap.stats
+stats_interval 60
+
+input_stats_file /var/lib/cubemap/cubemap-input.stats
+input_stats_interval 60
+
+access_log /var/log/cubemap/access.log
+
+error_log type=file filename=/var/log/cubemap/cubemap.log
+error_log type=syslog
+error_log type=console
+
+{% for s in cubemap_streams %}
+stream {{ s.path }} src={{ s.src }}
+{% endfor %}
+
+gen204 /ping allow_origin=*

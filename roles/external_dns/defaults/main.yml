@@ -20,6 +20,14 @@ external_dns_domain_filter: "{{ frikanalen_dyndns_zone }}"
 # Ingress class to watch
 external_dns_ingress_class: "{{ frikanalen_public_ingress_class }}"
 
+# Resource kinds to watch for hostnames. Add traefik-proxy to also pick up
+# Traefik IngressRoute/IngressRouteTCP/UDP CRDs (e.g. the dashboard
+# IngressRoute) -- those need an explicit external-dns.kubernetes.io/target
+# annotation since IngressRoute has no status.loadBalancer for
+# --default-targets to fall back on.
+external_dns_sources:
+  - ingress
+
 # RFC2136 configuration
 external_dns_rfc2136_host: "{{ frikanalen_dyndns_server }}"
 external_dns_rfc2136_port: 53

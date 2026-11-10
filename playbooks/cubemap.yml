@@ -1,0 +1,13 @@
+---
+#
+# Cubemap on simula: the network appliance pushes MPEG-TS over unicast UDP to
+# simula's public address (158.36.191.230:5565) and cubemap relays it over
+# HTTP, so there is no multicast involved.
+#
+- name: Deploy cubemap
+  hosts: simula_group
+  become: true
+  gather_facts: true
+  roles:
+    - role: cubemap
+      tags: [cubemap]

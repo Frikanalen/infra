@@ -7,6 +7,11 @@ argument_specs:
         type: str
         required: true
         description: IP address range for the ingress pool (e.g., '192.168.3.90/32')
+      metallb_internal_ingress_ip:
+        type: str
+        required: false
+        default: ""
+        description: Optional additional IP address or range for the internal ingress
       metallb_namespace:
         type: str
         required: false

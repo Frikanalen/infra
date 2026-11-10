@@ -20,3 +20,15 @@ kube_prometheus_stack_cert_resolver: letsencrypt
 kube_prometheus_stack_grafana_hostname: "grafana.{{ frikanalen_intern_zone }}"
 kube_prometheus_stack_prometheus_hostname: "prometheus.{{ frikanalen_intern_zone }}"
 kube_prometheus_stack_alertmanager_hostname: "alertmanager.{{ frikanalen_intern_zone }}"
+
+# Telegram is Alertmanager's native mobile-chat receiver. Keep both values in
+# the Ansible vault; the role copies them to a Kubernetes Secret and mounts the
+# individual files read by Alertmanager, so neither credential is rendered
+# into Helm's release values/config Secret.
+kube_prometheus_stack_telegram_secret_name: alertmanager-telegram
+kube_prometheus_stack_telegram_bot_token: "{{ vault_alertmanager_telegram_bot_token | default('') }}"
+kube_prometheus_stack_telegram_chat_id: "{{ vault_alertmanager_telegram_chat_id | default('') }}"
+
+# Added to every alert by Prometheus, making alerts from the two clusters easy
+# to distinguish when they share a Telegram channel.
+kube_prometheus_stack_environment: "{{ inventory_hostname }}"

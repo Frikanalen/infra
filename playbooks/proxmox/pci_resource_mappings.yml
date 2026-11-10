@@ -1,0 +1,105 @@
+---
+- name: Ensure Proxmox PCI resource mappings
+  hosts: proxmox
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Read current cluster PCI mappings
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - get
+          - /cluster/mapping/pci
+          - --output-format
+          - json
+      register: current_pci_mappings
+      changed_when: false
+      run_once: true
+
+    - name: Create missing PCI mappings
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - create
+          - /cluster/mapping/pci
+          - --id
+          - "{{ item.id }}"
+          - --description
+          - "{{ item.description }}"
+          - --map
+          - "{{ desired_map }}"
+      vars:
+        desired_map: >-
+          node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
+      loop: "{{ proxmox_pci_mappings }}"
+      when: >-
+        item.id not in (current_pci_mappings.stdout | from_json | map(attribute='id') | list)
+      changed_when: true
+      run_once: true
+
+    - name: Update PCI mappings that differ from desired state
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/cluster/mapping/pci/{{ item.id }}"
+          - --description
+          - "{{ item.description }}"
+          - --map
+          - "{{ desired_map }}"
+      vars:
+        existing_mapping: >-
+          {{ (current_pci_mappings.stdout | from_json | selectattr('id', 'equalto', item.id) | list | first) | default({}) }}
+        desired_map: >-
+          node={{ item.node }},path={{ item.path }},id={{ item.pci_id }},iommugroup={{ item.iommugroup }},subsystem-id={{ item.subsystem_id }}
+      loop: "{{ proxmox_pci_mappings }}"
+      when:
+        - existing_mapping | length > 0
+        - >-
+          existing_mapping.description | default('') != item.description or existing_mapping.map | default([]) != [desired_map]
+      changed_when: true
+      run_once: true
+
+    # dev-kube-4 used to hold both GPUs. The Tesla P4 went to caspar-sw1
+    # and the Arc A310 to prod-kube-4, both attached by Terraform through
+    # data/hosts.yml's pci_mappings. This strips whatever is left on
+    # dev-kube-4 so the two VMs never both claim the A310. Takes effect at
+    # dev-kube-4's next power cycle, and prod-kube-4 cannot start with the
+    # card until then.
+    - name: Read dev-kube-4 configuration
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - get
+          - "/nodes/{{ proxmox_former_gpu_vm.node }}/qemu/{{ proxmox_former_gpu_vm.vmid }}/config"
+          - --output-format
+          - json
+      register: former_gpu_vm_config
+      changed_when: false
+      run_once: true
+
+    - name: Reset dev-kube-4's tags now that it has no GPU
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/nodes/{{ proxmox_former_gpu_vm.node }}/qemu/{{ proxmox_former_gpu_vm.vmid }}/config"
+          - --tags
+          - "{{ proxmox_former_gpu_vm.tags }}"
+      when: (former_gpu_vm_config.stdout | from_json).tags | default('') != proxmox_former_gpu_vm.tags
+      changed_when: true
+      run_once: true
+
+    - name: Remove GPUs from dev-kube-4
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/nodes/{{ proxmox_former_gpu_vm.node }}/qemu/{{ proxmox_former_gpu_vm.vmid }}/config"
+          - --delete
+          - "{{ item }}"
+      loop: [hostpci0, hostpci1]
+      when: item in (former_gpu_vm_config.stdout | from_json)
+      changed_when: true
+      run_once: true

@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+# WireGuard road-warrior VPN
+
+wg_if = "{{ wireguard_interface }}"
+wg_net = "{{ wireguard_client_net }}"
+lan_net = "{{ fw_lan_net }}"
+ext_if = "{{ fw_ext_if }}"
+
+# Handshake and data traffic arriving on the WAN side
+pass in quick on $ext_if inet proto udp to {{ wireguard_listen_ip }} port {{ wireguard_listen_port }} keep state
+
+# Clients reach the internal network only -- not the internet, and not
+# through this rule alone: nat on $ext_if in roles/util_fw only translates
+# lan_net, so wg_net traffic aimed anywhere but lan_net has no route out.
+pass in quick on $wg_if from $wg_net to $lan_net keep state

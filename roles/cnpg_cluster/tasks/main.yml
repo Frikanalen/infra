@@ -24,9 +24,35 @@
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"
 
+- name: Create backup object store credentials
+  when: cnpg_cluster_backup_enabled
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'backup-s3-secret.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Define the backup ObjectStore
+  when: cnpg_cluster_backup_enabled
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'object-store.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
 - name: Deploy CloudNativePG Cluster
+  # After the ObjectStore it archives WAL to.
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'cluster.yml.j2') }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Schedule a daily base backup
+  when: cnpg_cluster_backup_enabled
+  become: true
+  kubernetes.core.k8s:
+    definition: "{{ lookup('template', 'scheduled-backup.yml.j2') }}"
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"

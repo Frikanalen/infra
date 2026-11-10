@@ -1,0 +1,16 @@
+---
+# Addresses cubemap serves HTTP on. simula listens on its LAN address and on
+# its public one.
+cubemap_listen:
+  - 192.168.3.1:9094
+  - 158.36.191.230:9094
+
+# One entry per stream: the URL path clients fetch, and the UDP port the
+# source pushes MPEG-TS to (cubemap binds it on all addresses).
+cubemap_streams:
+  - { path: /frikanalen.ts, src: "udp://@:5565" }
+  - { path: /teksttv.ts, src: "udp://@:5566" }
+  - { path: /teletekst-2.ts, src: "udp://@:5567" }
+  - { path: /staging.ts, src: "udp://@:5568" }
+  - { path: /aux3.ts, src: "udp://@:5004" }
+  - { path: /tx2.ts, src: "udp://@:5562" }

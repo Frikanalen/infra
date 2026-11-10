@@ -1,0 +1,9 @@
+---
+mailcow_dir: /opt/mailcow-dockerized
+mailcow_repo: https://github.com/mailcow/mailcow-dockerized
+# mailcow's own update.sh owns upgrades after the first install and expects
+# the checkout to sit on a branch, so this is cloned once and never moved by
+# Ansible. "master" is mailcow's stable branch.
+mailcow_branch: master
+mailcow_hostname: mail.frikanalen.tv
+mailcow_tz: Europe/Oslo

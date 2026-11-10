@@ -7,6 +7,36 @@
   become: true
   run_once: true
 
+- name: Verify the Alertmanager Telegram credentials are in the vault
+  ansible.builtin.assert:
+    that:
+      - kube_prometheus_stack_telegram_bot_token | length > 0
+      - (kube_prometheus_stack_telegram_chat_id | string | regex_search('^-?[0-9]+$')) is not none
+    fail_msg: >-
+      Add vault_alertmanager_telegram_bot_token and
+      vault_alertmanager_telegram_chat_id to data/vault.yml. The chat ID is a
+      numeric Telegram channel ID (private channels normally start with -100).
+  run_once: true
+
+- name: Ensure the monitoring namespace exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    api_version: v1
+    kind: Namespace
+    name: "{{ kube_prometheus_stack_namespace }}"
+    state: present
+  become: true
+  run_once: true
+
+- name: Create Alertmanager Telegram credentials secret
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'telegram-secret.yml.j2') }}"
+  become: true
+  no_log: true
+  run_once: true
+
 - name: Install kube-prometheus-stack via Helm
   kubernetes.core.helm:
     kubeconfig: "{{ k8s_kubeconfig }}"
@@ -21,6 +51,33 @@
     # own default.
     wait_timeout: 10m0s
     values:
+      # Helm doesn't reconcile CRD changes on upgrade -- this runs a Job that
+      # applies the Prometheus Operator's CRDs via server-side apply so
+      # chart bumps that ship new CRD versions (e.g. 91.x's Operator
+      # v0.94.0 CRDs) don't need a manual kubectl apply step first.
+      crds:
+        upgradeJob:
+          enabled: true
+      # microk8s runs the controller manager, scheduler and kube-proxy
+      # inside kubelite rather than as pods, so the chart's ServiceMonitors
+      # for them never find a target and KubeControllerManagerDown,
+      # KubeSchedulerDown and KubeProxyDown fire forever.
+      kubeControllerManager:
+        enabled: false
+      kubeScheduler:
+        enabled: false
+      kubeProxy:
+        enabled: false
+      # Replaced by a ZFS-aware NodeMemoryHighUtilization in
+      # files/extra-rules.yml: the mixin's version counts the ZFS ARC as
+      # used, so file01 and the Proxmox hosts sit permanently above 90%.
+      defaultRules:
+        disabled:
+          NodeMemoryHighUtilization: true
+      # A file lookup, not a template, so the rules' own {{ $labels }} pass
+      # through to Prometheus untouched.
+      additionalPrometheusRulesMap:
+        frikanalen-extra: "{{ lookup('ansible.builtin.file', 'extra-rules.yml') | from_yaml }}"
       grafana:
         # microk8s's cluster CA cert has no X509v3 Key Usage extension
         # (only Basic Constraints: CA:TRUE). The k8s-sidecar image's Python
@@ -48,6 +105,8 @@
                 - "{{ kube_prometheus_stack_grafana_hostname }}"
       prometheus:
         prometheusSpec:
+          externalLabels:
+            environment: "{{ kube_prometheus_stack_environment }}"
           # Chart default (true) pins podMonitorSelector/serviceMonitorSelector
           # to matchLabels: {release: kube-prometheus-stack} -- this chart's
           # own Helm release name -- so only PodMonitors/ServiceMonitors
@@ -73,6 +132,47 @@
             - hosts:
                 - "{{ kube_prometheus_stack_prometheus_hostname }}"
       alertmanager:
+        config:
+          global:
+            resolve_timeout: 5m
+          inhibit_rules:
+            - source_matchers:
+                - severity = critical
+              target_matchers:
+                - severity =~ warning|info
+              equal: [namespace, alertname]
+            - source_matchers:
+                - severity = warning
+              target_matchers:
+                - severity = info
+              equal: [namespace, alertname]
+            - source_matchers:
+                - alertname = InfoInhibitor
+              target_matchers:
+                - severity = info
+              equal: [namespace]
+          route:
+            group_by: [namespace, alertname, environment]
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 12h
+            receiver: telegram
+            routes:
+              # These synthetic alerts verify the pipeline and implement
+              # inhibition; sending them to humans would only create noise.
+              - receiver: "null"
+                matchers:
+                  - alertname =~ "Watchdog|InfoInhibitor"
+          receivers:
+            - name: "null"
+            - name: telegram
+              telegram_configs:
+                - bot_token_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/bot-token"
+                  chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/chat-id"
+                  send_resolved: true
+        alertmanagerSpec:
+          secrets:
+            - "{{ kube_prometheus_stack_telegram_secret_name }}"
         ingress:
           enabled: true
           ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"

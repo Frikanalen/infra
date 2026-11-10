@@ -1,0 +1,12 @@
+---
+# defaults for chwiki_images role
+#
+# Creates the directory that roles/nfs_server exports read-write to the dev
+# cluster for chwiki's uploaded images -- see chwiki_images_export_path and
+# chwiki_images_kube_clients in group_vars/storage.yml.
+chwiki_images_path: "{{ chwiki_images_export_path }}"
+
+# NFS root_squash maps a client's root to nobody/nogroup by default, and
+# chwiki's pod isn't guaranteed to write as root either, so the directory is
+# made world-writable rather than pinned to a uid this role doesn't control.
+chwiki_images_mode: "0777"

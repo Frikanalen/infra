@@ -1,0 +1,7 @@
+---
+- name: Restart MicroK8s containerd
+  # Running containers survive this: they belong to their shims, not to the
+  # containerd process being restarted.
+  ansible.builtin.systemd:
+    name: snap.microk8s.daemon-containerd
+    state: restarted

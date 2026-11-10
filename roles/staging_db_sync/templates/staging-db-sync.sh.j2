@@ -1,7 +1,7 @@
 #!/bin/bash
 # Refreshes the staging {{ staging_db_sync_db_name }} database from prod.
 #
-# Dumps prod's {{ staging_db_sync_db_service }} over a kubectl port-forward,
+# Dumps prod's {{ staging_db_sync_prod_db_service }} over a kubectl port-forward,
 # then restores into staging's {{ staging_db_sync_db_service }} the same way,
 # authenticating with the djangoPassword already sitting in each cluster's
 # own {{ staging_db_sync_db_secret_name }} secret -- no credentials beyond
@@ -18,6 +18,7 @@ KUBECTL="microk8s kubectl"
 PROD_KUBECONFIG="{{ staging_db_sync_kubeconfig_path }}"
 NAMESPACE="{{ staging_db_sync_namespace }}"
 DB_SERVICE="{{ staging_db_sync_db_service }}"
+PROD_DB_SERVICE="{{ staging_db_sync_prod_db_service }}"
 DB_NAME="{{ staging_db_sync_db_name }}"
 DB_USER="{{ staging_db_sync_db_user }}"
 SECRET_NAME="{{ staging_db_sync_db_secret_name }}"
@@ -106,7 +107,7 @@ PROD_PASSWORD="$(secret_password --kubeconfig="$PROD_KUBECONFIG")"
 STAGING_PASSWORD="$(secret_password)"
 
 require_port_free "$PROD_PORT"
-$KUBECTL --kubeconfig="$PROD_KUBECONFIG" -n "$NAMESPACE" port-forward "svc/$DB_SERVICE" "$PROD_PORT:5432" &
+$KUBECTL --kubeconfig="$PROD_KUBECONFIG" -n "$NAMESPACE" port-forward "svc/$PROD_DB_SERVICE" "$PROD_PORT:5432" &
 PROD_PF_PID=$!
 wait_for_port "$PROD_PORT" "$PROD_PF_PID"
 

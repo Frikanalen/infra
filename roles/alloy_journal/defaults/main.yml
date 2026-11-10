@@ -1,0 +1,19 @@
+---
+# defaults for alloy_journal role
+#
+# Installs Grafana Alloy as a native systemd service (the apt.grafana.com
+# package, not the container image roles/grafana_alloy runs in-cluster) on
+# hosts that are not Kubernetes nodes, and points it at roles/loki's
+# internal-only ingress -- unlike roles/grafana_alloy's in-cluster
+# DaemonSet, these hosts cannot reach the gateway Service's ClusterIP
+# directly.
+
+alloy_journal_push_url: "https://loki.{{ frikanalen_intern_zone }}/loki/api/v1/push"
+
+# How far back loki.source.journal reads on startup -- long enough to
+# survive a short outage of this service or of Loki without gaps, short
+# enough not to replay a newly-added host's entire journal on first install.
+alloy_journal_max_age: "12h"
+
+alloy_journal_apt_repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
+alloy_journal_gpg_key_url: https://apt.grafana.com/gpg-full.key

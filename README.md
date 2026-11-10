@@ -35,6 +35,8 @@ definitions.
   MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CloudNativePG, CasparCG, NFS,
   and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
+- `docs/mediamtx.md` - environment wiring, deployment and end-to-end test guide
+  for the MediaMTX contribution ingest (the chart lives in gitops).
 
 ## Development
 
@@ -138,7 +140,7 @@ Three axes, applied consistently across the Kubernetes playbooks:
 | Axis | Tags |
 | --- | --- |
 | Layer, one per play | `bootstrap`, `platform`, `apps` |
-| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup`, `cert_manager`, `garage` |
 | Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
 
 So a single component can be advanced on its own, which is the usual way to
@@ -174,8 +176,12 @@ before Argo CD syncs them, so they keep a small role of their own:
 existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
 storage class, `fkweb` db/user, and the same credentials as Kubegres's
 `django-postgres` secret, so the eventual Django cutover is just a
-`DATABASE_URL` hostname change. Data migration into it is manual and
-Kubegres stays in place until that migration is done. Also enables
+`DATABASE_URL` hostname change. pgcluster archives WAL continuously and takes a daily
+base backup to Garage, an S3 store on file01 (`roles/garage`, run by
+`playbooks/storage.yml`), through CloudNativePG's Barman Cloud plugin. Data
+comes over from Kubegres with a one-time import, and Kubegres stays in place
+until Django has moved; see `docs/cnpg.md` for the cutover and restore
+steps. Also enables
 Kubegres's built-in daily backup CronJob for prod's `django-postgres`
 (`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
 a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
@@ -215,6 +221,20 @@ than 14 days (see `roles/db_backup_retention`), since Kubegres's own backup
 CronJob never deletes old ones itself.
 
 ```sh
+ansible-playbook playbooks/mail.yml
+```
+
+Installs mailcow-dockerized on `mail1`, the mail server for frikanalen.tv: a
+VM of its own rather than a cluster workload, since mailcow is a
+docker-compose stack and needs a fixed public address whose PTR, MX and SPF
+records agree. The data disk is mounted at `/var/lib/docker` first, so every
+mailbox and database lands on it. `generate_config.sh` runs once, and later
+upgrades go through mailcow's own `update.sh` on the host. The public
+address, 158.36.191.253, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
+(`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
+leave from that address instead of util1's own.
+
+```sh
 ansible-playbook playbooks/staging_db_sync.yml
 ```
 
@@ -244,3 +264,65 @@ especially user access, firewall rules, DNS zones, and production app versions.
 The `terraform/` directory manages Proxmox VM guest orchestration. See
 `terraform/README.md` for required Proxmox token environment variables and the
 usual `terraform init`, `terraform plan`, and `terraform apply` flow.
+
+## Proxmox
+
+Proxmox has mostly been provisioned by hand.
+
+### Backups
+
+Proxmox writes nightly vzdump backups to the cluster's NFS storage `file01`
+(`/util/proxmox` on file01, exported by `playbooks/storage.yml`). The jobs are
+listed in `proxmox_backup_jobs` in `group_vars/proxmox.yml`; so far only
+`mail1` is backed up this way. Snapshot mode with the guest agent's
+filesystem freeze, kept 7 daily and 4 weekly.
+
+```sh
+ansible-playbook playbooks/storage.yml --tags nfs
+ansible-playbook playbooks/proxmox/backup_jobs.yml
+```
+
+### GPU PCIe passthrough
+
+Cluster PCI resource mappings are declared in `group_vars/proxmox.yml` and
+applied with the playbook below, which also strips the GPUs dev-kube-4 used to
+hold. Terraform attaches each card to its VM through `pci_mappings` in
+`data/hosts.yml`: the Tesla P4 to caspar-sw1, the Arc A310 to prod-kube-4.
+
+```sh
+ansible-playbook playbooks/proxmox/pci_resource_mappings.yml
+```
+
+The prod-cluster playbook labels `prod-kube-4` with its A310. The Tesla P4
+belongs to caspar-sw1, so it is not a pod target.
+Select the GPU host in a pod template with its label:
+
+```yaml
+nodeSelector:
+  frikanalen.tv/gpu-intel-arc-a310: "true"
+```
+
+A pod that needs the A310 itself, rather than just its node, requests it as a
+resource; Intel's GPU device plugin then gives that pod the card's `/dev/dri`
+nodes, owned by the pod's own user and group:
+
+```yaml
+resources:
+  limits:
+    gpu.intel.com/i915: 1
+```
+
+That takes two steps, host first:
+
+```sh
+ansible-playbook playbooks/k8s_cluster_prod.yml --tags gpu,gpu-labels  # roles/intel_gpu_node
+ansible-playbook playbooks/k8s_platform_prod.yml --tags gpu            # roles/intel_gpu_plugin
+```
+
+`intel_gpu_node` checks the card is bound to i915 or xe with its HuC firmware
+loaded, and sets `device_ownership_from_security_context` in MicroK8s's
+containerd so unprivileged pods can open the device. `intel_gpu_plugin` runs
+the plugin on the labelled node and waits for the node to advertise the GPU,
+printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. The ingest
+QSV worker pool (`ingest_worker_pools`) is the consumer. Staging has no Intel
+GPU since the A310 moved to prod.

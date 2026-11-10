@@ -1,0 +1,110 @@
+---
+- name: Add grafana Helm repository
+  kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+  become: true
+  run_once: true
+
+- name: Install Loki via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: "{{ loki_release_name }}"
+    chart_ref: grafana/loki
+    chart_version: "{{ loki_chart_version | default(omit, true) }}"
+    release_namespace: "{{ loki_namespace }}"
+    create_namespace: true
+    wait: true
+    wait_timeout: 10m0s
+    values:
+      deploymentMode: SingleBinary
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        storage:
+          type: filesystem
+        # SingleBinary mode with local filesystem storage needs an explicit
+        # schema -- the chart only ships a testSchemaConfig placeholder for
+        # this, which is documented as not for real installs.
+        schemaConfig:
+          configs:
+            - from: "2024-01-01"
+              store: tsdb
+              object_store: filesystem
+              schema: v13
+              index:
+                prefix: index_
+                period: 24h
+      singleBinary:
+        replicas: 1
+        persistence:
+          enabled: true
+          size: "{{ loki_persistence_size }}"
+      # SingleBinary mode does all the work -- scale the SimpleScalable
+      # (read/write/backend) targets the chart defaults to on, to zero.
+      read:
+        replicas: 0
+      write:
+        replicas: 0
+      backend:
+        replicas: 0
+      monitoring:
+        serviceMonitor:
+          enabled: "{{ k8s_monitoring_enabled | default(false) | bool }}"
+        dashboards:
+          enabled: "{{ k8s_monitoring_enabled | default(false) | bool }}"
+        rules:
+          enabled: "{{ k8s_monitoring_enabled | default(false) | bool }}"
+      sidecar:
+        # loki-sc-rules (kiwigrid/k8s-sidecar, same image kube_prometheus_stack
+        # already works around) crash-loops against microk8s's CA cert, which
+        # has no X509v3 Key Usage extension -- only Basic Constraints: CA:TRUE.
+        # The sidecar's Python base enables strict X.509 verification by
+        # default and rejects that CA outright. See
+        # roles/kube_prometheus_stack/tasks/main.yml for the same fix applied
+        # to Grafana's dashboard/datasource sidecars.
+        disableX509StrictVerification: true
+      gateway:
+        ingress:
+          enabled: true
+          ingressClassName: "{{ loki_ingress_class }}"
+          annotations:
+            traefik.ingress.kubernetes.io/router.tls.certresolver: "{{ loki_cert_resolver }}"
+          hosts:
+            - host: "{{ loki_hostname }}"
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - hosts:
+                - "{{ loki_hostname }}"
+  become: true
+  run_once: true
+
+- name: Provision Loki as a Grafana datasource
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ loki_release_name }}-grafana-datasource"
+        namespace: "{{ loki_grafana_namespace }}"
+        labels:
+          # Picked up by kube-prometheus-stack's Grafana datasource
+          # sidecar -- see roles/kube_prometheus_stack.
+          grafana_datasource: "1"
+      data:
+        loki-datasource.yaml: |
+          apiVersion: 1
+          datasources:
+            - name: Loki
+              type: loki
+              access: proxy
+              url: http://{{ loki_release_name }}-gateway.{{ loki_namespace }}.svc.cluster.local
+              isDefault: false
+  become: true
+  run_once: true

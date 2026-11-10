@@ -51,3 +51,7 @@ terraform.rc
 # ansible-galaxy / ansible-lint drop installed collections here when
 # ANSIBLE_HOME or the collections path resolves inside the repo.
 .ansible/
+
+.DS_Store
+scripts/chwiki-migration.yml
+scripts/chwiki-migration/.env

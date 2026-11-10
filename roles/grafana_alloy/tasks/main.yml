@@ -1,0 +1,66 @@
+---
+- name: Add grafana Helm repository
+  kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+  become: true
+  run_once: true
+
+- name: Install Grafana Alloy via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: "{{ grafana_alloy_release_name }}"
+    chart_ref: grafana/alloy
+    chart_version: "{{ grafana_alloy_chart_version | default(omit, true) }}"
+    release_namespace: "{{ grafana_alloy_namespace }}"
+    create_namespace: true
+    wait: true
+    wait_timeout: 5m0s
+    values:
+      alloy:
+        configMap:
+          create: true
+          content: |
+            discovery.kubernetes "pod" {
+              role = "pod"
+            }
+
+            discovery.relabel "pod_logs" {
+              targets = discovery.kubernetes.pod.targets
+
+              rule {
+                source_labels = ["__meta_kubernetes_namespace"]
+                target_label  = "namespace"
+              }
+              rule {
+                source_labels = ["__meta_kubernetes_pod_name"]
+                target_label  = "pod"
+              }
+              rule {
+                source_labels = ["__meta_kubernetes_pod_container_name"]
+                target_label  = "container"
+              }
+              rule {
+                source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+                separator     = "/"
+                target_label  = "job"
+              }
+            }
+
+            loki.source.kubernetes "pod_logs" {
+              targets    = discovery.relabel.pod_logs.output
+              forward_to = [loki.write.loki.receiver]
+            }
+
+            loki.write "loki" {
+              endpoint {
+                url = "{{ grafana_alloy_loki_push_url }}"
+              }
+            }
+      # Alloy's own metrics, not the logs it ships -- lets it show up
+      # alongside everything else kube_prometheus_stack scrapes.
+      serviceMonitor:
+        enabled: "{{ k8s_monitoring_enabled | default(false) | bool }}"
+  become: true
+  run_once: true

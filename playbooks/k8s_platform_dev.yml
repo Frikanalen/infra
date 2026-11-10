@@ -15,24 +15,86 @@
   tags: [platform]
   vars:
     metallb_ingress_ip: "192.168.3.90/30"
+    metallb_internal_ingress_ip: "{{ traefik_internal_loadbalancer_ip }}/32"
+    metallb_extra_addresses: ["{{ mediamtx_loadbalancer_ip }}/32"]
     traefik_loadbalancer_ip: "192.168.3.90"
+    traefik_internal_loadbalancer_ip: "{{ host_config['ingress-dev-internal'].ip_cidr.split('/')[0] }}"
     traefik_public_ip: "158.36.191.229"
     traefik_rfc2136_tsig_secret: "{{ vault_dns_tsig_secret }}"
     external_dns_default_target: "158.36.191.229"
+  pre_tasks:
+    - name: Refresh local Helm repository caches
+      ansible.builtin.command: helm repo update
+      changed_when: false
+      become: true
+      run_once: true
+      tags: [always]
+
+    - name: Keep public and internal ingress endpoints distinct
+      ansible.builtin.assert:
+        that:
+          - traefik_internal_loadbalancer_ip != traefik_loadbalancer_ip
+          - frikanalen_intern_ingress_class != frikanalen_public_ingress_class
+      tags: [always]
   roles:
+    # Prometheus Operator CRDs must exist before any role below that
+    # conditionally creates a ServiceMonitor (metallb, traefik, argocd,
+    # cnpg -- all gated on k8s_monitoring_enabled), so this runs first.
+    # Its own Ingress objects reference frikanalen_intern_ingress_class/
+    # frikanalen_intern_zone from group_vars rather than anything the
+    # ingress/DNS roles below produce, so there's no dependency the other
+    # way -- Grafana/Prometheus/Alertmanager just aren't reachable until
+    # traefik and external-dns are up.
+    - role: kube_prometheus_stack
+      tags: [kube_prometheus_stack, monitoring]
+
+    # Loki + Alloy for log aggregation. Runs after kube_prometheus_stack so
+    # its Grafana datasource ConfigMap lands in an already-existing
+    # namespace and Grafana's sidecar is up to pick it up.
+    - role: loki
+      tags: [loki, monitoring, logging]
+
+    - role: grafana_alloy
+      tags: [grafana_alloy, monitoring, logging]
+
     - role: metallb
       tags: [metallb, ingress]
 
+    # Issues Traefik's certificates (roles/traefik, traefik_tls_mode) and the
+    # Barman Cloud plugin's mTLS certificates (roles/cnpg), so it goes before
+    # both.
+    - role: cert_manager
+      tags: [cert_manager, traefik, ingress, cnpg, database]
+
     - role: traefik
       tags: [traefik, ingress]
+      vars:
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
+
+    - role: traefik
+      tags: [traefik, ingress, internal_ingress]
+      vars:
+        traefik_release_name: traefik-internal
+        traefik_namespace: traefik-internal
+        traefik_tls_mode: cert-manager
+        traefik_tls_dns_names: ["*.{{ frikanalen_intern_zone }}"]
+        traefik_ingress_class: "{{ frikanalen_intern_ingress_class }}"
+        traefik_loadbalancer_ip: "{{ traefik_internal_loadbalancer_ip }}"
+        traefik_manage_ingress_class: false
+        traefik_manage_www_redirect: false
+        traefik_enable_crd_provider: true
+        traefik_skip_crds: true
+        traefik_dashboard_ingressroute_enabled: true
+        traefik_dashboard_host: "traefik.{{ frikanalen_intern_zone }}"
 
     - role: external_dns
       tags: [external_dns, dns]
 
     # Second external-dns instance: watches ingressClassName: internal and
-    # writes to intern.dev.frikanalen.no instead of staging.frikanalen.no,
-    # targeting the cluster's internal ingress IP rather than the public
-    # one. Reuses staging-update-key (role default), which
+    # writes to intern.dev.frikanalen.tv instead of staging.frikanalen.tv,
+    # targeting the separate internal Traefik IP. Reuses
+    # staging-update-key (role default), which
     # roles/dns_server_zones_dynamic also authorizes on this zone.
     - role: external_dns
       tags: [external_dns, dns, internal_dns]
@@ -40,18 +102,12 @@
         external_dns_release_name: external-dns-internal
         external_dns_domain_filter: "{{ frikanalen_intern_zone }}"
         external_dns_ingress_class: "{{ frikanalen_intern_ingress_class }}"
-        external_dns_default_target: "{{ traefik_loadbalancer_ip }}"
+        external_dns_default_target: "{{ traefik_internal_loadbalancer_ip }}"
         external_dns_rfc2136_zone: "{{ frikanalen_intern_zone }}"
         external_dns_rfc2136_tsig_keyname: "{{ frikanalen_intern_tsig_keyname }}"
         external_dns_txt_owner_id: "{{ frikanalen_intern_owner_id }}"
         external_dns_manage_ingress_class: true
-
-    # Prometheus Operator + Prometheus + Alertmanager + Grafana, exposed only
-    # on intern.dev.frikanalen.no via the internal ingress class/external-dns
-    # instance above -- not reachable outside the VPN. This is what makes
-    # k8s_monitoring_enabled true for this cluster; see data/cluster.yml.
-    - role: kube_prometheus_stack
-      tags: [kube_prometheus_stack, monitoring]
+        external_dns_sources: [ingress, traefik-proxy]
 
     # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
     # hands it to the Prometheus above. Needs a login user on the switch that

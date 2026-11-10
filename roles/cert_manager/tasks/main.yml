@@ -1,0 +1,23 @@
+---
+- name: Add the Jetstack Helm repository
+  kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: jetstack
+    repo_url: https://charts.jetstack.io
+  become: true
+  run_once: true
+
+- name: Install cert-manager via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    chart_version: "{{ cert_manager_chart_version }}"
+    release_namespace: "{{ cert_manager_namespace }}"
+    create_namespace: true
+    wait: true
+    values:
+      crds:
+        enabled: true
+  become: true
+  run_once: true

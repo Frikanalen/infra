@@ -1,0 +1,7 @@
+---
+- name: Ensure chwiki images export directory exists
+  ansible.builtin.file:
+    path: "{{ chwiki_images_path }}"
+    state: directory
+    mode: "{{ chwiki_images_mode }}"
+  become: true

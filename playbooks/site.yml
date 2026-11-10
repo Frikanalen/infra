@@ -44,6 +44,22 @@
     - monitoring
     - node_exporter
 
+- name: Ship the systemd journal to Loki on hosts outside the Kubernetes clusters
+  # caspar1 and caspar-sw1 run CasparCG and friends as systemd services but
+  # are not Kubernetes nodes, so roles/grafana_alloy's in-cluster DaemonSet
+  # never sees them. This installs a native Alloy agent instead, pushing
+  # over roles/loki's internal-only ingress rather than the gateway
+  # Service's ClusterIP, which these hosts cannot route to.
+  hosts: alloy_journal_hosts
+  become: true
+  gather_facts: true
+  roles:
+    - alloy_journal
+  tags:
+    - monitoring
+    - logging
+    - alloy_journal
+
 - name: Configure DNS server
   hosts: util
   roles:

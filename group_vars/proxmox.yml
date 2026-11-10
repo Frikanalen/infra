@@ -1,0 +1,41 @@
+proxmox_pci_mappings:
+  - id: intel-arc-a310
+    description: Intel Arc A310 on vmtx1
+    node: vmtx1
+    path: "0000:83:00.0"
+    pci_id: "8086:56a6"
+    iommugroup: 9
+    subsystem_id: "172f:4019"
+
+  - id: nvidia-tesla-p4
+    description: NVIDIA Tesla P4 on vmtx1
+    node: vmtx1
+    path: "0000:86:00.0"
+    pci_id: "10de:1bb3"
+    iommugroup: 12
+    subsystem_id: "10de:11d8"
+
+# Both mappings above are attached by Terraform (data/hosts.yml pci_mappings):
+# the Tesla P4 to caspar-sw1, the Arc A310 to prod-kube-4. dev-kube-4 had
+# both; playbooks/proxmox/pci_resource_mappings.yml strips them from it.
+proxmox_former_gpu_vm:
+  node: vmtx1
+  vmid: 314
+  tags: "ubuntu"
+
+# Nightly vzdump jobs, applied by playbooks/proxmox/backup_jobs.yml onto the
+# NFS storage file01 exports (proxmox_backup_storage, data/storage.yml).
+# Guests are named rather than listed by VMID so the number stays in
+# data/hosts.yml. mode snapshot backs a running VM up with no downtime;
+# with the guest agent (Terraform sets agent = 1) Proxmox freezes the guest's
+# filesystems for the snapshot, so MariaDB and the maildirs are captured
+# consistently. Every dump is a full one -- there is no deduplication
+# without a Proxmox Backup Server -- so retention is what bounds the space.
+proxmox_backup_jobs:
+  - id: mail-nightly
+    comment: mailcow (mail1), see playbooks/mail.yml
+    guests: [mail1]
+    schedule: "02:30"
+    mode: snapshot
+    compress: zstd
+    prune_backups: keep-daily=7,keep-weekly=4
