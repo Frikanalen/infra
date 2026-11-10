@@ -67,19 +67,12 @@
       vars:
         traefik_tls_mode: cert-manager
         traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
-        # First switch only: HTTP-01 can't pass while the ACME resolver
-        # still runs. Remove once applied.
-        traefik_tls_seed_from_acme_domain: "{{ frikanalen_domain }}"
 
     - role: traefik
       tags: [traefik, ingress, internal_ingress]
       vars:
         traefik_release_name: traefik-internal
         traefik_namespace: traefik-internal
-        # Moved out of the public release's namespace on 2026-11-10; see
-        # traefik_tls_mode in roles/traefik/defaults/main.yml. Remove once
-        # applied.
-        traefik_legacy_namespace: traefik
         traefik_tls_mode: cert-manager
         traefik_tls_dns_names: ["*.{{ frikanalen_intern_zone }}"]
         traefik_ingress_class: "{{ frikanalen_intern_ingress_class }}"
