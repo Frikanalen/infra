@@ -14,9 +14,9 @@
 kubegres_backup_namespace: "{{ frikanalen_app_namespace }}"
 
 # Must match chart/templates/database.yaml's .Values.database.kubegresName
-# in the django-api chart (django_db_host in group_vars) -- this is the
+# in the django-api chart (django_kubegres_name in group_vars) -- this is the
 # existing Kubegres resource being patched, not a new one.
-kubegres_backup_kubegres_name: "{{ django_db_host }}"
+kubegres_backup_kubegres_name: "{{ django_kubegres_name }}"
 
 kubegres_backup_nfs_host: file01
 # Matches db_backup_export_path in group_vars/storage.yml -- keep the two in

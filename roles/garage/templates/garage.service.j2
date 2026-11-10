@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Garage S3 object store
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+
+[Service]
+User={{ garage_user }}
+Group={{ garage_user }}
+Environment=GARAGE_CONFIG_FILE={{ garage_config_path }}
+ExecStart={{ garage_binary }} server
+Restart=always
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ garage_metadata_dir }} {{ garage_data_dir }}
+
+[Install]
+WantedBy=multi-user.target

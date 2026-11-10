@@ -55,7 +55,7 @@ frikanalen_apps:
       # selfHeal would prune it back out on the next sync.
       - group: kubegres.reactive-tech.io
         kind: Kubegres
-        name: "{{ django_db_host }}"
+        name: "{{ django_kubegres_name }}"
         namespace: "{{ frikanalen_app_namespace }}"
         jsonPointers:
           - /spec/backup

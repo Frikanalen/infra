@@ -11,6 +11,9 @@
   roles:
     - media_staging_reset
     - db_backup_retention
+    # S3 target for CloudNativePG's backups; see roles/garage.
+    - role: garage
+      tags: [garage]
     - role: chwiki_images
       tags: [chwiki_images]
     - role: fk_archive_utils
