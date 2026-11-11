@@ -27,6 +27,25 @@ groups:
             minutes, not counting reclaimable ZFS ARC, and is at
             {{ $value | printf "%.2f" }}%.
 
+      - alert: NodeDiskIOSaturation
+        # The mixin's rule without dm-* devices. On the Proxmox hosts those
+        # are thin LVs, and a thin LV whose guest mounts with online
+        # discard shows a queue of 10+ that is dm-thin's own work, not load
+        # on the disks below it. The physical devices (sd*, nvme*, md*)
+        # and every VM's own disk still have this alert.
+        expr: >-
+          rate(node_disk_io_time_weighted_seconds_total{job="node-exporter",
+            device=~"(/dev/)?(mmcblk.p.+|nvme.+|rbd.+|sd.+|vd.+|xvd.+|md.+|dasd.+)"}[5m]) > 10
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Disk IO queue is high.
+          description: >-
+            Disk IO queue (aqu-sq) is high on {{ $labels.device }} at
+            {{ $labels.instance }}, has been above 10 for the last 30
+            minutes, is currently at {{ $value | printf "%.2f" }}.
+
   - name: frikanalen-cronjobs
     rules:
       # KubeJobFailed only says that one run failed, and goes quiet once the
