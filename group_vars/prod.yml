@@ -66,6 +66,10 @@ ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 # The CPU ladder was OOM-killed at the chart's 4Gi on staging, 14% into a
 # 1080p encode.
 ingest_cpu_worker_memory_limit: 16Gi
+# No CPU encoding pool: the QSV worker on prod-kube-4's A310 takes every job
+# (claims are not encoder-specific), and four slow CPU workers would only
+# grab jobs out from under it. Raise this again if prod-kube-4 is down.
+ingest_cpu_worker_replicas: 0
 
 # One ingest worker encoding on the Arc A310 on prod-kube-4 through Quick Sync,
 # beside the main CPU pool. Needs the device plugin (roles/intel_gpu_plugin)
