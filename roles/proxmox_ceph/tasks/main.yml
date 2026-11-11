@@ -143,7 +143,8 @@
 # units loadable; they start its old ceph-osd@N, which fails until systemd's
 # start limit trips. A new OSD that gets the same id is then refused with
 # "Start request repeated too quickly", and pveceph rolls it back.
-- name: Clear failed OSD units left by the earlier cluster
+# The systemd module has neither unit globs nor reset-failed.
+- name: Clear failed OSD units left by the earlier cluster  # noqa: command-instead-of-module
   ansible.builtin.shell: |
     systemctl stop 'ceph-osd@*'
     systemctl reset-failed 'ceph-osd@*' 'ceph-volume@*' || true
