@@ -38,6 +38,49 @@
   check_mode: false
   no_log: true
 
+# The script creates its users with the cluster's preferred key type,
+# aes256k on Proxmox's Ceph, which neither the nodes' krbd nor ceph-csi
+# 3.17.0 can use. Give these users classic aes keys (roles/proxmox_ceph
+# allows the cipher) and export again so the Secrets carry the new keys.
+# Classic aes keys are 40 base64 characters starting AQ; aes256k ones start Ag.
+- name: Read the Rook and CSI users' keys
+  ansible.builtin.command:
+    argv: [ceph, auth, get-key, "{{ item }}"]
+  loop: "{{ rook_ceph_external_ceph_users }}"
+  register: rook_ceph_external_keys
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Give the Rook and CSI users aes keys
+  ansible.builtin.command:
+    argv: [ceph, auth, rotate, --key-type=aes, "{{ item.item }}"]
+  loop: "{{ rook_ceph_external_keys.results | rejectattr('stdout', 'match', '^AQ') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: rook_ceph_external_rotated
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: true
+  no_log: true
+
+- name: Export again with the new keys
+  ansible.builtin.command: "{{ rook_ceph_external_export.cmd }}"
+  register: rook_ceph_external_reexport
+  when: rook_ceph_external_rotated.results | length > 0
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  no_log: true
+
+- name: Use the fresh export
+  ansible.builtin.set_fact:
+    rook_ceph_external_export: "{{ rook_ceph_external_reexport }}"
+  when: rook_ceph_external_rotated.results | length > 0
+  no_log: true
+
 - name: Parse the export
   ansible.builtin.set_fact:
     rook_ceph_external_objects: "{{ rook_ceph_external_export.stdout | from_json }}"

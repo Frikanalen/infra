@@ -35,3 +35,11 @@ proxmox_ceph_pools:
     size: 3
     min_size: 2
     pg_num: 32
+
+# CephX ciphers the monitors accept. aes is there only for the Kubernetes
+# clients; see the note in tasks/main.yml.
+proxmox_ceph_allowed_ciphers: [aes, aes256k]
+proxmox_ceph_muted_health_checks:
+  - AUTH_INSECURE_KEYS_ALLOWED
+  - AUTH_INSECURE_KEYS_CREATABLE
+  - AUTH_INSECURE_CLIENT_KEY_TYPE

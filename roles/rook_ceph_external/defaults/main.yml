@@ -20,3 +20,10 @@ rook_ceph_external_storage_class: ceph-rbd
 
 # Proxmox host the export script runs on (it needs the admin keyring).
 rook_ceph_external_ceph_host: "{{ groups['proxmox_ceph'] | first }}"
+
+# The users create-external-cluster-resources.py makes with
+# --restricted-auth-permission; their keys must be classic aes (tasks/main.yml).
+rook_ceph_external_ceph_users:
+  - client.healthchecker
+  - "client.csi-rbd-node-{{ rook_ceph_external_k8s_cluster_name }}-{{ rook_ceph_external_pool }}"
+  - "client.csi-rbd-provisioner-{{ rook_ceph_external_k8s_cluster_name }}-{{ rook_ceph_external_pool }}"

@@ -211,3 +211,34 @@
   loop_control:
     label: "{{ item.name }}"
   run_once: true
+
+# Proxmox's Ceph (squid 19.2.7) makes every key aes256k and allows only that
+# cipher. The Kubernetes clients cannot use it yet: krbd needs Linux 7.0
+# (the nodes run Ubuntu 24.04's 6.8) and ceph-csi needs 3.17.1 or later. So
+# the monitors also allow classic aes, and roles/rook_ceph_external gives
+# only the Rook and CSI users aes keys; daemons and admin stay on aes256k.
+# Drop aes from this list once the nodes and ceph-csi can do aes256k.
+- name: Read the monitors' allowed ciphers
+  ansible.builtin.command:
+    argv: [ceph, mon, dump, --format, json]
+  register: proxmox_ceph_mon_dump
+  changed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Allow the ciphers the Kubernetes clients need
+  ansible.builtin.command:
+    argv: [ceph, mon, set, auth_allowed_ciphers, "{{ proxmox_ceph_allowed_ciphers | join(',') }}"]
+  when: >-
+    (proxmox_ceph_mon_dump.stdout | from_json).auth_allowed_ciphers | map(attribute='name') | sort
+    != proxmox_ceph_allowed_ciphers | sort
+  changed_when: true
+  run_once: true
+
+# Allowing aes raises these on purpose; muted so a real warning shows.
+- name: Mute the warnings that allowing aes raises
+  ansible.builtin.command:
+    argv: [ceph, health, mute, "{{ item }}", --sticky]
+  loop: "{{ proxmox_ceph_muted_health_checks }}"
+  changed_when: false
+  run_once: true
