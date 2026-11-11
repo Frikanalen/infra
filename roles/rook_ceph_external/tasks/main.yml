@@ -68,7 +68,8 @@
   no_log: true
 
 - name: Export again with the new keys
-  ansible.builtin.command: "{{ rook_ceph_external_export.cmd }}"
+  ansible.builtin.command:
+    argv: "{{ rook_ceph_external_export.cmd }}"
   register: rook_ceph_external_reexport
   when: rook_ceph_external_rotated.results | length > 0
   delegate_to: "{{ rook_ceph_external_ceph_host }}"
