@@ -137,22 +137,13 @@
     - role: argocd
       tags: [argocd]
 
-    # Both app-of-apps invocations name their application and path
-    # explicitly. The role defaults to application "apps" over the whole
-    # gitops apps/ directory, which is not what either of these is -- and an
-    # Application planted by accident under that name would sync every stale
-    # manifest in that repo with prune and selfHeal on.
-    - role: argocd_gitops
-      tags: [argocd_gitops, rook_ceph]
-      vars:
-        argocd_gitops_application_name: rook-ceph
-        argocd_gitops_repo_path: apps/rook-ceph
-
-    - role: argocd_gitops
-      tags: [argocd_gitops, local_path_provisioner]
-      vars:
-        argocd_gitops_application_name: local-path-provisioner
-        argocd_gitops_repo_path: apps/local-path-provisioner
+    # rook-ceph and local-path-provisioner used to have an app-of-apps each
+    # here, over gitops apps/rook-ceph and apps/local-path-provisioner. On
+    # staging they are now files under clusters/staging/platform, synced by
+    # the "staging" root Application at the end of this play. The old parent
+    # Applications are removed alongside it; they carry no finalizer, so
+    # removing them leaves their child Applications running for the root to
+    # adopt. Prod keeps its own app-of-apps (k8s_platform_prod.yml).
 
     - role: argocd_image_updater
       tags: [argocd_image_updater]
@@ -182,3 +173,21 @@
         argocd_gitops_repo_path: clusters/staging
         argocd_gitops_recurse: true
         argocd_gitops_ignore_image_updater: true
+
+  post_tasks:
+    - name: Remove staging's old rook-ceph and local-path-provisioner app-of-apps
+      # Only once the root exists, so the child Applications always have a
+      # parent that wants them. Orphan deletion: the children stay.
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        namespace: argocd
+        name: "{{ item }}"
+        delete_options:
+          propagationPolicy: Orphan
+      loop: [rook-ceph, local-path-provisioner]
+      become: true
+      run_once: true
+      tags: [argocd_gitops, clusters_root]
