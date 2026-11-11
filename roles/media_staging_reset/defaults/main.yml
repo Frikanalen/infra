@@ -10,12 +10,13 @@ archive_media_staging_log_path: /var/log/reset-media-staging.log
 
 # Ownership to restore on the clone's root directory after each reset. A
 # fresh clone inherits the production archive's ownership from the snapshot,
-# which the staging ingest account cannot write to by design -- it is
-# deliberately kept out of prod's fkupload group. These must therefore match
-# what roles/ingest_archive_account creates an archive directory as, i.e.
-# ingest_archive_user from group_vars/staging.yml. Change one, change both.
-archive_media_staging_owner: ingest-staging
-archive_media_staging_group: ingest-staging
+# which staging must not share. Ingest v1 writes only through fk-archive, which
+# runs as the staging profile's manager account and creates .spool/ and each
+# video's directory under this root, so the manager has to own it. These must
+# match what roles/fk_archive_utils gives the staging profile's root (manager
+# and root_group in group_vars/storage.yml). Change one, change both.
+archive_media_staging_owner: archive-manager-staging
+archive_media_staging_group: archive-manager-staging
 archive_media_staging_mode: "2775"
 
 # The dataset is NFS-exported, so the reset has to drop the export before it

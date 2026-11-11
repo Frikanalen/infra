@@ -55,7 +55,8 @@ ingest_archive_dir: /archive/media
 ingest_archive_group: fkupload
 # Ingest v1 has no write access of its own: it asks fk-archive on file01
 # (roles/fk_archive_utils, profile "prod" in group_vars/storage.yml) to make
-# each change, as staging has done since September.
+# each change. That runs as archive-manager, which roles/fk_archive_utils makes
+# the owner of /archive/media (group fkupload, 2775).
 ingest_archive_fk_profile: prod
 
 # Workers must see a published original at once, so the archive mount keeps no
