@@ -107,7 +107,10 @@ app_versions:
   mediamtx: main
   graphics: main
   playout: main
-  frontend: main
+  # Temporarily the redesign branch (Frikanalen/frontend#99), so it can be
+  # iterated on staging without merging. Set back to main and re-run
+  # `ansible-playbook playbooks/k8s_apps_staging.yml --tags frontend` to revert.
+  frontend: claude/project-thread-1c8lwy
   django: main
   stream: main
   ingest: main
