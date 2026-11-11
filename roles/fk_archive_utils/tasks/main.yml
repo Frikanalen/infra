@@ -204,11 +204,31 @@
     # A profile whose root it does not own (prod's /archive/media, which is
     # group-writable by fkupload) names the groups that give it write access.
     groups: "{{ item.groups | default(omit) }}"
-    append: true
+    # Only alongside groups: the user module refuses append with none given.
+    append: "{{ true if item.groups is defined else omit }}"
     state: present
   loop: "{{ fk_archive_utils_profiles }}"
   loop_control:
     label: "{{ item.manager }}"
+  become: true
+
+- name: Give each manager account its archive root
+  # fk-archive creates .spool/ and each video's directory directly under the
+  # profile root, as the manager, so the manager has to own that root. Before
+  # ingest v1 the root belonged to the ingest account, which wrote to it over
+  # SFTP; with only that, every publish failed. Only the root, never
+  # recursive: the tree below is tens of terabytes. A profile whose existing
+  # tree other accounts also write (prod's, group-writable by fkupload) names
+  # that group as root_group so they keep their access to the root.
+  ansible.builtin.file:
+    path: "{{ item.root }}"
+    state: directory
+    owner: "{{ item.manager }}"
+    group: "{{ item.root_group | default(item.manager) }}"
+    mode: "2775"
+  loop: "{{ fk_archive_utils_profiles }}"
+  loop_control:
+    label: "{{ item.root }}"
   become: true
 
 - name: Write the archive profile configs
