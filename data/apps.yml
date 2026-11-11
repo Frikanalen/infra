@@ -106,7 +106,10 @@ frikanalen_apps:
         className: "{{ frikanalen_public_ingress_class }}"
         hostname: "{{ frikanalen_domain }}"
       image:
-        tag: "{{ app_versions.frontend }}"
+        # A git branch such as claude/some-work is published as the image tag
+        # claude-some-work: a tag cannot hold a slash, and the build writes a
+        # dash instead. The image updater template does the same.
+        tag: "{{ app_versions.frontend | replace('/', '-') }}"
 
   graphics:
     name: graphics
