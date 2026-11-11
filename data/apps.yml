@@ -49,16 +49,6 @@ frikanalen_apps:
         namespace: "{{ frikanalen_app_namespace }}"
         jsonPointers:
           - /data
-      # roles/kubegres_backup patches spec.backup onto this Application's own
-      # Kubegres resource directly, since the chart's Kubegres template
-      # doesn't render that stanza and so never sets it itself. Without this,
-      # selfHeal would prune it back out on the next sync.
-      - group: kubegres.reactive-tech.io
-        kind: Kubegres
-        name: "{{ django_kubegres_name }}"
-        namespace: "{{ frikanalen_app_namespace }}"
-        jsonPointers:
-          - /spec/backup
     helm_values:
       django:
         image:

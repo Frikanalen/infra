@@ -114,7 +114,7 @@ ansible-playbook playbooks/k8s_platform_prod.yml
 ansible-playbook playbooks/k8s_platform_dev.yml
 ```
 
-Installs the platform services: MetalLB, Traefik, external-dns, Kubegres, the
+Installs the platform services: MetalLB, Traefik, external-dns, cert-manager, the
 CloudNativePG operator, ArgoCD, and ArgoCD Image Updater. The dev cluster
 additionally runs kube-prometheus-stack and, alongside it, `junos_exporter`
 pointed at the `fksw` switch (see `roles/junos_exporter` and
@@ -140,7 +140,7 @@ Three axes, applied consistently across the Kubernetes playbooks:
 | Axis | Tags |
 | --- | --- |
 | Layer, one per play | `bootstrap`, `platform`, `apps` |
-| Component, one per role | `traefik`, `metallb`, `external_dns`, `kubegres`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `kubegres_backup`, `cert_manager`, `garage` |
+| Component, one per role | `traefik`, `metallb`, `external_dns`, `cnpg`, `argocd`, `argocd_gitops`, `argocd_image_updater`, `junos_exporter`, `kube_prometheus_stack`, `django`, `frontend`, `graphics`, `playout`, `stream`, `ingest`, `media_server`, `cnpg_cluster`, `cert_manager`, `garage` |
 | Slice, cross-cutting | `ingress`, `dns`, `internal_dns`, `database`, `monitoring` |
 
 So a single component can be advanced on its own, which is the usual way to
@@ -172,20 +172,13 @@ is declared in `data/apps.yml` (`frikanalen_apps`) and rendered by the single
 file plus three lines in the playbook. Two apps need a credential in place
 before Argo CD syncs them, so they keep a small role of their own:
 `django_db_secret` and `ingest_api_secret`. Also deploys a CloudNativePG `Cluster` named
-`pgcluster` (see `roles/cnpg_cluster`) as a migration target alongside the
-existing Kubegres database: postgres 16, 3 instances on the `local-ssd`
-storage class, `fkweb` db/user, and the same credentials as Kubegres's
-`django-postgres` secret, so the eventual Django cutover is just a
-`DATABASE_URL` hostname change. pgcluster archives WAL continuously and takes a daily
-base backup to Garage, an S3 store on file01 (`roles/garage`, run by
-`playbooks/storage.yml`), through CloudNativePG's Barman Cloud plugin. Data
-comes over from Kubegres with a one-time import, and Kubegres stays in place
-until Django has moved; see `docs/cnpg.md` for the cutover and restore
-steps. Also enables
-Kubegres's built-in daily backup CronJob for prod's `django-postgres`
-(`pg_dumpall`, gzipped, 03:00 -- see `roles/kubegres_backup`), writing into
-a PVC backed by an NFS PV pointed at file01's `/util/k8s` export (see
-`playbooks/storage.yml`).
+`pgcluster` (see `roles/cnpg_cluster`), Django's database since 2026-11-10:
+postgres 16, 3 instances on the `local-ssd` storage class, `fkweb` db/user.
+pgcluster archives WAL continuously and takes a daily base backup to Garage,
+an S3 store on file01 (`roles/garage`, run by `playbooks/storage.yml`),
+through CloudNativePG's Barman Cloud plugin; see `docs/cnpg.md` for backups
+and restores. It replaced the Kubegres `django-postgres` database, which
+`playbooks/decommission_kubegres.yml` removes.
 
 ```sh
 ansible-playbook playbooks/junos_exporter_key.yml
@@ -215,10 +208,10 @@ weekly cron job there that resets `archive/media-staging` to a fresh clone of
 `archive/media` (Monday 00:00, see `roles/media_staging_reset`) -- this is
 the dataset `caspar-sw1` (staging playout) mounts, so staging always starts
 its week from a clean copy of prod's archive. Also exports `/util/k8s` (rw,
-owned by uid/gid 999) as the destination for the prod database backup
-CronJob above, and installs a daily cron job there that prunes dumps older
-than 14 days (see `roles/db_backup_retention`), since Kubegres's own backup
-CronJob never deletes old ones itself.
+owned by uid/gid 999), where the former Kubegres backup CronJob wrote its
+dumps, and a daily cron job there that prunes dumps older than 14 days (see
+`roles/db_backup_retention`). Both can go once the last dumps have aged
+out.
 
 ```sh
 ansible-playbook playbooks/mail.yml
@@ -240,7 +233,7 @@ ansible-playbook playbooks/staging_db_sync.yml
 
 Installs a weekly cron job on the staging cluster node (`dev-kube-1`) that
 refreshes the staging Django database from production: `pg_dump`/`pg_restore`
-over a `kubectl port-forward` into each cluster's `django-postgres`, followed
+over a `kubectl port-forward` into each cluster's `pgcluster-rw`, followed
 by `manage.py migrate` to bring the restored schema forward to whatever
 staging's tracked branch expects (Monday 00:15, see `roles/staging_db_sync`).
 This gives the staging node a cluster-admin kubeconfig for prod, fetched at
