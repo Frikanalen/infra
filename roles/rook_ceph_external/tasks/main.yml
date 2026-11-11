@@ -1,0 +1,145 @@
+---
+# files/create-external-cluster-resources.py is Rook's own export script,
+# copied unmodified from rook/rook v1.20.3 deploy/examples. It creates (or
+# reads back) the restricted CephX users and prints what Rook needs as JSON;
+# import-external-cluster.sh would then apply it with kubectl, which this
+# role does instead with kubernetes.core.k8s. Re-running it returns the same
+# keys, so a re-run changes nothing.
+
+- name: Copy Rook's export script to the Ceph host
+  ansible.builtin.copy:
+    src: create-external-cluster-resources.py
+    dest: /usr/local/sbin/rook-create-external-cluster-resources.py
+    mode: "0755"
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+
+- name: Export the cluster's connection details and CephX users
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/sbin/rook-create-external-cluster-resources.py
+      - --format
+      - json
+      - --namespace
+      - "{{ rook_ceph_external_namespace }}"
+      - --rbd-data-pool-name
+      - "{{ rook_ceph_external_pool }}"
+      - --k8s-cluster-name
+      - "{{ rook_ceph_external_k8s_cluster_name }}"
+      - --restricted-auth-permission
+      - "true"
+      - --v2-port-enable
+      - --skip-monitoring-endpoint
+  register: rook_ceph_external_export
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Parse the export
+  ansible.builtin.set_fact:
+    rook_ceph_external_objects: "{{ rook_ceph_external_export.stdout | from_json }}"
+  no_log: true
+
+- name: Ensure the external cluster namespace
+  become: true
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rook_ceph_external_namespace }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Apply the exported ConfigMaps
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      data: "{{ item.data }}"
+  loop: "{{ rook_ceph_external_objects | selectattr('kind', 'equalto', 'ConfigMap') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Apply the exported Secrets
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      type: kubernetes.io/rook
+      stringData: "{{ item.data }}"
+  loop: "{{ rook_ceph_external_objects | selectattr('kind', 'equalto', 'Secret') | list }}"
+
+# Kept here rather than in gitops: it only means anything together with the
+# Secrets above, which cannot live in git, and it carries no settings of its
+# own worth reviewing there.
+- name: Define the external CephCluster
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: ceph.rook.io/v1
+      kind: CephCluster
+      metadata:
+        name: "{{ rook_ceph_external_namespace }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      spec:
+        external:
+          enable: true
+        crashCollector:
+          disable: true
+        healthCheck:
+          daemonHealth:
+            mon:
+              disabled: false
+              interval: 45s
+
+# The script also proposes a StorageClass named ceph-rbd; its pool and secret
+# names are taken from it so they always match the users it made.
+- name: Pick out the exported RBD StorageClass
+  ansible.builtin.set_fact:
+    rook_ceph_external_sc: >-
+      {{ (rook_ceph_external_objects | selectattr('kind', 'equalto', 'StorageClass')
+          | selectattr('name', 'equalto', 'ceph-rbd') | first).data }}
+
+- name: Apply the RBD StorageClass
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ rook_ceph_external_storage_class }}"
+      provisioner: "{{ rook_ceph_operator_namespace }}.rbd.csi.ceph.com"
+      reclaimPolicy: Delete
+      allowVolumeExpansion: true
+      volumeBindingMode: Immediate
+      parameters:
+        clusterID: "{{ rook_ceph_external_namespace }}"
+        pool: "{{ rook_ceph_external_sc.pool }}"
+        imageFormat: "2"
+        imageFeatures: layering
+        csi.storage.k8s.io/fstype: ext4
+        csi.storage.k8s.io/provisioner-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
+        csi.storage.k8s.io/provisioner-secret-namespace: "{{ rook_ceph_external_namespace }}"
+        csi.storage.k8s.io/controller-expand-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/controller-expand-secret-name'] }}"
+        csi.storage.k8s.io/controller-expand-secret-namespace: "{{ rook_ceph_external_namespace }}"
+        csi.storage.k8s.io/node-stage-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/node-stage-secret-name'] }}"
+        csi.storage.k8s.io/node-stage-secret-namespace: "{{ rook_ceph_external_namespace }}"

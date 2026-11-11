@@ -1,0 +1,22 @@
+---
+# Connects a Kubernetes cluster's Rook to the Proxmox Ceph cluster
+# (roles/proxmox_ceph) in external mode: the CephX users, their keys and the
+# mon endpoints, read from Ceph with Rook's own export script, the external
+# CephCluster resource and the StorageClass. The operator and CSI drivers
+# stay where they are, in gitops (apps/rook-ceph).
+
+# Name of this Kubernetes cluster, used in the CephX user names.
+rook_ceph_external_k8s_cluster_name: "{{ 'prod' if 'prod' in group_names else 'staging' }}"
+
+# Pool this cluster may use; created by roles/proxmox_ceph.
+rook_ceph_external_pool: "k8s-{{ rook_ceph_external_k8s_cluster_name }}"
+
+# Namespace of the external CephCluster. Separate from rook-ceph so it can
+# run beside the in-cluster CephCluster while volumes move across.
+rook_ceph_external_namespace: rook-ceph-external
+rook_ceph_operator_namespace: rook-ceph
+
+rook_ceph_external_storage_class: ceph-rbd
+
+# Proxmox host the export script runs on (it needs the admin keyring).
+rook_ceph_external_ceph_host: "{{ groups['proxmox_ceph'] | first }}"

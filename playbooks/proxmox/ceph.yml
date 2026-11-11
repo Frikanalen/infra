@@ -1,0 +1,17 @@
+---
+# Proxmox-managed Ceph on vm2, vm3 and vm4: one mon, one mgr and one SSD OSD
+# per host, and one RBD pool per Kubernetes cluster. The clusters consume it
+# through Rook in external mode (playbooks/k8s_platform_{dev,prod}.yml,
+# tag rook_ceph_external).
+#
+#   ansible-playbook playbooks/proxmox/ceph.yml
+#
+# A first run on a disk that still holds an old OSD stops and asks for
+# -e proxmox_ceph_allow_zap=true; see roles/proxmox_ceph/defaults/main.yml.
+- name: Ensure Proxmox Ceph
+  hosts: proxmox_ceph
+  become: true
+  gather_facts: true
+  roles:
+    - role: proxmox_ceph
+      tags: [proxmox_ceph]

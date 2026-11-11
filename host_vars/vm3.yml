@@ -1,0 +1,3 @@
+---
+# The 256 GB SSD in the third bay, /dev/sdd at the time of writing.
+proxmox_ceph_osd_device: /dev/disk/by-id/ata-SAMSUNG_MZ7LN256HCHP-000H1_S1ZPNXAG947426
