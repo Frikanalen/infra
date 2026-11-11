@@ -25,44 +25,8 @@
   changed_when: true
   no_log: true
 
-- name: List audit devices
-  ansible.builtin.uri:
-    url: "{{ openbao_api }}/v1/sys/audit"
-    ca_path: "{{ openbao_tls_dir }}/ca.crt"
-    headers:
-      X-Vault-Token: "{{ openbao_root_token }}"
-  register: openbao_audit
-  no_log: true
-
-- name: Log every request to a file audit device
-  # Newer OpenBao releases may refuse to create audit devices over the API
-  # and want them declared in the config file instead. If this fails, the
-  # play carries on without an audit log and says so; see docs/openbao.md.
-  ansible.builtin.uri:
-    url: "{{ openbao_api }}/v1/sys/audit/file"
-    method: PUT
-    ca_path: "{{ openbao_tls_dir }}/ca.crt"
-    headers:
-      X-Vault-Token: "{{ openbao_root_token }}"
-    body_format: json
-    body:
-      type: file
-      options:
-        file_path: "{{ openbao_audit_dir }}/audit.log"
-    status_code: [200, 204]
-  when: "'file/' not in (openbao_audit.json.data | default(openbao_audit.json))"
-  register: openbao_audit_enable
-  failed_when: false
-  changed_when: openbao_audit_enable.status in [200, 204]
-  no_log: true
-
-- name: Warn when the audit device could not be enabled
-  ansible.builtin.debug:
-    msg: "Could not enable the file audit device (HTTP {{ openbao_audit_enable.status }}). See docs/openbao.md."
-  when:
-    - openbao_audit_enable is not skipped
-    - openbao_audit_enable.status not in [200, 204]
-
+# The file audit device is declared in openbao.hcl.j2: OpenBao refuses to
+# create audit devices over the API unless told to allow it.
 - name: Rotate the audit log
   ansible.builtin.copy:
     dest: /etc/logrotate.d/openbao

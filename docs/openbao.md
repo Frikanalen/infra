@@ -136,9 +136,9 @@ These could not be tested from where this was written:
 - The `.deb` asset name in `openbao_deb_url`. If GitHub has renamed it, fix
   the pattern in `roles/openbao/defaults/main.yml`. The package only supplies
   the binary; the role checks that it lands in `/usr/bin/bao`.
-- The file audit device. Recent OpenBao releases may refuse to create audit
-  devices over the API. If the play warns about this, declare the device in
-  `openbao.hcl.j2` instead.
+- The file audit device, now declared in `openbao.hcl.j2` because the API
+  refused it (HTTP 400). Check that `/var/log/openbao/audit.log` fills up
+  after the config change restarts OpenBao.
 - The chart versions `external_secrets` and `reloader` in
   `group_vars/staging.yml`.
 

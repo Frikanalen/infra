@@ -19,6 +19,16 @@ listener "tcp" {
   tls_key_file    = "{{ openbao_tls_dir }}/server.key"
 }
 
+# Every request and response, with secrets HMAC'd. Declared here rather than
+# over the API: OpenBao refuses API-created audit devices by default (it
+# answered HTTP 400 on bao1). Rotated by /etc/logrotate.d/openbao.
+audit "file" "file" {
+  description = "All requests, to {{ openbao_audit_dir }}/audit.log"
+  options {
+    file_path = "{{ openbao_audit_dir }}/audit.log"
+  }
+}
+
 seal "static" {
   current_key_id = "{{ openbao_seal_key_id }}"
   current_key    = "file://{{ openbao_seal_dir }}/{{ openbao_seal_key_id }}.key"
