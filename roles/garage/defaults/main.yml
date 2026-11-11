@@ -46,3 +46,8 @@ garage_buckets:
     key_name: cnpg-staging
     key_id: "{{ vault_dev_cnpg_s3_key_id }}"
     secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
+  # OpenBao's nightly raft snapshots (roles/openbao).
+  - bucket: openbao
+    key_name: openbao
+    key_id: "{{ vault_openbao_s3_key_id }}"
+    secret_key: "{{ vault_openbao_s3_secret_key }}"

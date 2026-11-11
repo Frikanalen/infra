@@ -156,3 +156,15 @@
 
     - role: argocd_image_updater
       tags: [argocd_image_updater]
+
+    # OpenBao (bao1, playbooks/openbao.yml) and the operator that copies
+    # this cluster's secrets out of it; see docs/openbao.md. Needs
+    # playbooks/openbao.yml to have run, with the root token in the vault.
+    - role: openbao_k8s_auth
+      tags: [openbao, external_secrets]
+
+    - role: external_secrets
+      tags: [openbao, external_secrets]
+
+    - role: reloader
+      tags: [reloader]

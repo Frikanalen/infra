@@ -1,0 +1,122 @@
+---
+- name: List secrets engines
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/mounts"
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+  register: openbao_mounts
+  no_log: true
+
+- name: Mount the kv-v2 engine
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/mounts/{{ openbao_kv_mount }}"
+    method: POST
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      type: kv
+      options:
+        version: "2"
+    status_code: [200, 204]
+  when: (openbao_kv_mount ~ '/') not in openbao_mounts.json.data
+  changed_when: true
+  no_log: true
+
+- name: List audit devices
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/audit"
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+  register: openbao_audit
+  no_log: true
+
+- name: Log every request to a file audit device
+  # Newer OpenBao releases may refuse to create audit devices over the API
+  # and want them declared in the config file instead. If this fails, the
+  # play carries on without an audit log and says so; see docs/openbao.md.
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/audit/file"
+    method: PUT
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      type: file
+      options:
+        file_path: "{{ openbao_audit_dir }}/audit.log"
+    status_code: [200, 204]
+  when: "'file/' not in (openbao_audit.json.data | default(openbao_audit.json))"
+  register: openbao_audit_enable
+  failed_when: false
+  changed_when: openbao_audit_enable.status in [200, 204]
+  no_log: true
+
+- name: Warn when the audit device could not be enabled
+  ansible.builtin.debug:
+    msg: "Could not enable the file audit device (HTTP {{ openbao_audit_enable.status }}). See docs/openbao.md."
+  when:
+    - openbao_audit_enable is not skipped
+    - openbao_audit_enable.status not in [200, 204]
+
+- name: Rotate the audit log
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/openbao
+    mode: "0644"
+    content: |
+      {{ openbao_audit_dir }}/audit.log {
+        daily
+        rotate 30
+        compress
+        delaycompress
+        missingok
+        notifempty
+        postrotate
+          systemctl reload openbao >/dev/null 2>&1 || true
+        endscript
+      }
+  become: true
+
+- name: Write the per-environment read policies
+  # External Secrets Operator in each cluster logs in with this policy
+  # (roles/openbao_k8s_auth) and can read only its own environment's prefix.
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/policies/acl/eso-{{ item }}"
+    method: PUT
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      policy: |
+        path "{{ openbao_kv_mount }}/data/{{ item }}/*" {
+          capabilities = ["read"]
+        }
+        path "{{ openbao_kv_mount }}/metadata/{{ item }}/*" {
+          capabilities = ["read", "list"]
+        }
+    status_code: [200, 204]
+  loop: "{{ openbao_environments }}"
+  changed_when: false
+  no_log: true
+
+- name: Write the snapshot policy
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/policies/acl/raft-snapshot"
+    method: PUT
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      policy: |
+        path "sys/storage/raft/snapshot" {
+          capabilities = ["read"]
+        }
+    status_code: [200, 204]
+  changed_when: false
+  no_log: true

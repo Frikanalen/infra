@@ -1,0 +1,113 @@
+---
+- name: Check this cluster names its environment
+  ansible.builtin.assert:
+    that: openbao_env in ['staging', 'prod']
+    fail_msg: openbao_env must be staging or prod (group_vars).
+    quiet: true
+
+- name: Create the token reviewer service account, its binding and token
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      - apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: "{{ openbao_k8s_auth_reviewer_name }}"
+          namespace: "{{ openbao_k8s_auth_reviewer_namespace }}"
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: "{{ openbao_k8s_auth_reviewer_name }}"
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: system:auth-delegator
+        subjects:
+          - kind: ServiceAccount
+            name: "{{ openbao_k8s_auth_reviewer_name }}"
+            namespace: "{{ openbao_k8s_auth_reviewer_namespace }}"
+      # A long-lived token for the reviewer. OpenBao keeps it and uses it to
+      # ask this API server whether a presented token is genuine.
+      - apiVersion: v1
+        kind: Secret
+        type: kubernetes.io/service-account-token
+        metadata:
+          name: "{{ openbao_k8s_auth_reviewer_name }}"
+          namespace: "{{ openbao_k8s_auth_reviewer_namespace }}"
+          annotations:
+            kubernetes.io/service-account.name: "{{ openbao_k8s_auth_reviewer_name }}"
+  become: true
+
+- name: Read the reviewer token and the cluster CA
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    kind: Secret
+    name: "{{ openbao_k8s_auth_reviewer_name }}"
+    namespace: "{{ openbao_k8s_auth_reviewer_namespace }}"
+  register: openbao_k8s_reviewer
+  until: >-
+    openbao_k8s_reviewer.resources | length > 0
+    and 'token' in (openbao_k8s_reviewer.resources[0].data | default({}))
+  retries: 10
+  delay: 2
+  become: true
+  no_log: true
+
+- name: Configure OpenBao for this cluster
+  delegate_to: "{{ openbao_host }}"
+  no_log: true
+  block:
+    - name: List auth methods
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/sys/auth"
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ openbao_root_token }}"
+      register: openbao_auth_methods
+
+    - name: Enable this cluster's Kubernetes auth mount
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/sys/auth/{{ openbao_k8s_auth_mount }}"
+        method: POST
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ openbao_root_token }}"
+        body_format: json
+        body:
+          type: kubernetes
+        status_code: [200, 204]
+      when: (openbao_k8s_auth_mount ~ '/') not in openbao_auth_methods.json.data
+      changed_when: true
+
+    - name: Point the mount at this cluster's API server
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/auth/{{ openbao_k8s_auth_mount }}/config"
+        method: POST
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ openbao_root_token }}"
+        body_format: json
+        body:
+          kubernetes_host: "{{ openbao_k8s_auth_api }}"
+          kubernetes_ca_cert: "{{ openbao_k8s_reviewer.resources[0].data['ca.crt'] | b64decode }}"
+          token_reviewer_jwt: "{{ openbao_k8s_reviewer.resources[0].data['token'] | b64decode }}"
+        status_code: [200, 204]
+      changed_when: false
+
+    - name: Let External Secrets Operator log in with this environment's policy
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/auth/{{ openbao_k8s_auth_mount }}/role/{{ openbao_k8s_auth_role }}"
+        method: POST
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ openbao_root_token }}"
+        body_format: json
+        body:
+          bound_service_account_names: ["{{ openbao_k8s_auth_bound_sa }}"]
+          bound_service_account_namespaces: ["{{ openbao_k8s_auth_bound_namespace }}"]
+          token_policies: ["eso-{{ openbao_env }}"]
+          token_ttl: 1h
+          token_max_ttl: 4h
+        status_code: [200, 204]
+      changed_when: false

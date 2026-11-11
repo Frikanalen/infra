@@ -1,0 +1,24 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# Nightly raft snapshot of OpenBao, copied to Garage on file01.
+set -eu
+umask 077
+
+api="{{ openbao_api }}"
+ca="{{ openbao_tls_dir }}/ca.crt"
+token="$(cat {{ openbao_config_dir }}/snapshot.token)"
+out="{{ openbao_snapshot_dir }}/raft-$(date +%Y%m%dT%H%M%S).snap"
+
+# The token is periodic: renewing it every night keeps it alive indefinitely
+# without giving it a long fixed lifetime.
+curl -fsS --cacert "$ca" -H "X-Vault-Token: $token" -X POST \
+  "$api/v1/auth/token/renew-self" >/dev/null
+
+curl -fsS --cacert "$ca" -H "X-Vault-Token: $token" \
+  "$api/v1/sys/storage/raft/snapshot" -o "$out.tmp"
+mv "$out.tmp" "$out"
+
+rclone --config {{ openbao_config_dir }}/rclone.conf copyto "$out" \
+  "garage:{{ openbao_snapshot_bucket }}/$(basename "$out")"
+
+find {{ openbao_snapshot_dir }} -name 'raft-*.snap' -mtime +{{ openbao_snapshot_keep_local_days }} -delete

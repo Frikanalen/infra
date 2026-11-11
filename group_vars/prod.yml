@@ -126,6 +126,10 @@ argocd_stream_ffmpeg_cpu_limit: "12"
 # Every app the cluster runs must have a key here. The roles no longer carry
 # a fallback: a missing key is now an undefined-variable error rather than a
 # silent deploy of whatever the fallback happened to name.
+# Which OpenBao prefix this cluster reads (kv/prod/...), and the name of its
+# Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
+openbao_env: prod
+
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
@@ -153,3 +157,7 @@ helm_chart_versions:
   kube_prometheus_stack: "91.4.1"
   loki: "7.3.0"
   alloy: "1.12.1"
+  # External Secrets Operator (roles/external_secrets) and Reloader
+  # (roles/reloader); see docs/openbao.md.
+  external_secrets: "2.13.0"
+  reloader: "2.2.18"

@@ -1,0 +1,20 @@
+---
+- name: Add the Stakater Helm repository
+  kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: stakater
+    repo_url: https://stakater.github.io/stakater-charts
+  become: true
+  run_once: true
+
+- name: Install Reloader via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: reloader
+    chart_ref: stakater/reloader
+    chart_version: "{{ reloader_chart_version }}"
+    release_namespace: "{{ reloader_namespace }}"
+    create_namespace: true
+    wait: true
+  become: true
+  run_once: true

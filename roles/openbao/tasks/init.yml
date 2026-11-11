@@ -1,0 +1,48 @@
+---
+- name: Ask whether OpenBao is initialised
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/init"
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+  register: openbao_init_status
+
+- name: Initialise OpenBao
+  when: not openbao_init_status.json.initialized
+  block:
+    - name: Run the one-time init
+      # With the static seal this returns recovery keys and a root token, not
+      # unseal keys: the server unseals itself.
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/sys/init"
+        method: POST
+        ca_path: "{{ openbao_tls_dir }}/ca.crt"
+        body_format: json
+        body:
+          recovery_shares: "{{ openbao_recovery_shares }}"
+          recovery_threshold: "{{ openbao_recovery_threshold }}"
+      register: openbao_init_result
+      no_log: true
+
+    - name: Save the root token and recovery keys on the controller
+      # The only copy. Not printed, so it stays out of logs and terminals.
+      ansible.builtin.copy:
+        content: "{{ openbao_init_result.json | to_nice_json }}\n"
+        dest: "{{ lookup('env', 'HOME') }}/openbao-init-{{ inventory_hostname }}.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+- name: Stop here until the root token is in the vault
+  when: openbao_root_token | length == 0
+  block:
+    - name: Explain the next step
+      ansible.builtin.debug:
+        msg: >-
+          OpenBao is initialised. The root token and recovery keys are in
+          ~/openbao-init-{{ inventory_hostname }}.json on this machine. Add the
+          root_token to data/vault.yml as vault_openbao_root_token, keep the
+          recovery keys somewhere offline (see docs/openbao.md), delete the
+          file, and run this playbook again.
+
+    - name: End the play for this host
+      ansible.builtin.meta: end_host

@@ -1,0 +1,15 @@
+---
+# External Secrets Operator, which copies this cluster's secrets out of
+# OpenBao (bao1) into ordinary Kubernetes Secrets. Which secrets go where is
+# declared by ExternalSecret manifests in the clusters repo; this role only
+# installs the operator and the one ClusterSecretStore they all use.
+external_secrets_namespace: external-secrets
+external_secrets_chart_version: "{{ helm_chart_versions.external_secrets }}"
+
+# By IP, not name: pods do not resolve dc1.frikanalen.tv. The server
+# certificate names the IP (roles/openbao).
+external_secrets_openbao_server: "https://{{ host_config[groups['secrets'][0]].ip_cidr.split('/')[0] }}:8200"
+external_secrets_openbao_host: "{{ groups['secrets'][0] }}"
+external_secrets_openbao_ca_path: /etc/openbao/tls/ca.crt
+external_secrets_openbao_kv_mount: kv
+external_secrets_store_name: openbao

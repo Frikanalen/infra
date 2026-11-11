@@ -79,6 +79,24 @@ kube_prometheus_stack_environment: development
 argocd_image_updater_enabled: true
 
 # Every app the cluster runs must have a key here -- see group_vars/prod.yml.
+# Which OpenBao prefix this cluster reads (kv/staging/...), and the name of its
+# Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
+openbao_env: staging
+
+# Secrets playbooks/openbao_seed.yml copies from this cluster into OpenBao,
+# unchanged, at kv/staging/<namespace>/<name>. The app Secrets only: the
+# platform's (Traefik, external-dns, monitoring) stay with Ansible until the
+# platform moves to the clusters repo.
+openbao_seed_secrets:
+  - { namespace: default, name: django-postgres-passwords }
+  - { namespace: default, name: django-secret }
+  - { namespace: default, name: pgcluster-app }
+  - { namespace: default, name: pgcluster-superuser }
+  - { namespace: default, name: pgcluster-backup-s3 }
+  - { namespace: default, name: ingest-api }
+  - { namespace: default, name: ingest-archive-ssh }
+  - { namespace: default, name: playout-live }
+
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
@@ -105,3 +123,7 @@ helm_chart_versions:
   kube_prometheus_stack: "91.4.1"
   loki: "7.3.0"
   alloy: "1.12.1"
+  # External Secrets Operator (roles/external_secrets) and Reloader
+  # (roles/reloader); see docs/openbao.md.
+  external_secrets: "2.13.0"
+  reloader: "2.2.18"

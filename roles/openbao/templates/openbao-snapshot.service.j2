@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[Unit]
+Description=OpenBao raft snapshot to Garage
+After=openbao.service
+Requires=openbao.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/openbao-snapshot
