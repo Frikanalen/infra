@@ -8,6 +8,35 @@
 #
 # A first run on a disk that still holds an old OSD stops and asks for
 # -e proxmox_ceph_allow_zap=true; see roles/proxmox_ceph/defaults/main.yml.
+# pveceph mon create treats a node as the first monitor only when the
+# cluster-wide "ceph-mon" key-value store lists no monitor anywhere. Each
+# node's pvestatd keeps its own entry there, but only on nodes with Ceph
+# installed, so a node that once ran a mon and has since lost Ceph keeps a
+# stale entry for ever. vm1 had one ({"vm1":{"direxists":1,"service":1}})
+# left from the earlier cluster, which made every mon create fail with
+# "rados_connect failed". Blank it on the Proxmox hosts outside the Ceph
+# cluster that have no ceph-mon installed.
+- name: Clear stale monitor entries left by hosts without Ceph
+  hosts: proxmox:!proxmox_ceph
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check whether this host has ceph-mon installed
+      ansible.builtin.stat:
+        path: /usr/bin/ceph-mon
+      register: proxmox_ceph_mon_binary
+
+    - name: Blank this host's ceph-mon broadcast
+      ansible.builtin.command:
+        argv:
+          - perl
+          - -MPVE::Cluster
+          - -e
+          - 'PVE::Cluster::broadcast_node_kv("ceph-mon", "{}")'
+      when: not proxmox_ceph_mon_binary.stat.exists
+      changed_when: false
+      tags: [proxmox_ceph]
+
 - name: Ensure Proxmox Ceph
   hosts: proxmox_ceph
   become: true
