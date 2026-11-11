@@ -97,20 +97,37 @@ OpenBao, is a seal migration and needs no rebuild.
    `microk8s kubectl get clustersecretstore openbao` should show
    `Valid / Ready True`.
 
-## Handing a Secret over to ESO
+5. Hand staging over to the clusters repo. This creates the `staging` root
+   Application, which syncs `clusters/staging/` (every app's Application,
+   and an ExternalSecret for each app Secret). Argo CD adopts the existing
+   Applications by name, and ESO adopts the existing Secrets, whose contents
+   OpenBao now holds unchanged:
 
-For each Secret listed in `openbao_seed_secrets`:
+   ```sh
+   ansible-playbook playbooks/k8s_platform_dev.yml --tags clusters_root
+   ```
 
-1. Add its ExternalSecret to the clusters repo, under
-   `clusters/staging/secrets/`.
-2. Remove the Ansible role that wrote it from `k8s_apps_staging.yml`, and
-   delete the Ansible-made Secret, so that ESO creates its own copy and owns
-   it. ESO will not take over a Secret it did not create.
-3. Annotate the workload `reloader.stakater.com/auto: "true"` in place of
-   the checksum annotation Ansible used to compute.
+   Then check that every ExternalSecret reads `SecretSynced`
+   (`microk8s kubectl get externalsecrets -A`) and every app is Synced and
+   Healthy in Argo CD. If ESO refuses to adopt a Secret, delete that Secret
+   and ESO recreates it within a minute.
 
-From then on, change the value in OpenBao (`bao kv put kv/staging/...`),
-not in the vault.
+## After the handover
+
+- Staging's app versions and values live in the clusters repo,
+  `clusters/staging/apps/`. `k8s_apps_staging.yml` no longer creates
+  Applications.
+- The app Secrets come from OpenBao. Change a value with
+  `bao kv put kv/staging/default/<name> ...` (or the UI on
+  https://bao1.dc1.frikanalen.tv:8200), not in the vault. Reloader restarts
+  whatever uses it.
+- `app_secrets_from_openbao: true` in `group_vars/staging.yml` makes the
+  roles that issue credentials (`playout_live_secret`,
+  `ingest_archive_account`) write them to OpenBao instead of to the
+  cluster, and `cnpg_cluster` stops writing its Secrets.
+- `django-secret` (Django's SECRET_KEY) is copied into OpenBao as a backup
+  but is still rendered by the django-api chart. Moving it to ESO needs a
+  chart change, so that the chart stops creating it.
 
 ## Things to check on the first apply
 

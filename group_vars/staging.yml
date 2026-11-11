@@ -83,6 +83,11 @@ argocd_image_updater_enabled: true
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
 openbao_env: staging
 
+# The app Secrets (openbao_seed_secrets below) come from OpenBao through
+# External Secrets Operator (clusters/staging/secrets), so the roles that
+# used to write them skip that, or write to OpenBao instead.
+app_secrets_from_openbao: true
+
 # Secrets playbooks/openbao_seed.yml copies from this cluster into OpenBao,
 # unchanged, at kv/staging/<namespace>/<name>. The app Secrets only: the
 # platform's (Traefik, external-dns, monitoring) stay with Ansible until the
