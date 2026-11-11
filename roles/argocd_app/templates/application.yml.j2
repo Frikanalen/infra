@@ -25,3 +25,11 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+{% if _app.ignore_differences %}
+      # ignoreDifferences alone only hides a field from the diff: the next
+      # sync, which every image bump starts, still applies the rendered value
+      # over it. django-api's chart renders a fresh random SECRET_KEY each
+      # time (Helm's lookup is always empty under Argo CD), so without this
+      # every rollout replaced the key and logged everyone out.
+      - RespectIgnoreDifferences=true
+{% endif %}
