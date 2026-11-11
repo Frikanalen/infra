@@ -1,0 +1,14 @@
+---
+- name: Install and run OpenBao
+  ansible.builtin.import_tasks: install.yml
+
+- name: Initialise OpenBao on first run
+  ansible.builtin.import_tasks: init.yml
+
+# Everything below talks to the API as root, so it waits for the root token
+# to be in the vault. init.yml ends the play for this host until it is.
+- name: Configure mounts, policies and audit
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Nightly raft snapshots to Garage
+  ansible.builtin.import_tasks: snapshot.yml

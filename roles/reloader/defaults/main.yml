@@ -1,0 +1,7 @@
+---
+# Stakater Reloader: restarts a workload when a Secret or ConfigMap it
+# uses changes. Set to reload every workload (reloader.autoReloadAll).
+# Replaces the checksum annotations Ansible used to compute, now that
+# External Secrets Operator, not Ansible, writes the Secrets.
+reloader_namespace: reloader
+reloader_chart_version: "{{ helm_chart_versions.reloader }}"

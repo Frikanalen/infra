@@ -1,0 +1,27 @@
+---
+- name: Add the Stakater Helm repository
+  kubernetes.core.helm_repository:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: stakater
+    repo_url: https://stakater.github.io/stakater-charts
+  become: true
+  run_once: true
+
+- name: Install Reloader via Helm
+  kubernetes.core.helm:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    name: reloader
+    chart_ref: stakater/reloader
+    chart_version: "{{ reloader_chart_version }}"
+    release_namespace: "{{ reloader_namespace }}"
+    create_namespace: true
+    wait: true
+    values:
+      reloader:
+        # Every workload restarts when a Secret or ConfigMap it references
+        # changes, with no per-chart annotation needed. None of our charts
+        # exposes Deployment-level annotations, which is where
+        # reloader.stakater.com/auto would otherwise have to go.
+        autoReloadAll: true
+  become: true
+  run_once: true

@@ -1,0 +1,105 @@
+---
+# Copies a cluster's existing Secrets into OpenBao, unchanged, at
+# kv/<openbao_env>/<namespace>/<name>. Each one can then be handed back to
+# External Secrets Operator with an ExternalSecret that extracts the whole
+# path (dataFrom: extract), so the Secret it writes is identical to the one
+# Ansible made. Which Secrets: openbao_seed_secrets in
+# group_vars/{staging,prod}.yml.
+#
+#   ansible-playbook playbooks/openbao_seed.yml --limit kubedev_admin
+#
+# Safe to re-run: a path whose contents already match is left alone, and a
+# path that differs is NOT overwritten unless -e openbao_seed_overwrite=true,
+# because once a Secret has moved to OpenBao, OpenBao is the source of truth.
+- name: Copy cluster Secrets into OpenBao
+  hosts: kubedev_admin:kubeprod_admin
+  gather_facts: false
+  vars:
+    openbao_host: "{{ groups['secrets'][0] }}"
+    openbao_api: "https://127.0.0.1:8200"
+    openbao_ca_path: /etc/openbao/tls/ca.crt
+    openbao_seed_overwrite: false
+  pre_tasks:
+    - name: Check this cluster names its environment
+      ansible.builtin.assert:
+        that: openbao_env in ['staging', 'prod']
+        quiet: true
+  tasks:
+    - name: Read each Secret from the cluster
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        kind: Secret
+        name: "{{ item.name }}"
+        namespace: "{{ item.namespace }}"
+      loop: "{{ openbao_seed_secrets | default([]) }}"
+      loop_control:
+        label: "{{ item.namespace }}/{{ item.name }}"
+      register: openbao_seed_k8s
+      become: true
+      no_log: true
+
+    - name: Report Secrets that do not exist in this cluster
+      ansible.builtin.debug:
+        msg: "Not in the cluster, skipped: {{ item.item.namespace }}/{{ item.item.name }}"
+      loop: "{{ openbao_seed_k8s.results | rejectattr('resources') | list }}"
+      loop_control:
+        label: "{{ item.item.namespace }}/{{ item.item.name }}"
+
+    - name: Read what OpenBao already holds
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/kv/data/{{ openbao_env }}/{{ item.item.namespace }}/{{ item.item.name }}"
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ vault_openbao_root_token }}"
+        status_code: [200, 404]
+      loop: "{{ openbao_seed_k8s.results | selectattr('resources') | list }}"
+      loop_control:
+        label: "{{ item.item.namespace }}/{{ item.item.name }}"
+      register: openbao_seed_existing
+      delegate_to: "{{ openbao_host }}"
+      no_log: true
+
+    - name: Write each Secret's data to OpenBao
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/kv/data/{{ openbao_env }}/{{ item.item.item.namespace }}/{{ item.item.item.name }}"
+        method: POST
+        ca_path: "{{ openbao_ca_path }}"
+        headers:
+          X-Vault-Token: "{{ vault_openbao_root_token }}"
+        body_format: json
+        body:
+          data: "{{ _data }}"
+        status_code: [200, 204]
+      vars:
+        _data: >-
+          {{ dict(item.item.resources[0].data | default({}) | dict2items
+                  | map(attribute='key')
+                  | zip(item.item.resources[0].data | default({}) | dict2items
+                        | map(attribute='value') | map('b64decode'))) }}
+        _current: "{{ (item.json | default({})).data.data | default(none) if item.status == 200 else none }}"
+      loop: "{{ openbao_seed_existing.results }}"
+      loop_control:
+        label: "{{ item.item.item.namespace }}/{{ item.item.item.name }}"
+      when: _current is none or (_current != _data and openbao_seed_overwrite | bool)
+      changed_when: true
+      delegate_to: "{{ openbao_host }}"
+      no_log: true
+
+    - name: Warn about paths that differ and were left alone
+      ansible.builtin.debug:
+        msg: >-
+          kv/{{ openbao_env }}/{{ item.item.item.namespace }}/{{ item.item.item.name }}
+          differs from the cluster's Secret and was not overwritten.
+      vars:
+        _data: >-
+          {{ dict(item.item.resources[0].data | default({}) | dict2items
+                  | map(attribute='key')
+                  | zip(item.item.resources[0].data | default({}) | dict2items
+                        | map(attribute='value') | map('b64decode'))) }}
+      loop: "{{ openbao_seed_existing.results }}"
+      loop_control:
+        label: "{{ item.item.item.namespace }}/{{ item.item.item.name }}"
+      when:
+        - item.status == 200
+        - item.json.data.data != _data
+        - not (openbao_seed_overwrite | bool)

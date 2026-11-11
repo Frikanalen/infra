@@ -1,0 +1,202 @@
+---
+- name: Check the seal key is in the vault
+  ansible.builtin.assert:
+    that:
+      - openbao_seal_key_id | length > 0
+      - openbao_seal_key | length == 64
+    fail_msg: >-
+      vault_openbao_seal_key_id and vault_openbao_seal_key (64 hex characters,
+      openssl rand -hex 32) must be in data/vault.yml. See docs/openbao.md.
+    quiet: true
+
+- name: Install packages OpenBao's tooling needs
+  ansible.builtin.apt:
+    name: [curl, rclone, openssl, python3]
+    state: present
+  become: true
+
+- name: Install OpenBao from the release package
+  ansible.builtin.apt:
+    deb: "{{ openbao_deb_url }}"
+    state: present
+  become: true
+  notify: Restart openbao
+
+- name: Check the bao binary is where the unit expects it
+  ansible.builtin.stat:
+    path: "{{ openbao_binary }}"
+  register: openbao_binary_stat
+  failed_when: not openbao_binary_stat.stat.exists
+
+- name: Create the openbao system user
+  ansible.builtin.user:
+    name: "{{ openbao_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/openbao
+    create_home: false
+  become: true
+
+- name: Create OpenBao's directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ openbao_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    # Traversable by anyone, so the API calls below can read ca.crt without
+    # privilege; every secret file inside has its own restrictive mode.
+    - { path: "{{ openbao_config_dir }}", owner: root, mode: "0755" }
+    - { path: "{{ openbao_tls_dir }}", owner: root, mode: "0755" }
+    - { path: "{{ openbao_seal_dir }}", owner: "{{ openbao_user }}", mode: "0700" }
+    - { path: /var/lib/openbao, owner: "{{ openbao_user }}", mode: "0750" }
+    - { path: "{{ openbao_raft_dir }}", owner: "{{ openbao_user }}", mode: "0700" }
+    - { path: "{{ openbao_audit_dir }}", owner: "{{ openbao_user }}", mode: "0750" }
+    - { path: "{{ openbao_snapshot_dir }}", owner: root, mode: "0700" }
+  loop_control:
+    label: "{{ item.path }}"
+  become: true
+
+# A private CA of OpenBao's own, generated once on bao1. Its certificate is
+# public and is handed to each cluster's External Secrets Operator
+# (roles/external_secrets); the CA key never leaves this directory.
+- name: Generate the CA
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -newkey
+      - ec
+      - -pkeyopt
+      - ec_paramgen_curve:prime256v1
+      - -nodes
+      - -days
+      - "3650"
+      - -subj
+      - /CN=Frikanalen OpenBao CA
+      - -keyout
+      - "{{ openbao_tls_dir }}/ca.key"
+      - -out
+      - "{{ openbao_tls_dir }}/ca.crt"
+    creates: "{{ openbao_tls_dir }}/ca.crt"
+  become: true
+
+- name: Generate the server certificate
+  # Names both the DNS name and the IP: the clusters reach bao1 by IP,
+  # because pods do not resolve dc1.frikanalen.tv.
+  ansible.builtin.shell: |
+    set -eu
+    cd {{ openbao_tls_dir }}
+    openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+      -subj "/CN={{ openbao_hostname }}" -keyout server.key -out server.csr
+    printf 'subjectAltName=DNS:{{ openbao_hostname }},DNS:{{ inventory_hostname }},IP:{{ openbao_ip }},IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' > server.ext
+    openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+      -days 1825 -extfile server.ext -out server.crt
+    rm -f server.csr server.ext
+  args:
+    creates: "{{ openbao_tls_dir }}/server.crt"
+    executable: /bin/bash
+  become: true
+  notify: Restart openbao
+
+- name: Let OpenBao read its certificate and key
+  ansible.builtin.file:
+    path: "{{ openbao_tls_dir }}/{{ item.name }}"
+    owner: root
+    group: "{{ openbao_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { name: ca.crt, mode: "0644" }
+    - { name: ca.key, mode: "0600" }
+    - { name: server.crt, mode: "0644" }
+    - { name: server.key, mode: "0640" }
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+
+- name: Write the seal keys, hex-encoded, for the conversion below
+  ansible.builtin.copy:
+    content: "{{ item.key }}\n"
+    dest: "{{ openbao_seal_dir }}/{{ item.id }}.hex"
+    owner: root
+    group: root
+    mode: "0400"
+  loop: >-
+    {{ [{'id': openbao_seal_key_id, 'key': openbao_seal_key}]
+       + ([{'id': openbao_seal_previous_key_id, 'key': openbao_seal_previous_key}]
+          if openbao_seal_previous_key_id else []) }}
+  loop_control:
+    label: "{{ item.id }}"
+  register: openbao_seal_hex
+  become: true
+  no_log: true
+
+- name: Convert each seal key to the 32 raw bytes OpenBao reads
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import os, sys
+        src, dst = sys.argv[1], sys.argv[2]
+        key = bytes.fromhex(open(src).read().strip())
+        assert len(key) == 32, "seal key must be 32 bytes"
+        fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o400)
+        with os.fdopen(fd, "wb") as f:
+            f.write(key)
+      - "{{ item.dest }}"
+      - "{{ item.dest | regex_replace('\\.hex$', '.key') }}"
+  loop: "{{ openbao_seal_hex.results | selectattr('changed') | list }}"
+  loop_control:
+    label: "{{ item.dest | basename }}"
+  become: true
+  changed_when: true
+  notify: Restart openbao
+
+- name: Hand the raw seal keys to the openbao user
+  ansible.builtin.shell: >-
+    chown {{ openbao_user }}:{{ openbao_user }} {{ openbao_seal_dir }}/*.key &&
+    chmod 0400 {{ openbao_seal_dir }}/*.key
+  become: true
+  changed_when: false
+
+- name: Write the OpenBao config
+  ansible.builtin.template:
+    src: openbao.hcl.j2
+    dest: "{{ openbao_config_path }}"
+    owner: root
+    group: "{{ openbao_user }}"
+    mode: "0640"
+  become: true
+  notify: Restart openbao
+
+- name: Install the OpenBao systemd unit
+  # In /etc/systemd/system, so it wins over any unit the package ships.
+  ansible.builtin.template:
+    src: openbao.service.j2
+    dest: /etc/systemd/system/openbao.service
+    mode: "0644"
+  become: true
+  notify: Restart openbao
+
+- name: Start OpenBao
+  ansible.builtin.systemd:
+    name: openbao
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
+
+- name: Restart OpenBao now if anything above changed
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the API
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/sys/health?uninitcode=200&sealedcode=200"
+    ca_path: "{{ openbao_tls_dir }}/ca.crt"
+  register: openbao_health
+  until: openbao_health.status == 200
+  retries: 15
+  delay: 2

@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+[garage]
+type = s3
+provider = Other
+endpoint = {{ openbao_snapshot_s3_endpoint }}
+region = {{ openbao_snapshot_s3_region }}
+access_key_id = {{ openbao_snapshot_s3_key_id }}
+secret_access_key = {{ openbao_snapshot_s3_secret_key }}
+force_path_style = true

@@ -1,11 +1,16 @@
 ---
-# Deploy Argo CD application definitions to staging.
+# What staging's apps need beyond their Argo CD Applications: database,
+# secrets the apps read, the archive account and the media server.
 #
 #   ansible-playbook playbooks/k8s_apps_staging.yml
-#   ansible-playbook playbooks/k8s_apps_staging.yml --tags frontend
+#   ansible-playbook playbooks/k8s_apps_staging.yml --tags ingest
 #
-# Tags: apps (everything here), plus one per component. Versions come from
-# app_versions in group_vars/staging.yml.
+# The Applications themselves, with their versions and values, are no longer
+# here: they are files in the clusters repo (clusters/staging/apps), synced
+# by the "staging" root Application from k8s_platform_dev.yml. To change a
+# staging app's version or values, edit that repo. The secret roles below go
+# too, one by one, as External Secrets Operator takes each Secret over from
+# OpenBao (docs/openbao.md).
 - name: Deploy applications to the staging cluster
   hosts: kubedev_admin
   tags: [apps]
@@ -20,48 +25,21 @@
     cnpg_cluster_backup_s3_key_id: "{{ vault_dev_cnpg_s3_key_id }}"
     cnpg_cluster_backup_s3_secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
   roles:
-    - role: django_db_secret
-      tags: [django]
-      vars:
-        django_db_secret_super_password: "{{ vault_dev_django_postgres_super_password }}"
-        django_db_secret_replication_password: "{{ vault_dev_django_postgres_replication_password }}"
-        django_db_secret_django_password: "{{ vault_dev_django_postgres_django_password }}"
-
-    - role: argocd_app
-      tags: [django]
-      vars:
-        argocd_app: "{{ frikanalen_apps.django }}"
+    # django_db_secret and ingest_api_secret are gone from here: their
+    # Secrets come from OpenBao (clusters/staging/secrets). cnpg_cluster,
+    # ingest_archive_account and playout_live_secret skip or redirect their
+    # Secret writes to OpenBao because app_secrets_from_openbao is on.
 
     # The CloudNativePG "pgcluster" Cluster Django runs on; see
     # roles/cnpg_cluster and docs/cnpg.md.
     - role: cnpg_cluster
       tags: [cnpg_cluster, database]
 
-    - role: argocd_app
-      tags: [frontend]
-      vars:
-        argocd_app: "{{ frikanalen_apps.frontend }}"
-
-    - role: argocd_app
-      tags: [graphics]
-      vars:
-        argocd_app: "{{ frikanalen_apps.graphics }}"
-
     # Issues playout's MediaMTX reader credential through Django and stores it
     # in the Secret playout reads; must follow the django app and precede
     # playout's, which rolls when the key changes.
     - role: playout_live_secret
       tags: [playout, playout_live]
-
-    - role: argocd_app
-      tags: [playout]
-      vars:
-        argocd_app: "{{ frikanalen_apps.playout }}"
-
-    - role: argocd_app
-      tags: [stream]
-      vars:
-        argocd_app: "{{ frikanalen_apps.stream }}"
 
     # Generates the archive key and provisions the file01 account; must precede
     # the ingest app, which reads the key back to roll the pod on rotation.
@@ -71,20 +49,5 @@
     - role: ingest_archive_mount
       tags: [ingest, ingest_app]
 
-    - role: ingest_api_secret
-      tags: [ingest, ingest_app]
-      vars:
-        ingest_api_token: "{{ vault_dev_ingest_api_token }}"
-
-    - role: argocd_app
-      tags: [ingest, ingest_app]
-      vars:
-        argocd_app: "{{ frikanalen_apps.ingest }}"
-
     - role: media_server
       tags: [media_server]
-
-    - role: argocd_app
-      tags: [mediamtx]
-      vars:
-        argocd_app: "{{ frikanalen_apps.mediamtx }}"

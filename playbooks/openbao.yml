@@ -1,0 +1,17 @@
+---
+# OpenBao on bao1: the secrets store for both clusters, and later for
+# Ansible itself. Run after Terraform has created the VM and
+# playbooks/site.yml has done the common setup:
+#
+#   ansible-playbook playbooks/openbao.yml
+#
+# The first run initialises OpenBao and stops, leaving the root token and
+# recovery keys in ~/openbao-init-bao1.json; docs/openbao.md says what to do
+# with them. Each cluster is then connected by k8s_platform_*.yml
+# (--tags openbao), and seeded by playbooks/openbao_seed.yml.
+- name: Install and configure OpenBao
+  hosts: secrets
+  become: true
+  gather_facts: true
+  roles:
+    - openbao

@@ -1,0 +1,70 @@
+---
+- name: Look for the snapshot token
+  ansible.builtin.stat:
+    path: "{{ openbao_config_dir }}/snapshot.token"
+  register: openbao_snapshot_token_file
+  become: true
+
+- name: Issue the snapshot token
+  when: not openbao_snapshot_token_file.stat.exists
+  block:
+    - name: Create a periodic token that can only take snapshots
+      ansible.builtin.uri:
+        url: "{{ openbao_api }}/v1/auth/token/create-orphan"
+        method: POST
+        ca_path: "{{ openbao_tls_dir }}/ca.crt"
+        headers:
+          X-Vault-Token: "{{ openbao_root_token }}"
+        body_format: json
+        body:
+          policies: [raft-snapshot]
+          no_default_policy: false
+          period: 768h
+          display_name: raft-snapshot
+      register: openbao_snapshot_token
+      no_log: true
+
+    - name: Store the snapshot token
+      ansible.builtin.copy:
+        content: "{{ openbao_snapshot_token.json.auth.client_token }}"
+        dest: "{{ openbao_config_dir }}/snapshot.token"
+        owner: root
+        group: root
+        mode: "0400"
+      become: true
+      no_log: true
+
+- name: Write the rclone config for Garage
+  ansible.builtin.template:
+    src: rclone.conf.j2
+    dest: "{{ openbao_config_dir }}/rclone.conf"
+    owner: root
+    group: root
+    mode: "0400"
+  become: true
+  no_log: true
+
+- name: Install the snapshot script
+  ansible.builtin.template:
+    src: openbao-snapshot.sh.j2
+    dest: /usr/local/sbin/openbao-snapshot
+    mode: "0750"
+  become: true
+
+- name: Install the snapshot unit and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    mode: "0644"
+  loop:
+    - openbao-snapshot.service
+    - openbao-snapshot.timer
+  become: true
+
+- name: Enable the nightly snapshot
+  ansible.builtin.systemd:
+    name: openbao-snapshot.timer
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
