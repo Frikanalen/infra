@@ -130,6 +130,25 @@ argocd_stream_ffmpeg_cpu_limit: "12"
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
 openbao_env: prod
 
+# The app Secrets (openbao_seed_secrets below) come from OpenBao through
+# External Secrets Operator (clusters/prod/secrets), so the roles that used
+# to write them skip that, or write to OpenBao instead.
+app_secrets_from_openbao: true
+
+# Secrets playbooks/openbao_seed.yml copies from this cluster into OpenBao,
+# unchanged, at kv/prod/<namespace>/<name>. The app Secrets only: the
+# platform's (Traefik, external-dns, monitoring) stay with Ansible until the
+# platform moves to the clusters repo.
+openbao_seed_secrets:
+  - { namespace: default, name: django-postgres-passwords }
+  - { namespace: default, name: django-secret }
+  - { namespace: default, name: pgcluster-app }
+  - { namespace: default, name: pgcluster-superuser }
+  - { namespace: default, name: pgcluster-backup-s3 }
+  - { namespace: default, name: ingest-api }
+  - { namespace: default, name: ingest-archive-ssh }
+  - { namespace: default, name: playout-live }
+
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
