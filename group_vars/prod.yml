@@ -138,8 +138,9 @@ app_versions:
   frontend: v3.4.1
   django: v2.1.0
   stream: v0.4.0
-  # v1.1.0 = v1.0.0 (Frikanalen/ingest#26) plus the frikanalen.tv move.
-  ingest: v1.1.0
+  # v1.1.1 = v1.0.0 (Frikanalen/ingest#26), the frikanalen.tv move, and a CI
+  # fix that attaches fk-archive-utils' .deb to the release.
+  ingest: v1.1.1
 
 helm_chart_versions:
   traefik: "41.6.0"
