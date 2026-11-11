@@ -73,9 +73,6 @@ argocd_stream_cubemap_multicast_group: "239.1.1.50"
 # See data/cluster.yml for what this gates and why prod leaves it false.
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: development
-# Prometheus and Alertmanager volumes on the Proxmox Ceph cluster
-# (roles/rook_ceph_external) instead of the in-cluster one.
-kube_prometheus_stack_storage_class: ceph-rbd
 
 # Auto-roll staging deployments when a new image is pushed to the tracked
 # floating tag (see argocd_image_updater role and each argocd_* app role).

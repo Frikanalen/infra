@@ -33,9 +33,10 @@ kube_prometheus_stack_telegram_chat_id: "{{ vault_alertmanager_telegram_chat_id 
 # to distinguish when they share a Telegram channel.
 kube_prometheus_stack_environment: "{{ inventory_hostname }}"
 
-# Persistent storage for Prometheus and Alertmanager. ceph-block because it
-# follows the pod to any node, unlike local-ssd, which pins it to one.
-kube_prometheus_stack_storage_class: ceph-block
+# Persistent storage for Prometheus and Alertmanager. ceph-rbd (the Proxmox
+# Ceph cluster, roles/rook_ceph_external) because it follows the pod to any
+# node, unlike local-ssd, which pins it to one.
+kube_prometheus_stack_storage_class: ceph-rbd
 kube_prometheus_stack_retention: 15d
 kube_prometheus_stack_prometheus_storage_size: 30Gi
 kube_prometheus_stack_alertmanager_storage_size: 1Gi
