@@ -162,6 +162,50 @@
       {{ (rook_ceph_external_objects | selectattr('kind', 'equalto', 'StorageClass')
           | selectattr('name', 'equalto', 'ceph-rbd') | first).data }}
 
+# The CSIDriver has attachRequired, so ControllerPublish needs a secret too;
+# without one ceph-csi looks for rook-csi-rbd-provisioner, which restricted
+# user naming never creates. The provisioner user's secret serves.
+- name: Build the RBD StorageClass parameters
+  ansible.builtin.set_fact:
+    rook_ceph_external_sc_parameters:
+      clusterID: "{{ rook_ceph_external_namespace }}"
+      pool: "{{ rook_ceph_external_sc.pool }}"
+      imageFormat: "2"
+      imageFeatures: layering
+      csi.storage.k8s.io/fstype: ext4
+      csi.storage.k8s.io/provisioner-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
+      csi.storage.k8s.io/provisioner-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/controller-publish-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
+      csi.storage.k8s.io/controller-publish-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/controller-expand-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/controller-expand-secret-name'] }}"
+      csi.storage.k8s.io/controller-expand-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/node-stage-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/node-stage-secret-name'] }}"
+      csi.storage.k8s.io/node-stage-secret-namespace: "{{ rook_ceph_external_namespace }}"
+
+- name: Read the current RBD StorageClass
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ rook_ceph_external_storage_class }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: rook_ceph_external_sc_current
+
+# StorageClass parameters are immutable, so a change means delete and
+# recreate. Existing PVs keep working: they carry their own copy of the
+# secret references.
+- name: Remove the RBD StorageClass if its parameters changed
+  become: true
+  kubernetes.core.k8s:
+    state: absent
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ rook_ceph_external_storage_class }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  when:
+    - rook_ceph_external_sc_current.resources | length > 0
+    - rook_ceph_external_sc_current.resources[0].parameters != rook_ceph_external_sc_parameters
+
 - name: Apply the RBD StorageClass
   become: true
   kubernetes.core.k8s:
@@ -176,15 +220,4 @@
       reclaimPolicy: Delete
       allowVolumeExpansion: true
       volumeBindingMode: Immediate
-      parameters:
-        clusterID: "{{ rook_ceph_external_namespace }}"
-        pool: "{{ rook_ceph_external_sc.pool }}"
-        imageFormat: "2"
-        imageFeatures: layering
-        csi.storage.k8s.io/fstype: ext4
-        csi.storage.k8s.io/provisioner-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
-        csi.storage.k8s.io/provisioner-secret-namespace: "{{ rook_ceph_external_namespace }}"
-        csi.storage.k8s.io/controller-expand-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/controller-expand-secret-name'] }}"
-        csi.storage.k8s.io/controller-expand-secret-namespace: "{{ rook_ceph_external_namespace }}"
-        csi.storage.k8s.io/node-stage-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/node-stage-secret-name'] }}"
-        csi.storage.k8s.io/node-stage-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      parameters: "{{ rook_ceph_external_sc_parameters }}"
