@@ -23,6 +23,18 @@ rook_ceph_external_ceph_host: "{{ groups['proxmox_ceph'] | first }}"
 
 # The users create-external-cluster-resources.py makes with
 # --restricted-auth-permission; their keys must be classic aes (tasks/main.yml).
+#
+# TODO(aes256k), tracked in infra#82: these aes keys are a stopgap, chosen
+# 2026-11-11. When the
+# kube nodes move to Linux 7.0 or later (they run Ubuntu 24.04's 6.8, whose
+# krbd cannot use aes256k), upgrade these keys too:
+#   1. Every kube node (dev and prod) runs a >= 7.0 kernel, and ceph-csi is
+#      >= v3.17.2 and Rook >= v1.20.10 (both bundle Ceph >= 20.2.4).
+#   2. Rotate each user below to aes256k (ceph auth rotate <user>
+#      --key_type aes256k, or drop the aes step in tasks/main.yml), then
+#      re-run this role so the Kubernetes Secrets get the new keys.
+#   3. Remove aes from proxmox_ceph_allowed_ciphers and un-mute the
+#      health warnings in roles/proxmox_ceph.
 rook_ceph_external_ceph_users:
   - client.healthchecker
   - "client.csi-rbd-node-{{ rook_ceph_external_k8s_cluster_name }}-{{ rook_ceph_external_pool }}"

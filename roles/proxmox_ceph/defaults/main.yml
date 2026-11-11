@@ -38,6 +38,8 @@ proxmox_ceph_pools:
 
 # CephX ciphers the monitors accept. aes is there only for the Kubernetes
 # clients; see the note in tasks/main.yml and infra#82 for undoing it.
+# TODO(aes256k): drop aes once the kube nodes run Linux >= 7.0; the steps
+# are in roles/rook_ceph_external/defaults/main.yml.
 proxmox_ceph_allowed_ciphers: [aes, aes256k]
 proxmox_ceph_muted_health_checks:
   - AUTH_INSECURE_KEYS_ALLOWED
