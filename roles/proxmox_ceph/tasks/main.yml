@@ -69,10 +69,12 @@
 - name: Classify the OSD device
   ansible.builtin.set_fact:
     # ceph-volume returns {osd_id: [lv, ...]}; each lv carries the fsid of
-    # the cluster it was made for.
+    # the cluster it was made for. The tag names contain dots, which
+    # map(attribute=...) would read as nesting, hence dict2items.
     proxmox_ceph_osd_fsids: >-
       {{ (proxmox_ceph_osd_list.stdout | default('{}', true) | from_json).values()
-         | flatten | map(attribute='tags') | map(attribute='ceph.cluster_fsid') | unique }}
+         | flatten | map(attribute='tags') | map('dict2items') | flatten
+         | selectattr('key', 'equalto', 'ceph.cluster_fsid') | map(attribute='value') | unique }}
     proxmox_ceph_osd_has_lvm: >-
       {{ (ansible_facts.lvm.pvs | default({})).keys() | select('equalto', proxmox_ceph_osd_dev.stdout) | list | length > 0 }}
 
@@ -135,6 +137,17 @@
   when:
     - proxmox_ceph_needs_clean | bool
     - proxmox_ceph_osd_fsids | length > 0 or proxmox_ceph_osd_has_lvm
+  changed_when: true
+
+# Installing ceph-osd makes the earlier cluster's still-enabled ceph-volume
+# units loadable; they start its old ceph-osd@N, which fails until systemd's
+# start limit trips. A new OSD that gets the same id is then refused with
+# "Start request repeated too quickly", and pveceph rolls it back.
+- name: Clear failed OSD units left by the earlier cluster
+  ansible.builtin.shell: |
+    systemctl stop 'ceph-osd@*'
+    systemctl reset-failed 'ceph-osd@*' 'ceph-volume@*' || true
+  when: proxmox_ceph_needs_osd | bool
   changed_when: true
 
 - name: Create the OSD
