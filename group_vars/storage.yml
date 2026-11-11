@@ -67,13 +67,9 @@ chwiki_images_clients:
 # prod and staging archive profiles, so there is a single package version
 # here rather than one per environment.
 #
-# "main" for now: no release has shipped a .deb yet (v0.1.1 predates the
-# package solidifying), so this pulls the newest successful archive-utils.yml
-# build off main instead of a release asset -- see the comment at the top of
-# roles/fk_archive_utils/tasks/main.yml. Switch to "latest" once a release
-# has one attached, and to a pinned tag (e.g. "v0.1.1") once the package has
-# seen enough use that floating is no longer wanted.
-fk_archive_utils_version: main
+# Pinned to the ingest release prod runs: v1.1.1 is the first with a .deb
+# attached, so the "main" workflow-artifact stopgap is no longer needed.
+fk_archive_utils_version: v1.1.1
 
 # One archive profile per environment, both configured on this one host --
 # see roles/fk_archive_utils's defaults. Root paths match /archive/media and
