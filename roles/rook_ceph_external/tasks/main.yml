@@ -42,6 +42,7 @@
 # aes256k on Proxmox's Ceph, which neither the nodes' krbd nor ceph-csi
 # 3.17.0 can use. Give these users classic aes keys (roles/proxmox_ceph
 # allows the cipher) and export again so the Secrets carry the new keys.
+# Move them to aes256k once every node runs Linux 7.0+: infra#82.
 # Classic aes keys are 40 base64 characters starting AQ; aes256k ones start Ag.
 - name: Read the Rook and CSI users' keys
   ansible.builtin.command:

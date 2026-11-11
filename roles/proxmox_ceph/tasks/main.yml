@@ -217,7 +217,8 @@
 # (the nodes run Ubuntu 24.04's 6.8) and ceph-csi needs 3.17.1 or later. So
 # the monitors also allow classic aes, and roles/rook_ceph_external gives
 # only the Rook and CSI users aes keys; daemons and admin stay on aes256k.
-# Drop aes from this list once the nodes and ceph-csi can do aes256k.
+# Drop aes from this list once the nodes and ceph-csi can do aes256k:
+# infra#82 has the steps.
 - name: Read the monitors' allowed ciphers
   ansible.builtin.command:
     argv: [ceph, mon, dump, --format, json]
