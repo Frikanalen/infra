@@ -71,9 +71,16 @@
       # Replaced by a ZFS-aware NodeMemoryHighUtilization in
       # files/extra-rules.yml: the mixin's version counts the ZFS ARC as
       # used, so file01 and the Proxmox hosts sit permanently above 90%.
+      # NodeDiskIOSaturation is replaced too, by one that skips dm-*
+      # devices: on the Proxmox hosts those are thin LVs, whose queue is
+      # dm-thin's own bookkeeping rather than load on the disks (vmtx1's
+      # dm-7 sat at 10-17 while its SSDs were under 1% busy). Each VM's own
+      # node-exporter still watches its disk, and the hosts' physical
+      # disks are still covered.
       defaultRules:
         disabled:
           NodeMemoryHighUtilization: true
+          NodeDiskIOSaturation: true
       # A file lookup, not a template, so the rules' own {{ $labels }} pass
       # through to Prometheus untouched.
       additionalPrometheusRulesMap:
@@ -119,6 +126,17 @@
           # in the cluster instead, regardless of label.
           podMonitorSelectorNilUsesHelmValues: false
           serviceMonitorSelectorNilUsesHelmValues: false
+          # On a PVC rather than the chart's emptyDir, so a pod restart no
+          # longer wipes the alert history and the metrics behind it.
+          retention: "{{ kube_prometheus_stack_retention }}"
+          storageSpec:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "{{ kube_prometheus_stack_storage_class }}"
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: "{{ kube_prometheus_stack_prometheus_storage_size }}"
         ingress:
           enabled: true
           ingressClassName: "{{ kube_prometheus_stack_ingress_class }}"
@@ -171,6 +189,16 @@
                   chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/chat-id"
                   send_resolved: true
         alertmanagerSpec:
+          # Silences and notification state live here; on emptyDir they
+          # were lost on every restart.
+          storage:
+            volumeClaimTemplate:
+              spec:
+                storageClassName: "{{ kube_prometheus_stack_storage_class }}"
+                accessModes: [ReadWriteOnce]
+                resources:
+                  requests:
+                    storage: "{{ kube_prometheus_stack_alertmanager_storage_size }}"
           secrets:
             - "{{ kube_prometheus_stack_telegram_secret_name }}"
         ingress:
