@@ -111,9 +111,6 @@
     - role: intel_gpu_plugin
       tags: [intel_gpu_plugin, gpu]
 
-    - role: kubegres
-      tags: [kubegres, database]
-
     # CloudNativePG operator. This has never run on prod, and it must land
     # before k8s_apps_prod.yml's cnpg_cluster role -- that creates a
     # postgresql.cnpg.io/v1 Cluster, a kind that does not exist until the

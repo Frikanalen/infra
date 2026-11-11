@@ -26,12 +26,9 @@ frikanalen_scheme: https
 # caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
 caspar_host: "192.168.3.100"
 
-# Where Django's DATABASE_URL points (roles/django_db_secret). The Kubegres
-# resource the django-api chart still renders keeps its own name below, so
-# switching this to pgcluster-rw moves Django to CloudNativePG without
-# touching Kubegres.
+# Where Django's DATABASE_URL points (roles/django_db_secret): CloudNativePG's
+# pgcluster since 2026-11-10 (docs/cnpg.md).
 django_db_host: pgcluster-rw
-django_kubegres_name: django-postgres
 django_db_secret_name: django-postgres-passwords
 
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
@@ -146,7 +143,6 @@ helm_chart_versions:
   argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
-  kubegres: "v1.19"
   # CloudNativePG Helm chart version, not the operator's app version (chart
   # 0.29.0 ships operator 1.30.0 -- see Chart.yaml's appVersion upstream).
   cnpg: "0.29.0"

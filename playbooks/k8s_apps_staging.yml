@@ -11,9 +11,8 @@
   tags: [apps]
   vars:
     argocd_namespace: argocd
-    # Reuses the same credentials as the Kubegres django-postgres database
-    # (see roles/cnpg_cluster) so a later cutover is just a DATABASE_URL
-    # hostname change, not a credential rotation.
+    # The same credentials the Kubegres django-postgres database had, which
+    # roles/django_db_secret still puts in DATABASE_URL.
     cnpg_cluster_app_password: "{{ vault_dev_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_dev_django_postgres_super_password }}"
     # Backups to Garage on file01 (roles/garage), one bucket per environment.
@@ -33,9 +32,8 @@
       vars:
         argocd_app: "{{ frikanalen_apps.django }}"
 
-    # Stands up the CloudNativePG "pgcluster" Cluster as a migration target
-    # alongside the existing Kubegres database. Data migration itself is
-    # manual; see roles/cnpg_cluster.
+    # The CloudNativePG "pgcluster" Cluster Django runs on; see
+    # roles/cnpg_cluster and docs/cnpg.md.
     - role: cnpg_cluster
       tags: [cnpg_cluster, database]
 

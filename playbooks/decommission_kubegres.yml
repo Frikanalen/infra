@@ -1,0 +1,140 @@
+---
+# Removes Kubegres from a cluster, once Django has moved to CloudNativePG's
+# pgcluster (docs/cnpg.md) and the django-api chart Argo CD deploys no longer
+# renders the Kubegres resource. One-off; delete this playbook once both
+# clusters are done.
+#
+#   ansible-playbook playbooks/decommission_kubegres.yml --limit kubedev_admin
+#   ansible-playbook playbooks/decommission_kubegres.yml --limit kubeprod_admin
+#
+# Removes the Kubegres resources and their StatefulSets, the operator with its
+# CRD and namespace, and the PV/PVC its backup CronJob wrote through (the PV
+# is Retain, so the dumps on file01 stay; roles/db_backup_retention ages
+# them out). The old database's own volume is kept unless asked for:
+#
+#   ... -e kubegres_delete_data=true
+#
+# which deletes the PVCs the Kubegres StatefulSets left behind (label
+# app=django-postgres), and with them the old database files. That cannot be
+# undone.
+
+- name: Decommission Kubegres
+  hosts: kubedev_admin:kubeprod_admin
+  become: true
+  gather_facts: false
+  vars:
+    kubegres_manifest_url: "https://raw.githubusercontent.com/reactive-tech/kubegres/v1.19/kubegres.yaml"
+    kubegres_namespace: "{{ frikanalen_app_namespace }}"
+    kubegres_delete_data: false
+  tasks:
+    - name: Read the django-api Application
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        namespace: argocd
+        name: "{{ frikanalen_apps.django.name }}"
+      register: kubegres_django_app
+
+    # Otherwise Argo CD's selfHeal recreates what this deletes, or, once the
+    # CRD is gone, fails every sync of the app.
+    - name: Refuse while Argo CD still deploys a Kubegres resource
+      ansible.builtin.assert:
+        that: >-
+          kubegres_django_app.resources[0].status.resources | default([])
+          | selectattr('kind', 'equalto', 'Kubegres') | list | length == 0
+        fail_msg: >-
+          {{ frikanalen_apps.django.name }} still renders a Kubegres resource;
+          deploy a django-api chart without it first (django-api#103).
+
+    - name: List Kubegres resources
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        api_version: kubegres.reactive-tech.io/v1
+        kind: Kubegres
+      register: kubegres_resources
+      failed_when: false
+
+    - name: Delete each Kubegres resource and wait for its pods to go
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: kubegres.reactive-tech.io/v1
+        kind: Kubegres
+        namespace: "{{ item.metadata.namespace }}"
+        name: "{{ item.metadata.name }}"
+        wait: true
+        wait_timeout: 300
+      loop: "{{ kubegres_resources.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+
+    - name: Wait for the Kubegres pods to terminate
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        kind: Pod
+        namespace: "{{ item.metadata.namespace }}"
+        label_selectors:
+          - app={{ item.metadata.name }}
+      register: kubegres_pods
+      until: kubegres_pods.resources | length == 0
+      retries: 30
+      delay: 10
+      loop: "{{ kubegres_resources.resources | default([]) }}"
+      loop_control:
+        label: "{{ item.metadata.namespace }}/{{ item.metadata.name }}"
+
+    - name: Remove the Kubegres operator, its CRD and namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        src: "{{ kubegres_manifest_url }}"
+        wait: true
+
+    - name: Remove the backup CronJob's PVC
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ kubegres_namespace }}"
+        name: django-postgres-backup
+        wait: true
+
+    - name: Remove the backup CronJob's PV (Retain; the dumps on file01 stay)
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: PersistentVolume
+        name: django-postgres-backup
+
+    - name: Find the old database volumes
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        kind: PersistentVolumeClaim
+        namespace: "{{ kubegres_namespace }}"
+        label_selectors:
+          - app=django-postgres
+      register: kubegres_data_pvcs
+
+    - name: Delete the old database volumes
+      when: kubegres_delete_data | bool
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ kubegres_namespace }}"
+        name: "{{ item.metadata.name }}"
+        wait: true
+      loop: "{{ kubegres_data_pvcs.resources }}"
+      loop_control:
+        label: "{{ item.metadata.name }}"
+
+    - name: Report the old database volumes left in place
+      when: not (kubegres_delete_data | bool)
+      ansible.builtin.debug:
+        msg: >-
+          Kept {{ kubegres_data_pvcs.resources | map(attribute='metadata.name') | list }};
+          re-run with -e kubegres_delete_data=true to delete them.

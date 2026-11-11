@@ -129,11 +129,7 @@
     - role: node_exporter_scrape
       tags: [node_exporter, monitoring]
 
-    - role: kubegres
-      tags: [kubegres, database]
-
-    # CloudNativePG operator -- stands up alongside Kubegres as the
-    # migration target for roles/cnpg_cluster's pgcluster; see
+    # CloudNativePG operator, for roles/cnpg_cluster's pgcluster; see
     # playbooks/k8s_apps_staging.yml.
     - role: cnpg
       tags: [cnpg, database]

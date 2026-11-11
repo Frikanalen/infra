@@ -63,9 +63,11 @@ kubectl exec deploy/django -c django -- printenv DATABASE_URL   # ...@pgcluster-
 ansible-playbook playbooks/staging_db_sync.yml
 ```
 
-Rollback: set `django_db_host` back to `django-postgres` and run the django
-tag again. Kubegres is untouched by all of the above. Anything written to
-pgcluster after the cutover is not in Kubegres.
+Rollback (while Kubegres still existed): set `django_db_host` back to
+`django-postgres` and run the django tag again. Both clusters were cut over
+on 2026-11-10, and Kubegres is removed by `playbooks/decommission_kubegres.yml`
+once the django-api chart no longer renders it, so after that there is no
+Kubegres to go back to: recover from pgcluster's backups instead (below).
 
 ## Checking backups
 
