@@ -126,16 +126,21 @@ argocd_stream_ffmpeg_cpu_limit: "12"
 # Every app the cluster runs must have a key here. The roles no longer carry
 # a fallback: a missing key is now an undefined-variable error rather than a
 # silent deploy of whatever the fallback happened to name.
+# Which OpenBao prefix this cluster reads (kv/prod/...), and the name of its
+# Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
+openbao_env: prod
+
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
-  graphics: v1.3.1
-  playout: v2.3.0
-  frontend: v3.4.1
-  django: v2.1.0
+  graphics: v1.5.0
+  playout: v2.5.0
+  frontend: v3.5.0
+  django: v3.0.0
   stream: v0.4.0
-  # v1.1.0 = v1.0.0 (Frikanalen/ingest#26) plus the frikanalen.tv move.
-  ingest: v1.1.0
+  # v1.1.1 = v1.0.0 (Frikanalen/ingest#26), the frikanalen.tv move, and a CI
+  # fix that attaches fk-archive-utils' .deb to the release.
+  ingest: v1.1.1
 
 helm_chart_versions:
   traefik: "41.6.0"
@@ -153,3 +158,7 @@ helm_chart_versions:
   kube_prometheus_stack: "91.4.1"
   loki: "7.3.0"
   alloy: "1.12.1"
+  # External Secrets Operator (roles/external_secrets) and Reloader
+  # (roles/reloader); see docs/openbao.md.
+  external_secrets: "2.13.0"
+  reloader: "2.2.18"

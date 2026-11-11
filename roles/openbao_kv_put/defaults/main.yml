@@ -1,0 +1,18 @@
+---
+# Writes one secret to OpenBao's kv mount, replacing what is there.
+# For roles that generate or issue a credential (ingest_archive_account,
+# playout_live_secret) once External Secrets Operator delivers that Secret
+# from OpenBao: they write here, and ESO copies it into the cluster.
+#
+#   - ansible.builtin.include_role:
+#       name: openbao_kv_put
+#     vars:
+#       openbao_kv_path: staging/default/playout-live
+#       openbao_kv_data: { LIVE_READER_CREDENTIAL: "..." }
+openbao_kv_path: ""
+openbao_kv_data: {}
+openbao_kv_mount: kv
+openbao_host: "{{ groups['secrets'][0] }}"
+openbao_api: "https://127.0.0.1:8200"
+openbao_ca_path: /etc/openbao/tls/ca.crt
+openbao_root_token: "{{ vault_openbao_root_token }}"

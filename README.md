@@ -35,6 +35,8 @@ definitions.
   MicroK8s, ArgoCD, Traefik, MetalLB, Kubegres, CloudNativePG, CasparCG, NFS,
   and app deployment.
 - `terraform/` - Proxmox VM guest orchestration.
+- `docs/openbao.md` - OpenBao on bao1, the secrets store the clusters read
+  through External Secrets Operator: layout, unsealing, setup and restore.
 - `docs/mediamtx.md` - environment wiring, deployment and end-to-end test guide
   for the MediaMTX contribution ingest (the chart lives in gitops).
 

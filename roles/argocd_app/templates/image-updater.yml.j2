@@ -8,7 +8,9 @@ spec:
     - namePattern: "{{ _app.name }}"
       images:
         - alias: {{ _app.name }}
-          imageName: "{{ _app.image_repository }}:{{ _app.version }}"
+          # version is a git revision; a branch with a slash in its name is
+          # published under the same name with dashes (docker/metadata-action).
+          imageName: "{{ _app.image_repository }}:{{ _app.version | replace('/', '-') }}"
           manifestTargets:
             helm:
               name: {{ _app.helm_image_key }}.repository

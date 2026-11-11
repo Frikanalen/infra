@@ -9,6 +9,8 @@
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create app user secret
+  # Delivered from OpenBao by External Secrets Operator where that is on.
+  when: not (app_secrets_from_openbao | default(false) | bool)
   become: true
   no_log: true
   kubernetes.core.k8s:
@@ -17,6 +19,8 @@
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create superuser secret
+  # Delivered from OpenBao by External Secrets Operator where that is on.
+  when: not (app_secrets_from_openbao | default(false) | bool)
   become: true
   no_log: true
   kubernetes.core.k8s:
@@ -25,7 +29,9 @@
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Create backup object store credentials
-  when: cnpg_cluster_backup_enabled
+  when:
+    - cnpg_cluster_backup_enabled
+    - not (app_secrets_from_openbao | default(false) | bool)
   become: true
   no_log: true
   kubernetes.core.k8s:

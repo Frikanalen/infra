@@ -1,0 +1,64 @@
+---
+# OpenBao (https://openbao.org), the open-source fork of HashiCorp Vault, as
+# a single node on bao1. See docs/openbao.md for what it holds, who can read
+# what, and the runbook.
+
+# Pinned release. The .deb only supplies the bao binary: the user, unit,
+# config and directories below are this role's own, so the package's
+# defaults (whatever they are in a given release) do not matter.
+openbao_version: "2.7.2"
+openbao_deb_url: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/openbao_{{ openbao_version }}_linux_amd64.deb"
+openbao_binary: /usr/bin/bao
+
+openbao_user: openbao
+openbao_config_dir: /etc/openbao
+openbao_config_path: "{{ openbao_config_dir }}/openbao.hcl"
+openbao_tls_dir: "{{ openbao_config_dir }}/tls"
+openbao_seal_dir: "{{ openbao_config_dir }}/seal"
+openbao_raft_dir: /var/lib/openbao/raft
+openbao_audit_dir: /var/log/openbao
+openbao_snapshot_dir: /var/backups/openbao
+
+openbao_ip: "{{ host_config[inventory_hostname].ip_cidr.split('/')[0] }}"
+openbao_hostname: "{{ inventory_hostname }}.dc1.frikanalen.tv"
+openbao_port: 8200
+openbao_cluster_port: 8201
+
+# Auto-unseal from a static key (seal "static"), so a reboot needs nobody.
+# The key is 32 random bytes, kept hex-encoded in the Ansible vault and
+# written to disk as raw bytes, which is the form OpenBao's docs give. To
+# rotate: move the current id/key to openbao_seal_previous_*, set a new
+# current pair, and re-run.
+#   vault_openbao_seal_key_id: "20261111-1"
+#   vault_openbao_seal_key: "<openssl rand -hex 32>"
+openbao_seal_key_id: "{{ vault_openbao_seal_key_id }}"
+openbao_seal_key: "{{ vault_openbao_seal_key }}"
+openbao_seal_previous_key_id: ""
+openbao_seal_previous_key: ""
+
+# Recovery keys handed out by the first init. With an auto-unseal seal these
+# are not unseal keys: they authorise a few root-level operations, such as
+# generating a new root token.
+openbao_recovery_shares: 3
+openbao_recovery_threshold: 2
+
+# Root token, added to the vault after the first run prints it. Until it is
+# there, the role stops after init. Used only for configuration below.
+openbao_root_token: "{{ vault_openbao_root_token | default('') }}"
+
+# One kv-v2 mount; each environment reads only its own prefix
+# (kv/staging/..., kv/prod/...), see roles/openbao_k8s_auth.
+openbao_kv_mount: kv
+openbao_environments: [staging, prod]
+
+# Nightly raft snapshot to Garage on file01 (roles/garage, bucket "openbao").
+# The snapshot is encrypted by the seal key, so it is useless without the
+# vault; the key never leaves the vault and bao1 itself.
+openbao_snapshot_bucket: openbao
+openbao_snapshot_s3_endpoint: "http://{{ host_config['file01'].ip_cidr.split('/')[0] }}:3900"
+openbao_snapshot_s3_region: garage
+openbao_snapshot_s3_key_id: "{{ vault_openbao_s3_key_id }}"
+openbao_snapshot_s3_secret_key: "{{ vault_openbao_s3_secret_key }}"
+openbao_snapshot_keep_local_days: 7
+
+openbao_api: "https://127.0.0.1:{{ openbao_port }}"
