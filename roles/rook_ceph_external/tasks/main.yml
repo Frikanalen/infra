@@ -154,6 +154,24 @@
               disabled: false
               interval: 45s
 
+# The operator writes the CSI config for this clusterID only once it has
+# connected; a PVC made before that fails "missing configuration for cluster
+# ID" and the provisioner gives up on it.
+- name: Wait for the external CephCluster to connect
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: ceph.rook.io/v1
+    kind: CephCluster
+    name: "{{ rook_ceph_external_namespace }}"
+    namespace: "{{ rook_ceph_external_namespace }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: rook_ceph_external_cluster
+  until: >-
+    rook_ceph_external_cluster.resources | length > 0 and
+    rook_ceph_external_cluster.resources[0].status.phase | default('') == 'Connected'
+  retries: 30
+  delay: 10
+
 # The script also proposes a StorageClass named ceph-rbd; its pool and secret
 # names are taken from it so they always match the users it made.
 - name: Pick out the exported RBD StorageClass
