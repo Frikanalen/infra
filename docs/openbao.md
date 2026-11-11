@@ -112,6 +112,27 @@ OpenBao, is a seal migration and needs no rebuild.
    Healthy in Argo CD. If ESO refuses to adopt a Secret, delete that Secret
    and ESO recreates it within a minute.
 
+## Prod
+
+The same handover, on kubeprod, in an order that restarts nothing on air:
+
+```sh
+ansible-playbook playbooks/k8s_platform_prod.yml --tags openbao     # ESO + auth mount kubernetes-prod
+ansible-playbook playbooks/openbao_seed.yml --limit kubeprod_admin  # kv/prod/default/*
+ansible-playbook playbooks/k8s_platform_prod.yml --tags clusters_root
+ansible-playbook playbooks/k8s_platform_prod.yml --tags reloader
+```
+
+Check the store is `Valid / Ready` before the root, and after it that every
+ExternalSecret is `SecretSynced`, every Application Synced and Healthy, and
+that no app Secret's data changed. Reloader goes in last, once ESO has taken
+the Secrets over, so that an unexpected byte of difference cannot restart
+playout. `clusters/prod/apps` was written from the live Applications, so the
+root adopts them without a sync that changes anything.
+
+After this, `k8s_apps_prod.yml` creates no Applications: release to prod by
+changing the version in `clusters/prod/apps/<app>.yaml` in the clusters repo.
+
 ## After the handover
 
 - Staging's app versions and values live in the clusters repo,
