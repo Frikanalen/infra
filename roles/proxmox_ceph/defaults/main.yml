@@ -23,11 +23,15 @@ proxmox_ceph_network: 192.168.3.0/24
 proxmox_ceph_allow_zap: false
 
 # One RBD pool per Kubernetes cluster, so each cluster's CephX users can be
-# restricted to its own pool.
+# restricted to its own pool. pg_num is only the starting point (the
+# autoscaler is on); pveceph's default of 128 per pool puts two pools over
+# mon_max_pg_per_osd (250) on three OSDs.
 proxmox_ceph_pools:
   - name: k8s-prod
     size: 3
     min_size: 2
+    pg_num: 32
   - name: k8s-staging
     size: 3
     min_size: 2
+    pg_num: 32

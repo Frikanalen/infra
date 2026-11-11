@@ -179,6 +179,8 @@
       - "{{ item.size }}"
       - --min_size
       - "{{ item.min_size }}"
+      - --pg_num
+      - "{{ item.pg_num }}"
       - --pg_autoscale_mode
       - "on"
       - --add_storages
@@ -188,4 +190,24 @@
     label: "{{ item.name }}"
   when: item.name not in (proxmox_ceph_pools_current.stdout | from_json)
   changed_when: true
+  run_once: true
+
+# pveceph pool create exits 0 even when its worker task fails (as it did
+# when two pools at pveceph's default 128 PGs went over mon_max_pg_per_osd
+# on three OSDs), so check the result rather than trust the exit code.
+- name: Read pools after creating them
+  ansible.builtin.command:
+    argv: [ceph, osd, pool, ls, --format, json]
+  register: proxmox_ceph_pools_after
+  changed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Check every pool exists
+  ansible.builtin.assert:
+    that: item.name in (proxmox_ceph_pools_after.stdout | from_json)
+    fail_msg: "Pool {{ item.name }} was not created; see the cephcreatepool task log in /var/log/pve/tasks on {{ inventory_hostname }}."
+  loop: "{{ proxmox_ceph_pools }}"
+  loop_control:
+    label: "{{ item.name }}"
   run_once: true
