@@ -32,7 +32,9 @@
     enabled: true
     state: started
 
-- name: Remount / now if it still has online discard
+# ansible.posix.mount has no way to clear a single option on a live mount
+# without rewriting the fstab line, which the tasks above already did.
+- name: Remount / now if it still has online discard  # noqa: command-instead-of-module
   ansible.builtin.command: mount -o remount,nodiscard /
   when: "'discard' in (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='options') | first | split(','))"
   changed_when: true
