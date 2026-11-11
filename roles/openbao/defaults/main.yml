@@ -7,7 +7,7 @@
 # config and directories below are this role's own, so the package's
 # defaults (whatever they are in a given release) do not matter.
 openbao_version: "2.7.2"
-openbao_deb_url: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/bao_{{ openbao_version }}_linux_amd64.deb"
+openbao_deb_url: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/openbao_{{ openbao_version }}_linux_amd64.deb"
 openbao_binary: /usr/bin/bao
 
 openbao_user: openbao
