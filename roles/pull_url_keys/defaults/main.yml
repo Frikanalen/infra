@@ -1,0 +1,9 @@
+---
+# Where Django's Fernet keys for pulled sources' addresses live in OpenBao,
+# delivered by ESO as the Secret the django-api chart names in
+# pullUrlKeys.secret (key FK_PULL_URL_KEYS).
+pull_url_keys_path: "{{ openbao_env }}/{{ frikanalen_app_namespace }}/django-pull-url-keys"
+pull_url_keys_kv_mount: kv
+pull_url_keys_host: "{{ groups['secrets'][0] }}"
+pull_url_keys_api: "https://127.0.0.1:8200"
+pull_url_keys_ca_path: /etc/openbao/tls/ca.crt
