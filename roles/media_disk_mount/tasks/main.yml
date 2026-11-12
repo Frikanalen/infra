@@ -1,0 +1,54 @@
+---
+# Find the disk by its serial (terraform sets serial=media-<vmid> on scsi3)
+# and mount it by filesystem UUID, never by a /dev/disk/by-id name: Ubuntu
+# 26.04's udev no longer makes the scsi-SQEMU_QEMU_HARDDISK_<serial> links
+# that 24.04 did, and an fstab entry naming one drops the node into
+# emergency mode after the release upgrade.
+- name: List disks with their serials
+  ansible.builtin.command:
+    argv: [lsblk, --json, --nodeps, --output, "PATH,SERIAL"]
+  register: media_disk_lsblk
+  changed_when: false
+  check_mode: false
+
+- name: Pick the media disk
+  ansible.builtin.set_fact:
+    media_disk_device: >-
+      {{ (media_disk_lsblk.stdout | from_json).blockdevices
+         | selectattr('serial', 'defined') | selectattr('serial', 'string')
+         | selectattr('serial', 'search', media_disk_mount_serial_pattern)
+         | map(attribute='path') | first | default('') }}
+
+# Only some nodes have one (data/hosts.yml media_disk_size).
+- name: Mount the media disk
+  when: media_disk_device | length > 0
+  block:
+    - name: Format the media disk
+      community.general.filesystem:
+        dev: "{{ media_disk_device }}"
+        fstype: "{{ media_disk_mount_fstype }}"
+        resizefs: true
+
+    - name: Read the media disk's filesystem UUID
+      ansible.builtin.command:
+        argv: [blkid, --match-tag, UUID, --output, value, "{{ media_disk_device }}"]
+      register: media_disk_uuid
+      changed_when: false
+      check_mode: false
+
+    - name: Mount the media disk
+      ansible.posix.mount:
+        path: "{{ media_disk_mount_path }}"
+        src: "UUID={{ media_disk_uuid.stdout | trim }}"
+        fstype: "{{ media_disk_mount_fstype }}"
+        opts: defaults,noatime
+        state: mounted
+
+    - name: Make the directories the local PersistentVolumes use
+      ansible.builtin.file:
+        path: "{{ media_disk_mount_path }}/{{ item }}"
+        state: directory
+        # setgid, as kubelet leaves it after applying the pod's fsGroup;
+        # plain 0775 would strip it on every run.
+        mode: "02775"
+      loop: "{{ media_disk_mount_dirs }}"

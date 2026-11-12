@@ -74,6 +74,14 @@
   tags:
     - network
     - firewall
+- name: Trim the root filesystem weekly instead of online discard
+  hosts: qemu_guest
+  become: true
+  gather_facts: true
+  roles:
+    - root_fs_trim
+  tags:
+    - root_fs_trim
 - name: Mount local SSD on kube nodes
   hosts: microk8s
   become: true
@@ -82,6 +90,14 @@
   tags:
     - k8s
     - local_ssd
+- name: Mount the media receiver disk on the kube nodes that have one
+  hosts: microk8s
+  become: true
+  roles:
+    - media_disk_mount
+  tags:
+    - k8s
+    - media_disk
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true

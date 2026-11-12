@@ -1,0 +1,6 @@
+---
+dependencies:
+  # Installs the kubernetes Python library kubernetes.core needs on the
+  # target host. A dependency rather than an inline task pair so it runs
+  # once per play no matter how many of these roles the play invokes.
+  - role: k8s_python_deps

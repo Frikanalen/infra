@@ -1,0 +1,40 @@
+---
+# Ubuntu cloud images mount / with `discard` (online discard). On a VM
+# whose disk is a Proxmox thin LV with discard=on, every deleted block is
+# unmapped from the thin pool straight away and provisioned again on the
+# next write. dev-kube-4's root disk had written 6.7 TB and discarded
+# 5.8 TB this way (dqlite, Loki, ceph-mon), and dm-thin queued so much of
+# it that NodeDiskIOSaturation fired for hours on vmtx1 while the SSDs
+# under it were under 1% busy. A weekly fstrim gives the space back just
+# as well, without the churn.
+
+- name: Stop mounting / with online discard (option first or in the middle)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\S+\s+/\s+\S+\s+\S*?)\bdiscard,'
+    replace: '\1'
+
+- name: Stop mounting / with online discard (option last)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\S+\s+/\s+\S+\s+\S*),discard(\s)'
+    replace: '\1\2'
+
+- name: Stop mounting / with online discard (only option)
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^(\S+\s+/\s+\S+\s+)discard(\s)'
+    replace: '\1defaults\2'
+
+- name: Trim filesystems weekly instead
+  ansible.builtin.systemd:
+    name: fstrim.timer
+    enabled: true
+    state: started
+
+# ansible.posix.mount has no way to clear a single option on a live mount
+# without rewriting the fstab line, which the tasks above already did.
+- name: Remount / now if it still has online discard  # noqa: command-instead-of-module
+  ansible.builtin.command: mount -o remount,nodiscard /
+  when: "'discard' in (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='options') | first | split(','))"
+  changed_when: true

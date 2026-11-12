@@ -1,0 +1,47 @@
+---
+# Proxmox-managed Ceph on the proxmox_ceph hosts (vm2, vm3, vm4). Both
+# Kubernetes clusters consume it through Rook in external mode
+# (roles/rook_ceph_external); Proxmox does not use it for VM disks.
+
+# Ceph release pveceph installs. Must be one Rook's external mode supports
+# Proxmox VE 9 ships squid (19.2); Rook v1.20 supports it as an external
+# cluster even though its own in-cluster Ceph runs tentacle (20.2).
+proxmox_ceph_release: squid
+proxmox_ceph_repository: no-subscription
+
+# Mons, mgrs and client traffic all use the LAN the kube nodes sit on, so
+# the CSI drivers reach the mons without routing.
+proxmox_ceph_network: 192.168.3.0/24
+
+# One OSD per host, on the disk named by proxmox_ceph_osd_device in
+# host_vars (a /dev/disk/by-id path, never sdX).
+#
+# A device that carries LVM or Ceph data from anything other than this
+# cluster is only wiped when this is true, passed on the command line:
+#
+#   ansible-playbook playbooks/proxmox/ceph.yml -e proxmox_ceph_allow_zap=true
+proxmox_ceph_allow_zap: false
+
+# One RBD pool per Kubernetes cluster, so each cluster's CephX users can be
+# restricted to its own pool. pg_num is only the starting point (the
+# autoscaler is on); pveceph's default of 128 per pool puts two pools over
+# mon_max_pg_per_osd (250) on three OSDs.
+proxmox_ceph_pools:
+  - name: k8s-prod
+    size: 3
+    min_size: 2
+    pg_num: 32
+  - name: k8s-staging
+    size: 3
+    min_size: 2
+    pg_num: 32
+
+# CephX ciphers the monitors accept. aes is there only for the Kubernetes
+# clients; see the note in tasks/main.yml and infra#82 for undoing it.
+# TODO(aes256k): drop aes once the kube nodes run Linux >= 7.0; the steps
+# are in roles/rook_ceph_external/defaults/main.yml.
+proxmox_ceph_allowed_ciphers: [aes, aes256k]
+proxmox_ceph_muted_health_checks:
+  - AUTH_INSECURE_KEYS_ALLOWED
+  - AUTH_INSECURE_KEYS_CREATABLE
+  - AUTH_INSECURE_CLIENT_KEY_TYPE

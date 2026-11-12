@@ -12,16 +12,21 @@ locals {
         # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
         # It speeds disk I/O at the cost of almost certain data loss on host power failure.
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
-        disk_cache        = try(h.vm.disk_cache, "none")
-        cores             = try(h.vm.cores, 8)
-        memory_max        = try(h.vm.memory_max, 16384)
-        memory_min        = try(h.vm.memory_min, 8192)
-        template          = try(h.vm.template, var.template)
-        storage           = try(h.vm.storage, "localssd-lvm")
-        ceph_storage      = try(h.vm.ceph_storage, "local-lvm")
+        disk_cache   = try(h.vm.disk_cache, "none")
+        cores        = try(h.vm.cores, 8)
+        memory_max   = try(h.vm.memory_max, 16384)
+        memory_min   = try(h.vm.memory_min, 8192)
+        template     = try(h.vm.template, var.template)
+        storage      = try(h.vm.storage, "localssd-lvm")
+        ceph_storage = try(h.vm.ceph_storage, "local-lvm")
+        # The 4 MB cloud-init ISO can stay put when a boot disk is moved.
+        cloudinit_storage = try(h.vm.cloudinit_storage, try(h.vm.storage, "localssd-lvm"))
         ceph_disk_size    = try(h.vm.ceph_disk_size, null)
         local_ssd_size    = try(h.vm.local_ssd_size, null)
+        root_disk_size    = try(h.vm.root_disk_size, "40G")
         local_ssd_storage = try(h.vm.local_ssd_storage, "localssd-lvm")
+        media_disk_size    = try(h.vm.media_disk_size, null)
+        media_disk_storage = try(h.vm.media_disk_storage, "localssd-lvm")
         pci_mappings      = try(h.vm.pci_mappings, [])
       },
       h.vm
@@ -72,7 +77,7 @@ resource "proxmox_vm_qemu" "kube" {
     scsi {
       scsi0 {
         disk {
-          size     = "40G"
+          size     = each.value.root_disk_size
           storage  = each.value.storage
           cache    = each.value.disk_cache
           iothread = true
@@ -112,11 +117,30 @@ resource "proxmox_vm_qemu" "kube" {
           }
         }
       }
+      # Media receiver: a large disk on vmtx1's HDD array that
+      # roles/media_disk_mount mounts at /mnt/media, holding ingest's
+      # uploads until they are archived to file01. Not backed up: it is
+      # transient by design and would dwarf every other backup.
+      dynamic "scsi3" {
+        for_each = each.value.media_disk_size == null ? [] : [each.value.media_disk_size]
+        content {
+          disk {
+            size      = scsi3.value
+            storage   = each.value.media_disk_storage
+            cache     = "none"
+            iothread  = true
+            discard   = true
+            backup    = false
+            replicate = false
+            serial    = "media-${each.value.vmid}"
+          }
+        }
+      }
     }
     ide {
       ide2 {
         cloudinit {
-          storage = each.value.storage
+          storage = each.value.cloudinit_storage
         }
       }
     }

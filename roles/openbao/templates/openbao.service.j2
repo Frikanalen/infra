@@ -1,0 +1,28 @@
+# {{ ansible_managed }}
+[Unit]
+Description=OpenBao secrets store
+Documentation=https://openbao.org/docs/
+After=network-online.target
+Wants=network-online.target
+ConditionFileNotEmpty={{ openbao_config_path }}
+
+[Service]
+User={{ openbao_user }}
+Group={{ openbao_user }}
+ExecStart={{ openbao_binary }} server -config={{ openbao_config_path }}
+ExecReload=/bin/kill --signal HUP $MAINPID
+KillMode=process
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+MemorySwapMax=0
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ openbao_raft_dir }} {{ openbao_audit_dir }}
+
+[Install]
+WantedBy=multi-user.target

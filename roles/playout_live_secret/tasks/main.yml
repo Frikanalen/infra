@@ -60,18 +60,26 @@
     playout_live_issued: "{{ playout_live_ensure.stdout | from_json }}"
   no_log: true
 
+- name: Store the new credential for playout in OpenBao
+  # Where External Secrets Operator delivers this Secret from OpenBao, a
+  # Secret written directly would be overwritten by ESO within a minute.
+  when:
+    - playout_live_issued.password is defined
+    - app_secrets_from_openbao | default(false) | bool
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+  vars:
+    openbao_kv_path: "{{ openbao_env }}/{{ playout_live_secret_namespace }}/{{ playout_live_secret_name }}"
+    openbao_kv_data: "{{ (lookup('template', 'live-secret.yml.j2') | from_yaml).stringData }}"
+
 - name: Store the new credential for playout
   # Django returns a password only when it issued a new credential.
-  when: playout_live_issued.password is defined
+  when:
+    - playout_live_issued.password is defined
+    - not (app_secrets_from_openbao | default(false) | bool)
   become: true
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'live-secret.yml.j2') }}"
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"
-
-- name: Remember which key playout holds
-  # Read by the playout app definition to roll the pod when the key changes;
-  # Helm cannot watch a Secret it does not own. Not secret.
-  ansible.builtin.set_fact:
-    playout_live_key: "{{ playout_live_issued.username }}"

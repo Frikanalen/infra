@@ -14,7 +14,7 @@
   # `pip install` and only then decides "changed" from the output.
   ansible.builtin.command:
     argv:
-      - python3
+      - "{{ ansible_python_interpreter | default('python3') }}"
       - -c
       - |
         import sys

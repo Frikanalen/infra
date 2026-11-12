@@ -1,0 +1,11 @@
+---
+# Secret MediaMTX's pull relay reads FK_PULL_CREDENTIAL from
+# (contribution-receiver chart, pull.credentialSecret), delivered by External
+# Secrets Operator from kv/<env>/<namespace>/<name> in OpenBao.
+pull_relay_secret_name: mediamtx-pull
+pull_relay_secret_namespace: "{{ frikanalen_app_namespace }}"
+
+# Where Django runs, to issue the credential. Matches the django-api chart.
+pull_relay_django_namespace: "{{ frikanalen_app_namespace }}"
+pull_relay_django_selector: "app=django-api"
+pull_relay_django_container: django

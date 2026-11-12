@@ -1,0 +1,12 @@
+---
+# The media receiver disk (terraform media_disk_size, serial media-<vmid>):
+# a large disk on vmtx1's HDD array for ingest's uploads, which the clusters
+# repo mounts into the ingest pod as a local PersistentVolume.
+media_disk_mount_path: /mnt/media
+media_disk_mount_fstype: ext4
+# Regex the disk's serial must match (lsblk SERIAL column).
+media_disk_mount_serial_pattern: "^media-"
+# Directories made on it, one per local PersistentVolume. A local volume's
+# path must exist before the pod starts; kubelet applies the pod's fsGroup.
+media_disk_mount_dirs:
+  - ingest-uploads

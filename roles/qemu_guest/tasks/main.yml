@@ -7,3 +7,49 @@
     name: qemu-guest-agent
     state: started
     enabled: true
+
+# Proxmox derives the cloud-init instance-id from the VM's cloud-init
+# settings, so any change to them (a Terraform apply that touches
+# searchdomain, say) looks like a new instance at the next boot, and
+# cloud-init's ssh module then deletes and regenerates the host keys.
+# Keep the existing keys; only missing key types are generated.
+- name: Check for cloud-init
+  ansible.builtin.stat:
+    path: /etc/cloud/cloud.cfg.d
+  register: qemu_guest_cloud_cfg_d
+
+- name: Keep SSH host keys when cloud-init sees a new instance-id
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-keep-ssh-host-keys.cfg
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/qemu_guest).
+      ssh_deletekeys: false
+  when: qemu_guest_cloud_cfg_d.stat.exists
+
+# A boot disk enlarged in data/hosts.yml (root_disk_size) is grown here, live:
+# cloud-init's growpart only runs on first boot. growpart exits 1 for
+# NOCHANGE, which is the usual case.
+- name: Find the root filesystem's partition
+  ansible.builtin.command:
+    argv: [findmnt, -no, SOURCE, /]
+  register: qemu_guest_root_source
+  changed_when: false
+  check_mode: false
+
+- name: Grow the root partition to the end of its disk
+  ansible.builtin.command:
+    argv:
+      - growpart
+      - "{{ qemu_guest_root_source.stdout | regex_replace('[0-9]+$', '') }}"
+      - "{{ qemu_guest_root_source.stdout | regex_search('[0-9]+$') }}"
+  register: qemu_guest_growpart
+  changed_when: qemu_guest_growpart.rc == 0
+  failed_when: qemu_guest_growpart.rc not in [0, 1]
+  when: qemu_guest_root_source.stdout is match('^/dev/(sd|vd)[a-z]+[0-9]+$')
+
+- name: Grow the root filesystem
+  ansible.builtin.command:
+    argv: [resize2fs, "{{ qemu_guest_root_source.stdout }}"]
+  when: qemu_guest_growpart.rc | default(1) == 0
+  changed_when: true

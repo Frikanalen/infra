@@ -1,0 +1,255 @@
+---
+# files/create-external-cluster-resources.py is Rook's own export script,
+# copied unmodified from rook/rook v1.20.3 deploy/examples. It creates (or
+# reads back) the restricted CephX users and prints what Rook needs as JSON;
+# import-external-cluster.sh would then apply it with kubectl, which this
+# role does instead with kubernetes.core.k8s. Re-running it returns the same
+# keys, so a re-run changes nothing.
+
+- name: Copy Rook's export script to the Ceph host
+  ansible.builtin.copy:
+    src: create-external-cluster-resources.py
+    dest: /usr/local/sbin/rook-create-external-cluster-resources.py
+    mode: "0755"
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+
+- name: Export the cluster's connection details and CephX users
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/sbin/rook-create-external-cluster-resources.py
+      - --format
+      - json
+      - --namespace
+      - "{{ rook_ceph_external_namespace }}"
+      - --rbd-data-pool-name
+      - "{{ rook_ceph_external_pool }}"
+      - --k8s-cluster-name
+      - "{{ rook_ceph_external_k8s_cluster_name }}"
+      - --restricted-auth-permission
+      - "true"
+      - --v2-port-enable
+      - --skip-monitoring-endpoint
+  register: rook_ceph_external_export
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+# The script creates its users with the cluster's preferred key type,
+# aes256k on Proxmox's Ceph, which neither the nodes' krbd nor ceph-csi
+# 3.17.0 can use. Give these users classic aes keys (roles/proxmox_ceph
+# allows the cipher) and export again so the Secrets carry the new keys.
+# Move them to aes256k once every node runs Linux 7.0+: infra#82.
+# Classic aes keys are 40 base64 characters starting AQ; aes256k ones start Ag.
+- name: Read the Rook and CSI users' keys
+  ansible.builtin.command:
+    argv: [ceph, auth, get-key, "{{ item }}"]
+  loop: "{{ rook_ceph_external_ceph_users }}"
+  register: rook_ceph_external_keys
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Give the Rook and CSI users aes keys
+  ansible.builtin.command:
+    argv: [ceph, auth, rotate, --key-type=aes, "{{ item.item }}"]
+  loop: "{{ rook_ceph_external_keys.results | rejectattr('stdout', 'match', '^AQ') | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: rook_ceph_external_rotated
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: true
+  no_log: true
+
+- name: Export again with the new keys
+  ansible.builtin.command:
+    argv: "{{ rook_ceph_external_export.cmd }}"
+  register: rook_ceph_external_reexport
+  when: rook_ceph_external_rotated.results | length > 0
+  delegate_to: "{{ rook_ceph_external_ceph_host }}"
+  become: true
+  changed_when: false
+  no_log: true
+
+- name: Use the fresh export
+  ansible.builtin.set_fact:
+    rook_ceph_external_export: "{{ rook_ceph_external_reexport }}"
+  when: rook_ceph_external_rotated.results | length > 0
+  no_log: true
+
+- name: Parse the export
+  ansible.builtin.set_fact:
+    rook_ceph_external_objects: "{{ rook_ceph_external_export.stdout | from_json }}"
+  no_log: true
+
+# On a new cluster the Rook operator and its CRDs arrive through Argo CD
+# moments after the root Application is created.
+- name: Wait for Rook's CephCluster CRD
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: cephclusters.ceph.rook.io
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: rook_ceph_external_crd
+  until: rook_ceph_external_crd.resources | length > 0
+  retries: 60
+  delay: 10
+
+- name: Ensure the external cluster namespace
+  become: true
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ rook_ceph_external_namespace }}"
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Apply the exported ConfigMaps
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      data: "{{ item.data }}"
+  loop: "{{ rook_ceph_external_objects | selectattr('kind', 'equalto', 'ConfigMap') | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Apply the exported Secrets
+  become: true
+  no_log: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      type: kubernetes.io/rook
+      stringData: "{{ item.data }}"
+  loop: "{{ rook_ceph_external_objects | selectattr('kind', 'equalto', 'Secret') | list }}"
+
+# Kept here rather than in gitops: it only means anything together with the
+# Secrets above, which cannot live in git, and it carries no settings of its
+# own worth reviewing there.
+- name: Define the external CephCluster
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: ceph.rook.io/v1
+      kind: CephCluster
+      metadata:
+        name: "{{ rook_ceph_external_namespace }}"
+        namespace: "{{ rook_ceph_external_namespace }}"
+      spec:
+        external:
+          enable: true
+        crashCollector:
+          disable: true
+        healthCheck:
+          daemonHealth:
+            mon:
+              disabled: false
+              interval: 45s
+
+# The operator writes the CSI config for this clusterID only once it has
+# connected; a PVC made before that fails "missing configuration for cluster
+# ID" and the provisioner gives up on it.
+- name: Wait for the external CephCluster to connect
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: ceph.rook.io/v1
+    kind: CephCluster
+    name: "{{ rook_ceph_external_namespace }}"
+    namespace: "{{ rook_ceph_external_namespace }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: rook_ceph_external_cluster
+  until: >-
+    rook_ceph_external_cluster.resources | length > 0 and
+    rook_ceph_external_cluster.resources[0].status.phase | default('') == 'Connected'
+  retries: 30
+  delay: 10
+
+# The script also proposes a StorageClass named ceph-rbd; its pool and secret
+# names are taken from it so they always match the users it made.
+- name: Pick out the exported RBD StorageClass
+  ansible.builtin.set_fact:
+    rook_ceph_external_sc: >-
+      {{ (rook_ceph_external_objects | selectattr('kind', 'equalto', 'StorageClass')
+          | selectattr('name', 'equalto', 'ceph-rbd') | first).data }}
+
+# The CSIDriver has attachRequired, so ControllerPublish needs a secret too;
+# without one ceph-csi looks for rook-csi-rbd-provisioner, which restricted
+# user naming never creates. The provisioner user's secret serves.
+- name: Build the RBD StorageClass parameters
+  ansible.builtin.set_fact:
+    rook_ceph_external_sc_parameters:
+      clusterID: "{{ rook_ceph_external_namespace }}"
+      pool: "{{ rook_ceph_external_sc.pool }}"
+      imageFormat: "2"
+      imageFeatures: layering
+      csi.storage.k8s.io/fstype: ext4
+      csi.storage.k8s.io/provisioner-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
+      csi.storage.k8s.io/provisioner-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/controller-publish-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/provisioner-secret-name'] }}"
+      csi.storage.k8s.io/controller-publish-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/controller-expand-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/controller-expand-secret-name'] }}"
+      csi.storage.k8s.io/controller-expand-secret-namespace: "{{ rook_ceph_external_namespace }}"
+      csi.storage.k8s.io/node-stage-secret-name: "{{ rook_ceph_external_sc['csi.storage.k8s.io/node-stage-secret-name'] }}"
+      csi.storage.k8s.io/node-stage-secret-namespace: "{{ rook_ceph_external_namespace }}"
+
+- name: Read the current RBD StorageClass
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ rook_ceph_external_storage_class }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: rook_ceph_external_sc_current
+
+# StorageClass parameters are immutable, so a change means delete and
+# recreate. Existing PVs keep working: they carry their own copy of the
+# secret references.
+- name: Remove the RBD StorageClass if its parameters changed
+  become: true
+  kubernetes.core.k8s:
+    state: absent
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ rook_ceph_external_storage_class }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  when:
+    - rook_ceph_external_sc_current.resources | length > 0
+    - rook_ceph_external_sc_current.resources[0].parameters != rook_ceph_external_sc_parameters
+
+- name: Apply the RBD StorageClass
+  become: true
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    definition:
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: "{{ rook_ceph_external_storage_class }}"
+      provisioner: "{{ rook_ceph_operator_namespace }}.rbd.csi.ceph.com"
+      reclaimPolicy: Delete
+      allowVolumeExpansion: true
+      volumeBindingMode: Immediate
+      parameters: "{{ rook_ceph_external_sc_parameters }}"

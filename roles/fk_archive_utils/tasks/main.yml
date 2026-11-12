@@ -158,6 +158,9 @@
       else 'tags/' ~ fk_archive_utils_version }}
     return_content: true
   register: fk_archive_utils_release
+  # A read-only GET; run it in check mode too, or every later task that reads
+  # the release fails there.
+  check_mode: false
 
 - name: Find the .deb asset on that release
   when: fk_archive_utils_version != 'main'

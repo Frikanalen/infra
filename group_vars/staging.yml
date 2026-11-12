@@ -16,24 +16,15 @@ frikanalen_intern_owner_id: dev-internal-external-dns
 frikanalen_intern_ingress_class: internal
 
 frikanalen_domain: staging.frikanalen.tv
-frikanalen_scheme: https
 
-caspar_host: "192.168.3.101"
-
-# Where Django's DATABASE_URL points (roles/django_db_secret): CloudNativePG's
-# pgcluster since 2026-11-10 (docs/cnpg.md).
+# Django's database: CloudNativePG's pgcluster since 2026-11-10 (docs/cnpg.md),
+# and the Secret holding its credentials (from OpenBao). Read by cnpg_cluster
+# and staging_db_sync.
 django_db_host: pgcluster-rw
 django_db_secret_name: django-postgres-passwords
 
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
-# Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
-# Off in prod until rehearsed here.
-mediamtx_preview_enabled: true
-# About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
-mediamtx_write_queue_size: 4096
-
-playout_media_path: /mnt/media/
 
 # Deliberately a separate account and directory from prod: staging uploads must
 # not reach the production archive, which roles/nfs_server exports to the
@@ -45,28 +36,11 @@ ingest_archive_dir: /archive/media-staging
 # SFTP; the directory belongs to the profile's manager, not to this account.
 ingest_archive_fk_profile: staging
 
-# tusd runs alongside ingest in the same pod, served at /upload on
-# frikanalen_domain. Django's FK_UPLOAD_URL must point there.
-ingest_uploads_size: 100Gi
-
 # Workers must see a published original at once, so the archive mount keeps no
 # attribute, directory or negative-lookup cache. The default ~30 s directory
 # cache let a worker claim a job before the file it had just been given showed
 # up. Reads are a few large sequential fetches, so the lost caching costs little.
 ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
-
-# The CPU ladder was OOM-killed at the chart's 4Gi, 14% into a 1080p encode.
-ingest_cpu_worker_memory_limit: 16Gi
-
-# No QSV ingest pool: the Arc A310 moved from dev-kube-4 to prod-kube-4, and
-# a pool requesting gpu.intel.com/i915 here would sit Pending forever.
-
-argocd_stream_cubemap_ip: "192.168.3.91"
-# Cubemap joins caspar-sw1's program-out group (host_vars/caspar-sw1.yml)
-# instead of listening unicast on the LoadBalancer IP above. Joining needs
-# the node's network namespace: Calico doesn't carry multicast into pods.
-argocd_stream_cubemap_host_network: true
-argocd_stream_cubemap_multicast_group: "239.1.1.50"
 
 # This is the cluster kube_prometheus_stack runs on, so the ServiceMonitors,
 # PodMonitors and Grafana dashboards the other roles ship are wanted here.
@@ -74,23 +48,41 @@ argocd_stream_cubemap_multicast_group: "239.1.1.50"
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: development
 
-# Auto-roll staging deployments when a new image is pushed to the tracked
-# floating tag (see argocd_image_updater role and each argocd_* app role).
-argocd_image_updater_enabled: true
+# Which OpenBao prefix this cluster reads (kv/staging/...), and the name of its
+# Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
+openbao_env: staging
 
+<<<<<<< HEAD
 # Every app the cluster runs must have a key here -- see group_vars/prod.yml.
 app_versions:
   # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
   mediamtx: main
   graphics: main
   playout: main
-  # Temporarily the redesign branch (Frikanalen/frontend#99), so it can be
-  # iterated on staging without merging. Set back to main and re-run
-  # `ansible-playbook playbooks/k8s_apps_staging.yml --tags frontend` to revert.
-  frontend: claude/project-thread-1c8lwy
+  frontend: main
   django: main
   stream: main
   ingest: main
+=======
+# The app Secrets (openbao_seed_secrets below) come from OpenBao through
+# External Secrets Operator (clusters/staging/secrets), so the roles that
+# used to write them skip that, or write to OpenBao instead.
+app_secrets_from_openbao: true
+
+# Secrets playbooks/openbao_seed.yml copies from this cluster into OpenBao,
+# unchanged, at kv/staging/<namespace>/<name>. The app Secrets only: the
+# platform's (Traefik, external-dns, monitoring) stay with Ansible until the
+# platform moves to the clusters repo.
+openbao_seed_secrets:
+  - { namespace: default, name: django-postgres-passwords }
+  - { namespace: default, name: django-secret }
+  - { namespace: default, name: pgcluster-app }
+  - { namespace: default, name: pgcluster-superuser }
+  - { namespace: default, name: pgcluster-backup-s3 }
+  - { namespace: default, name: ingest-api }
+  - { namespace: default, name: ingest-archive-ssh }
+  - { namespace: default, name: playout-live }
+>>>>>>> origin/main
 
 helm_chart_versions:
   traefik: "41.6.0"
@@ -108,3 +100,7 @@ helm_chart_versions:
   kube_prometheus_stack: "91.4.1"
   loki: "7.3.0"
   alloy: "1.12.1"
+  # External Secrets Operator (roles/external_secrets) and Reloader
+  # (roles/reloader); see docs/openbao.md.
+  external_secrets: "2.13.0"
+  reloader: "2.2.18"

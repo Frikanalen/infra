@@ -1,0 +1,22 @@
+---
+- name: Check what to write
+  ansible.builtin.assert:
+    that:
+      - openbao_kv_path | length > 0
+      - openbao_kv_data | length > 0
+    quiet: true
+
+- name: "Write kv/{{ openbao_kv_path }}"
+  ansible.builtin.uri:
+    url: "{{ openbao_api }}/v1/{{ openbao_kv_mount }}/data/{{ openbao_kv_path }}"
+    method: POST
+    ca_path: "{{ openbao_ca_path }}"
+    headers:
+      X-Vault-Token: "{{ openbao_root_token }}"
+    body_format: json
+    body:
+      data: "{{ openbao_kv_data }}"
+    status_code: [200, 204]
+  delegate_to: "{{ openbao_host }}"
+  changed_when: true
+  no_log: true

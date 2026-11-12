@@ -2,8 +2,15 @@
 # defaults for argocd_gitops role
 argocd_namespace: argocd
 
-# GitOps repo settings
+# The clusters repo (Frikanalen/clusters, formerly gitops)
 argocd_gitops_application_name: apps
-argocd_gitops_repo_url: https://github.com/Frikanalen/gitops.git
+argocd_gitops_repo_url: https://github.com/Frikanalen/clusters.git
 argocd_gitops_repo_revision: main
 argocd_gitops_repo_path: apps
+
+# Sync every manifest under the path, not only its top level. On for the
+# clusters/<env> roots, which keep apps/ and secrets/ in subdirectories.
+argocd_gitops_recurse: false
+# Leave the image tags Argo CD Image Updater pins in child Applications
+# alone. On for a root whose apps the image updater follows (staging).
+argocd_gitops_ignore_image_updater: false

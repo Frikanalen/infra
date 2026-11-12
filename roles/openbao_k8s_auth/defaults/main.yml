@@ -1,0 +1,29 @@
+---
+# Lets this cluster's External Secrets Operator log in to OpenBao with its
+# own service account, and read only kv/<openbao_env>/*. Runs on the
+# cluster's admin node; the OpenBao calls are made on bao1 itself.
+
+# staging or prod; set in group_vars/{staging,prod}.yml.
+openbao_env: ""
+
+openbao_host: "{{ groups['secrets'][0] }}"
+openbao_api: "https://127.0.0.1:8200"
+openbao_ca_path: /etc/openbao/tls/ca.crt
+openbao_root_token: "{{ vault_openbao_root_token }}"
+
+# One Kubernetes auth mount per cluster, so the two can never be confused.
+openbao_k8s_auth_mount: "kubernetes-{{ openbao_env }}"
+
+# The API server OpenBao calls back to with TokenReview. MicroK8s serves it
+# on 16443 on every control-plane node; this is the admin node's.
+openbao_k8s_auth_api: "https://{{ host_config[inventory_hostname].ip_cidr.split('/')[0] }}:16443"
+
+# The service account OpenBao reviews tokens with.
+openbao_k8s_auth_reviewer_namespace: kube-system
+openbao_k8s_auth_reviewer_name: openbao-token-reviewer
+
+# Who may log in: External Secrets Operator's own service account
+# (roles/external_secrets).
+openbao_k8s_auth_role: eso
+openbao_k8s_auth_bound_sa: external-secrets
+openbao_k8s_auth_bound_namespace: external-secrets

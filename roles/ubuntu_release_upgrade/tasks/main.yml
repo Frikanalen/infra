@@ -1,0 +1,149 @@
+---
+- name: Read the running release
+  ansible.builtin.command: lsb_release -rs
+  register: ubuntu_release_upgrade_before
+  changed_when: false
+
+- name: Note which of the files that must survive are there now
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ ubuntu_release_upgrade_preserved_files }}"
+  register: ubuntu_release_upgrade_preserved_before
+
+- name: Upgrade to Ubuntu {{ ubuntu_release_upgrade_target }}
+  when: ubuntu_release_upgrade_before.stdout is version(ubuntu_release_upgrade_target, '<')
+  block:
+    - name: Check free space on /
+      ansible.builtin.assert:
+        that:
+          - >-
+            (ansible_facts.mounts | selectattr('mount', 'equalto', '/') | first).size_available
+            > ubuntu_release_upgrade_min_free_mb * 1024 * 1024
+        fail_msg: >-
+          {{ inventory_hostname }} has less than {{ ubuntu_release_upgrade_min_free_mb }} MiB
+          free on /; do-release-upgrade would stop part-way.
+
+    # 26.04's udev stops making the serial-based scsi-S<vendor>_<model>_<serial>
+    # by-id links (only scsi-0QEMU_QEMU_HARDDISK_drive-scsiN remain), and a
+    # mount naming one times out and leaves the host in emergency mode with
+    # no sshd. Mount by UUID= or LABEL= instead (roles/local_ssd_mount does).
+    - name: Read /etc/fstab
+      ansible.builtin.slurp:
+        src: /etc/fstab
+      register: ubuntu_release_upgrade_fstab
+
+    - name: Refuse to upgrade with fstab entries on serial-based by-id links
+      ansible.builtin.assert:
+        that: _bad | length == 0
+        fail_msg: >-
+          /etc/fstab on {{ inventory_hostname }} mounts {{ _bad | join(', ') }};
+          these links are gone on Ubuntu {{ ubuntu_release_upgrade_target }}.
+          Switch them to UUID= first.
+      vars:
+        _bad: >-
+          {{ (ubuntu_release_upgrade_fstab.content | b64decode).splitlines()
+             | select('match', '\s*/dev/disk/by-id/scsi-S')
+             | map('split') | map('first') | list }}
+
+    - name: Find packages to keep that are installed
+      ansible.builtin.command:
+        argv:
+          - dpkg-query
+          - -W
+          - -f=${Package} ${db:Status-Status}\n
+      register: ubuntu_release_upgrade_installed
+      changed_when: false
+
+    - name: Mark the packages to keep as manually installed
+      ansible.builtin.command:
+        argv: "{{ ['apt-mark', 'manual'] + _keep }}"
+      vars:
+        _installed: >-
+          {{ ubuntu_release_upgrade_installed.stdout_lines
+             | select('search', ' installed$') | map('split') | map('first') | list }}
+        _keep: "{{ ubuntu_release_upgrade_keep | select('in', _installed) | list }}"
+      register: ubuntu_release_upgrade_mark
+      changed_when: "'set to manually installed' in ubuntu_release_upgrade_mark.stdout"
+      when: _keep | length > 0
+
+    - name: Offer LTS releases only
+      ansible.builtin.lineinfile:
+        path: /etc/update-manager/release-upgrades
+        regexp: '^Prompt='
+        line: Prompt=lts
+
+    # do-release-upgrade reads overrides for its DistUpgrade.cfg from this
+    # directory. Non-interactive runs otherwise answer yes to "Remove
+    # obsolete packages?".
+    - name: Stop do-release-upgrade from removing obsolete packages
+      ansible.builtin.copy:
+        dest: /etc/update-manager/release-upgrades.d/frikanalen.cfg
+        mode: "0644"
+        content: |
+          # Managed by Ansible (roles/ubuntu_release_upgrade).
+          [Distro]
+          RemoveObsoletes=no
+
+    # do-release-upgrade refuses to start until the current release is fully
+    # up to date. No autoremove, for the reason in defaults/main.yml.
+    - name: Bring the current release up to date
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: dist
+        autoremove: false
+        dpkg_options: force-confdef,force-confold
+
+    - name: Check whether the update needs a reboot first
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: ubuntu_release_upgrade_reboot_required
+
+    - name: Reboot onto the updated current release
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+      when: ubuntu_release_upgrade_reboot_required.stat.exists
+
+    # DistUpgradeViewNonInteractive keeps locally changed config files
+    # (confold) and answers every other question with its default. Run
+    # detached, since it outlives an SSH connection's patience.
+    - name: Run do-release-upgrade
+      ansible.builtin.command:
+        argv: [do-release-upgrade, -f, DistUpgradeViewNonInteractive]
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+      async: "{{ ubuntu_release_upgrade_timeout }}"
+      poll: 30
+      register: ubuntu_release_upgrade_run
+      changed_when: true
+
+    - name: Reboot into the new release
+      ansible.builtin.reboot:
+        reboot_timeout: 900
+
+- name: Read the release after the upgrade
+  ansible.builtin.command: lsb_release -rs
+  register: ubuntu_release_upgrade_after
+  changed_when: false
+
+- name: Verify the host is on Ubuntu {{ ubuntu_release_upgrade_target }}
+  ansible.builtin.assert:
+    that: ubuntu_release_upgrade_after.stdout is version(ubuntu_release_upgrade_target, '>=')
+    fail_msg: >-
+      {{ inventory_hostname }} is on {{ ubuntu_release_upgrade_after.stdout }} after
+      do-release-upgrade; see /var/log/dist-upgrade/main.log on the host.
+
+- name: Check the files that must survive the upgrade
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: >-
+    {{ ubuntu_release_upgrade_preserved_before.results
+       | selectattr('stat.exists') | map(attribute='item') | list }}
+  register: ubuntu_release_upgrade_preserved
+
+- name: Verify the files that must survive the upgrade are still there
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "{{ item.item }} is gone after the upgrade on {{ inventory_hostname }}."
+  loop: "{{ ubuntu_release_upgrade_preserved.results }}"
+  loop_control:
+    label: "{{ item.item }}"

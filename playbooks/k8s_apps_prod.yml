@@ -1,18 +1,22 @@
 ---
-# Deploy Argo CD application definitions to production.
+# What prod's apps need beyond their Argo CD Applications: database,
+# secrets the apps read, the archive account and the media server.
 #
 #   ansible-playbook playbooks/k8s_apps_prod.yml
-#   ansible-playbook playbooks/k8s_apps_prod.yml --tags frontend
+#   ansible-playbook playbooks/k8s_apps_prod.yml --tags ingest
 #
-# Tags: apps (everything here), plus one per component. Versions come from
-# app_versions in group_vars/prod.yml.
+# The Applications themselves, with their versions and values, are no longer
+# here: they are files in the clusters repo (clusters/prod/apps), synced by
+# the "prod" root Application from k8s_platform_prod.yml. To change a prod
+# app's version or values, edit that repo. The app Secrets come from OpenBao
+# (clusters/prod/secrets, docs/openbao.md).
 - name: Deploy applications to the production cluster
   hosts: kubeprod_admin
   tags: [apps]
   vars:
     argocd_namespace: "argocd"
     # The same credentials the Kubegres django-postgres database had, which
-    # roles/django_db_secret still puts in DATABASE_URL.
+    # DATABASE_URL in the django-postgres-passwords Secret (OpenBao) uses.
     cnpg_cluster_app_password: "{{ vault_prod_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_prod_django_postgres_super_password }}"
     # Backups to Garage on file01 (roles/garage), one bucket per environment.
@@ -20,17 +24,9 @@
     cnpg_cluster_backup_s3_key_id: "{{ vault_prod_cnpg_s3_key_id }}"
     cnpg_cluster_backup_s3_secret_key: "{{ vault_prod_cnpg_s3_secret_key }}"
   roles:
-    - role: django_db_secret
-      tags: [django]
-      vars:
-        django_db_secret_super_password: "{{ vault_prod_django_postgres_super_password }}"
-        django_db_secret_replication_password: "{{ vault_prod_django_postgres_replication_password }}"
-        django_db_secret_django_password: "{{ vault_prod_django_postgres_django_password }}"
-
-    - role: argocd_app
-      tags: [django]
-      vars:
-        argocd_app: "{{ frikanalen_apps.django }}"
+    # The app Secrets come from OpenBao (clusters/prod/secrets). cnpg_cluster,
+    # ingest_archive_account and playout_live_secret skip or redirect their
+    # Secret writes to OpenBao because app_secrets_from_openbao is on.
 
     # The CloudNativePG "pgcluster" Cluster Django runs on; see
     # roles/cnpg_cluster and docs/cnpg.md. Requires the cnpg operator from
@@ -38,54 +34,18 @@
     - role: cnpg_cluster
       tags: [cnpg_cluster, database]
 
-    - role: argocd_app
-      tags: [frontend]
-      vars:
-        argocd_app: "{{ frikanalen_apps.frontend }}"
-
-    - role: argocd_app
-      tags: [graphics]
-      vars:
-        argocd_app: "{{ frikanalen_apps.graphics }}"
-
-    # Issues playout's MediaMTX reader credential through Django and stores it
-    # in the Secret playout reads; must follow the django app and precede
-    # playout's, which rolls when the key changes.
+    # Checks playout's MediaMTX reader credential with Django. Only if it is
+    # no longer valid, issues a new one and writes it to OpenBao, from where
+    # ESO updates the Secret playout reads and Reloader restarts playout.
     - role: playout_live_secret
       tags: [playout, playout_live]
 
-    - role: argocd_app
-      tags: [playout]
-      vars:
-        argocd_app: "{{ frikanalen_apps.playout }}"
-
-    - role: argocd_app
-      tags: [stream]
-      vars:
-        argocd_app: "{{ frikanalen_apps.stream }}"
-
-    # Generates the archive key and provisions the file01 account; must precede
-    # the ingest app, which reads the key back to roll the pod on rotation.
+    # Generates the archive key and provisions the file01 account.
     - role: ingest_archive_account
       tags: [ingest, ingest_account]
 
     - role: ingest_archive_mount
       tags: [ingest, ingest_app]
 
-    - role: ingest_api_secret
-      tags: [ingest, ingest_app]
-      vars:
-        ingest_api_token: "{{ vault_prod_ingest_api_token }}"
-
-    - role: argocd_app
-      tags: [ingest, ingest_app]
-      vars:
-        argocd_app: "{{ frikanalen_apps.ingest }}"
-
     - role: media_server
       tags: [media_server]
-
-    - role: argocd_app
-      tags: [mediamtx]
-      vars:
-        argocd_app: "{{ frikanalen_apps.mediamtx }}"

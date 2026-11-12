@@ -1,35 +1,13 @@
 ---
-# Every Argo CD Application the cluster runs, in one place.
-#
-# These were seven near-identical roles (argocd_frontend, argocd_graphics,
-# argocd_schedule, argocd_playout, argocd_stream, plus the Application halves
-# of argocd_django and argocd_ingest). Six of the seven application.yml.j2
-# templates were byte-identical once the variable prefix was normalised, and
-# five of six image-updater.yml.j2. Only two things actually varied -- the
-# Helm key the image updater writes to, and Django's ignoreDifferences -- so
-# the manifests now come from roles/argocd_app and the differences live here.
-#
-# Required per app: name, repo_url, version.
-# Optional: repo_path (chart), namespace (frikanalen_app_namespace),
-# helm_values ({}), ignore_differences ([]), image_repository (''),
-# helm_image_key (image), image_updater (argocd_image_updater_enabled).
-#
-# The Helm values key is helm_values, not values: Jinja resolves
-# `_app.values` to the dict's own .values() method rather than to the
-# key, and to_nice_yaml then fails with "cannot represent an object".
-#
-# Values are Jinja and resolve per environment, so the same definition serves
-# prod and staging; anything that must differ references a variable from
-# group_vars/{prod,staging}.yml rather than being duplicated here.
-
-# Name of the Secret holding the Django API token ingest authenticates with.
-# Read by the ingest app definition below and created by
-# roles/ingest_api_secret, so it belongs to neither and sits here.
-ingest_api_secret_name: ingest-api
+# Names a secret-issuing role and an app must agree on. The apps
+# themselves (Argo CD Applications, versions and values) are in the clusters
+# repo, clusters/<env>/apps; they used to be defined here as frikanalen_apps.
 
 # Name of the Secret holding playout's MediaMTX reader credential. Read by the
-# playout app definition below and created by roles/playout_live_secret.
+# playout app (clusters/<env>/apps/playout.yaml) and written by
+# roles/playout_live_secret.
 playout_live_secret_name: playout-live
+<<<<<<< HEAD
 
 frikanalen_apps:
 
@@ -301,3 +279,5 @@ frikanalen_apps:
           enabled: "{{ k8s_monitoring_enabled }}"
           interval: 30s
           scrapeTimeout: 10s
+=======
+>>>>>>> origin/main

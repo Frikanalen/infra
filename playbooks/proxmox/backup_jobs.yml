@@ -22,27 +22,47 @@
       check_mode: false
       run_once: true
 
-    # The storage already exists on cluster1; this only recreates it on a
-    # cluster that lacks it.
+    # The hand-made storage named file01 by its old frikanalen.no name, which
+    # stopped resolving when that domain was lost, leaving it inactive on
+    # every node. Proxmox will not change an NFS storage's server in place
+    # ("fixed parameter"), so a storage pointing anywhere else is removed and
+    # recreated under the same name, keeping its content types and options.
+    # Only the definition goes; the data on file01 is untouched, and the
+    # backup jobs refer to the storage by name.
+    - name: Note the existing backup storage
+      ansible.builtin.set_fact:
+        proxmox_backup_storage_existing: >-
+          {{ (proxmox_storage_current.stdout | from_json
+              | selectattr('storage', 'equalto', proxmox_backup_storage) | list | first) | default({}) }}
+        proxmox_backup_storage_server: "{{ host_config['file01'].ip_cidr.split('/')[0] }}"
+      run_once: true
+
+    - name: Remove the backup storage if it points elsewhere
+      ansible.builtin.command:
+        argv: [pvesh, delete, "/storage/{{ proxmox_backup_storage }}"]
+      when:
+        - proxmox_backup_storage_existing | length > 0
+        - proxmox_backup_storage_existing.server | default('') != proxmox_backup_storage_server
+      register: proxmox_backup_storage_removed
+      changed_when: true
+      run_once: true
+
     - name: Add file01 backup storage
       ansible.builtin.command:
-        argv:
-          - pvesh
-          - create
-          - /storage
-          - --storage
-          - "{{ proxmox_backup_storage }}"
-          - --type
-          - nfs
-          - --server
-          - "{{ host_config['file01'].ip_cidr.split('/')[0] }}"
-          - --export
-          - "{{ proxmox_backup_export_path }}"
-          - --content
-          - backup
-      when: >-
-        proxmox_backup_storage not in
-        (proxmox_storage_current.stdout | from_json | map(attribute='storage') | list)
+        argv: >-
+          {{ ['pvesh', 'create', '/storage',
+              '--storage', proxmox_backup_storage,
+              '--type', 'nfs',
+              '--server', proxmox_backup_storage_server,
+              '--export', proxmox_backup_export_path,
+              '--content', proxmox_backup_storage_existing.content | default('backup')]
+             + (['--options', proxmox_backup_storage_existing.options]
+                if proxmox_backup_storage_existing.options is defined else [])
+             + (['--prune-backups', proxmox_backup_storage_existing['prune-backups']]
+                if proxmox_backup_storage_existing['prune-backups'] is defined else [])
+             + (['--snapshot-as-volume-chain', proxmox_backup_storage_existing['snapshot-as-volume-chain'] | string]
+                if proxmox_backup_storage_existing['snapshot-as-volume-chain'] is defined else []) }}
+      when: proxmox_backup_storage_existing | length == 0 or proxmox_backup_storage_removed is changed
       changed_when: true
       run_once: true
 

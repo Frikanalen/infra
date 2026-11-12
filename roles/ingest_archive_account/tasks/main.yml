@@ -214,9 +214,22 @@
       {{ (ingest_archive_host_key.content | b64decode).split()[0:2] | join(' ') }}
 
 - name: Store the archive credentials in Kubernetes
+  when: not (app_secrets_from_openbao | default(false) | bool)
   become: true
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'ssh-secret.yml.j2') }}"
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"
+
+# Where External Secrets Operator delivers this Secret from OpenBao, write it
+# there instead; a Secret written here directly would be overwritten by ESO.
+- name: Store the archive credentials in OpenBao
+  when:
+    - app_secrets_from_openbao | default(false) | bool
+    - not (ingest_archive_key_exists | bool)
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+  vars:
+    openbao_kv_path: "{{ openbao_env }}/{{ ingest_archive_namespace }}/{{ ingest_archive_secret_name }}"
+    openbao_kv_data: "{{ (lookup('template', 'ssh-secret.yml.j2') | from_yaml).stringData }}"

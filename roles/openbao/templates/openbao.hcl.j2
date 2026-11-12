@@ -1,0 +1,39 @@
+# {{ ansible_managed }}
+ui = true
+# Raft keeps its data in files it fsyncs; mlock adds nothing and the docs
+# recommend turning it off with integrated storage.
+disable_mlock = true
+
+api_addr     = "https://{{ openbao_hostname }}:{{ openbao_port }}"
+cluster_addr = "https://{{ openbao_ip }}:{{ openbao_cluster_port }}"
+
+storage "raft" {
+  path    = "{{ openbao_raft_dir }}"
+  node_id = "{{ inventory_hostname }}"
+}
+
+listener "tcp" {
+  address         = "0.0.0.0:{{ openbao_port }}"
+  cluster_address = "0.0.0.0:{{ openbao_cluster_port }}"
+  tls_cert_file   = "{{ openbao_tls_dir }}/server.crt"
+  tls_key_file    = "{{ openbao_tls_dir }}/server.key"
+}
+
+# Every request and response, with secrets HMAC'd. Declared here rather than
+# over the API: OpenBao refuses API-created audit devices by default (it
+# answered HTTP 400 on bao1). Rotated by /etc/logrotate.d/openbao.
+audit "file" "file" {
+  description = "All requests, to {{ openbao_audit_dir }}/audit.log"
+  options {
+    file_path = "{{ openbao_audit_dir }}/audit.log"
+  }
+}
+
+seal "static" {
+  current_key_id = "{{ openbao_seal_key_id }}"
+  current_key    = "file://{{ openbao_seal_dir }}/{{ openbao_seal_key_id }}.key"
+{% if openbao_seal_previous_key_id %}
+  previous_key_id = "{{ openbao_seal_previous_key_id }}"
+  previous_key    = "file://{{ openbao_seal_dir }}/{{ openbao_seal_previous_key_id }}.key"
+{% endif %}
+}

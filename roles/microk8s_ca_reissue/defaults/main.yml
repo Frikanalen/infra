@@ -1,0 +1,17 @@
+---
+# Where MicroK8s keeps its certificates and the kubeconfigs it builds from them.
+microk8s_ca_reissue_certs_dir: /var/snap/microk8s/current/certs
+microk8s_ca_reissue_credentials_dir: /var/snap/microk8s/current/credentials
+
+# The extensions the re-issued CA carries. These are what Python 3.13+ (and
+# OpenSSL's -x509_strict) insist on for a trust anchor, and what MicroK8s
+# itself now puts on a CA it creates (produce_certs in actions/common/utils.sh).
+microk8s_ca_reissue_extensions: |
+  basicConstraints=critical,CA:TRUE
+  keyUsage=critical,digitalSignature,keyCertSign,cRLSign
+  subjectKeyIdentifier=hash
+  authorityKeyIdentifier=keyid:always
+
+# How long to wait for the node's API server and Ready condition after
+# kubelite restarts.
+microk8s_ca_reissue_ready_timeout: 300

@@ -1,6 +1,0 @@
----
-# Invoked once per app in the same play, so it must be allowed to repeat.
-# Ansible would run it anyway (each invocation passes a different
-# argocd_app), but relying on that is relying on a subtlety.
-allow_duplicates: true
-dependencies: []

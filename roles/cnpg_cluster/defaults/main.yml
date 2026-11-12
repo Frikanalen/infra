@@ -4,7 +4,7 @@
 # The CloudNativePG Cluster Django's database lives in (django_db_host:
 # pgcluster-rw). It replaced the Kubegres django-postgres database on
 # 2026-11-10 and keeps that database's fkweb db/user and passwords, so
-# DATABASE_URL (roles/django_db_secret) only changed its hostname. Cutover,
+# DATABASE_URL (Secret django-postgres-passwords) only changed its hostname. Cutover,
 # backups and restores: docs/cnpg.md.
 
 
@@ -24,8 +24,8 @@ cnpg_cluster_app_secret_name: "{{ cnpg_cluster_name }}-app"
 cnpg_cluster_superuser_secret_name: "{{ cnpg_cluster_name }}-superuser"
 
 # Passwords -- must be set by caller (e.g. from vault). Same values as
-# argocd_django_db_django_password / argocd_django_db_super_password so the
-# app user and superuser credentials match roles/django_db_secret's.
+# the passwords in DATABASE_URL (Secret django-postgres-passwords), so the
+# app user and superuser credentials match.
 cnpg_cluster_app_password: ""
 cnpg_cluster_superuser_password: ""
 

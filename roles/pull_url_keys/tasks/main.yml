@@ -1,0 +1,40 @@
+---
+# Creates this environment's key for encrypting pulled live sources'
+# addresses, once. Never replaces an existing key: addresses stored with it
+# would become unreadable. To rotate, put a new key first in the
+# comma-separated FK_PULL_URL_KEYS in OpenBao and keep the old one after it.
+#
+# One key per environment, so a staging database copied from production
+# cannot read production's partner addresses.
+
+- name: "Look for kv/{{ pull_url_keys_path }}"
+  ansible.builtin.uri:
+    url: "{{ pull_url_keys_api }}/v1/{{ pull_url_keys_kv_mount }}/data/{{ pull_url_keys_path }}"
+    method: GET
+    ca_path: "{{ pull_url_keys_ca_path }}"
+    headers:
+      X-Vault-Token: "{{ vault_openbao_root_token }}"
+    status_code: [200, 404]
+  delegate_to: "{{ pull_url_keys_host }}"
+  register: pull_url_keys_existing
+  no_log: true
+
+- name: Generate a Fernet key
+  # 32 random bytes in URL-safe base64, which is all a Fernet key is.
+  when: pull_url_keys_existing.status == 404
+  ansible.builtin.shell: set -o pipefail && openssl rand -base64 32 | tr '+/' '-_'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ pull_url_keys_host }}"
+  register: pull_url_keys_new
+  changed_when: false
+  no_log: true
+
+- name: Store the key in OpenBao
+  when: pull_url_keys_existing.status == 404
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+  vars:
+    openbao_kv_path: "{{ pull_url_keys_path }}"
+    openbao_kv_data:
+      FK_PULL_URL_KEYS: "{{ pull_url_keys_new.stdout | trim }}"

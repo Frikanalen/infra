@@ -70,6 +70,15 @@ all:
         vm4:
         vmtx1:
 
+    # The Proxmox hosts that run Ceph (roles/proxmox_ceph). vm1 is left out:
+    # its third bay holds simula's disk. vmtx1 is left out: its disks sit
+    # behind a RAID controller and it runs caspar1's playout.
+    proxmox_ceph:
+      hosts:
+        vm2:
+        vm3:
+        vm4:
+
     caspar:
       children:
         caspar_hw:
@@ -88,6 +97,11 @@ all:
       hosts:
         mail1:
 
+    # OpenBao; see playbooks/openbao.yml.
+    secrets:
+      hosts:
+        bao1:
+
     # Hosts that get node_exporter installed on them by roles/node_exporter and
     # scraped by roles/node_exporter_scrape. The Kubernetes nodes are absent on
     # purpose: kube-prometheus-stack already runs a node-exporter DaemonSet on
@@ -99,6 +113,7 @@ all:
         proxmox:
         storage:
         mail:
+        secrets:
 
     # Hosts that get roles/alloy_journal: a native systemd Alloy agent
     # shipping the systemd journal to Loki's internal-only ingress. Not
@@ -109,6 +124,7 @@ all:
       children:
         caspar:
         mail:
+        secrets:
 
     qemu_guest:
       children:
@@ -116,3 +132,4 @@ all:
         kubedev:
         caspar:
         mail:
+        secrets:
