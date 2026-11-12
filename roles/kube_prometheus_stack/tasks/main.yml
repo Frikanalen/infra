@@ -88,8 +88,10 @@
       grafana:
         # grafana.db (sqlite: dashboards, users, tokens and annotations made
         # in the UI) lived in an emptyDir and was lost on every restart. A
-        # small volume keeps it; Recreate, because a ReadWriteOnce volume
-        # cannot be attached to the old and the new pod at once.
+        # small volume keeps it. A ReadWriteOnce volume cannot be attached to
+        # the old and the new pod at once, so the old pod goes first
+        # (maxSurge 0). Not type: Recreate: server-side apply keeps the
+        # Deployment's existing rollingUpdate block, which Recreate forbids.
         persistence:
           enabled: true
           type: pvc
@@ -97,7 +99,10 @@
           accessModes: [ReadWriteOnce]
           size: 1Gi
         deploymentStrategy:
-          type: Recreate
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
         # microk8s's cluster CA cert has no X509v3 Key Usage extension
         # (only Basic Constraints: CA:TRUE). The k8s-sidecar image's Python
         # base enables strict X.509 verification by default and rejects
