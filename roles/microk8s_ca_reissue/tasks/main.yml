@@ -1,0 +1,155 @@
+---
+# Installs the re-issued CA (made by tasks/generate.yml) on one node: the CA
+# file, the CA copy embedded in MicroK8s's own kubeconfigs, then a kubelite
+# restart so the API server, kubelet and controller manager load it. The
+# controller manager then republishes kube-root-ca.crt into every namespace
+# and refreshes ca.crt in service-account token secrets.
+#
+# Restarting kubelite does not stop pods (containerd keeps running), so this
+# needs no drain. Run it one node at a time (the playbook does).
+
+- name: Read this node's CA
+  ansible.builtin.slurp:
+    src: "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+  register: microk8s_ca_reissue_current
+
+- name: Install the re-issued CA
+  when: (microk8s_ca_reissue_current.content | b64decode) != microk8s_ca_reissue_pem
+  block:
+    - name: Make a scratch directory for the check
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: .ca-reissue
+      register: microk8s_ca_reissue_check_tmp
+      check_mode: false
+
+    - name: Check the new CA against this node before installing it
+      block:
+        - name: Write the new CA to the scratch directory
+          ansible.builtin.copy:
+            content: "{{ microk8s_ca_reissue_pem }}"
+            dest: "{{ microk8s_ca_reissue_check_tmp.path }}/ca.crt"
+            mode: "0644"
+          check_mode: false
+
+        # Same key, so everything this node's CA signed still verifies.
+        - name: Compare this node's CA key with the new CA's
+          ansible.builtin.command:
+            argv: [openssl, x509, -in, "{{ item }}", -noout, -pubkey, -subject]
+          loop:
+            - "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+            - "{{ microk8s_ca_reissue_check_tmp.path }}/ca.crt"
+          register: microk8s_ca_reissue_node_compare
+          changed_when: false
+          check_mode: false
+
+        - name: Refuse a CA from another cluster
+          ansible.builtin.assert:
+            that:
+              - microk8s_ca_reissue_node_compare.results[0].stdout == microk8s_ca_reissue_node_compare.results[1].stdout
+            fail_msg: >-
+              The new CA has a different key or name from this node's CA.
+              Was it made on a node of another cluster?
+            quiet: true
+
+        - name: Check this node's API server certificate verifies strictly against the new CA
+          ansible.builtin.command:
+            argv:
+              - openssl
+              - verify
+              - -x509_strict
+              - -CAfile
+              - "{{ microk8s_ca_reissue_check_tmp.path }}/ca.crt"
+              - "{{ microk8s_ca_reissue_certs_dir }}/server.crt"
+          changed_when: false
+          check_mode: false
+      always:
+        - name: Remove the scratch directory
+          ansible.builtin.file:
+            path: "{{ microk8s_ca_reissue_check_tmp.path }}"
+            state: absent
+          check_mode: false
+
+    - name: Look up the CA file's owner and mode
+      ansible.builtin.stat:
+        path: "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+      register: microk8s_ca_reissue_stat
+
+    - name: Keep the original CA next to it
+      ansible.builtin.copy:
+        src: "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+        dest: "{{ microk8s_ca_reissue_certs_dir }}/ca.crt.pre-keyusage"
+        remote_src: true
+        force: false
+        owner: "{{ microk8s_ca_reissue_stat.stat.pw_name }}"
+        group: "{{ microk8s_ca_reissue_stat.stat.gr_name }}"
+        mode: "{{ microk8s_ca_reissue_stat.stat.mode }}"
+
+    - name: Install the new CA
+      ansible.builtin.copy:
+        content: "{{ microk8s_ca_reissue_pem }}"
+        dest: "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+        owner: "{{ microk8s_ca_reissue_stat.stat.pw_name }}"
+        group: "{{ microk8s_ca_reissue_stat.stat.gr_name }}"
+        mode: "{{ microk8s_ca_reissue_stat.stat.mode }}"
+
+- name: Find MicroK8s's kubeconfigs
+  ansible.builtin.find:
+    paths: "{{ microk8s_ca_reissue_credentials_dir }}"
+    patterns: "*.config"
+  register: microk8s_ca_reissue_kubeconfigs
+
+# client.config, kubelet.config, proxy.config and the rest embed the CA as
+# certificate-authority-data. A file that already carries the new CA is left
+# alone, so a re-run after a partial one only finishes the job.
+- name: Put the new CA into MicroK8s's kubeconfigs
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '^(\s*certificate-authority-data:\s*).*$'
+    replace: '\g<1>{{ microk8s_ca_reissue_pem | b64encode }}'
+    backup: true
+  loop: "{{ microk8s_ca_reissue_kubeconfigs.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: microk8s_ca_reissue_kubeconfig_edit
+
+- name: Restart kubelite to load the new CA
+  ansible.builtin.command: snap restart microk8s.daemon-kubelite
+  changed_when: true
+  when: >-
+    (microk8s_ca_reissue_current.content | b64decode) != microk8s_ca_reissue_pem
+    or microk8s_ca_reissue_kubeconfig_edit is changed
+
+- name: Wait for MicroK8s to be ready
+  ansible.builtin.command: "microk8s status --wait-ready --timeout {{ microk8s_ca_reissue_ready_timeout }}"
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  changed_when: false
+  check_mode: false
+
+- name: Wait for this node to be Ready
+  ansible.builtin.command: >-
+    microk8s kubectl wait --for=condition=Ready node/{{ inventory_hostname }}
+    --timeout={{ microk8s_ca_reissue_ready_timeout }}s
+  environment:
+    PATH: "/snap/bin:{{ ansible_env.PATH | default('/usr/bin:/bin') }}"
+  changed_when: false
+  check_mode: false
+
+# The point of the exercise: the system Python (3.14 on 26.04) verifies in
+# strict X.509 mode, which the old CA failed.
+- name: Check the system Python accepts the API server with the installed CA
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -I
+      - -c
+      - |
+        import socket, ssl, sys
+        ctx = ssl.create_default_context(cafile=sys.argv[1])
+        with socket.create_connection(("127.0.0.1", 16443), timeout=10) as sock:
+            with ctx.wrap_socket(sock, server_hostname="127.0.0.1"):
+                pass
+      - "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+  changed_when: false
+  when: not ansible_check_mode

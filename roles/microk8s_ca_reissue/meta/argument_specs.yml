@@ -1,0 +1,31 @@
+---
+argument_specs:
+  main:
+    short_description: Re-issue a MicroK8s cluster CA certificate with keyUsage, keeping its key
+    options:
+      microk8s_ca_reissue_pem:
+        type: str
+        required: true
+        description: >-
+          The re-issued CA certificate (PEM) to install on this node. Made
+          once per cluster by playbooks/reissue_microk8s_ca.yml so every node
+          gets byte-identical content.
+      microk8s_ca_reissue_certs_dir:
+        type: str
+        required: false
+        default: /var/snap/microk8s/current/certs
+        description: MicroK8s certificate directory.
+      microk8s_ca_reissue_credentials_dir:
+        type: str
+        required: false
+        default: /var/snap/microk8s/current/credentials
+        description: MicroK8s kubeconfig directory.
+      microk8s_ca_reissue_extensions:
+        type: str
+        required: false
+        description: OpenSSL extension lines for the re-issued CA.
+      microk8s_ca_reissue_ready_timeout:
+        type: int
+        required: false
+        default: 300
+        description: Seconds to wait for the node to come back after kubelite restarts.
