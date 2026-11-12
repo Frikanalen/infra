@@ -39,9 +39,16 @@
       when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
 
     - name: Check that every node in the cluster is Ready before taking one out
-      ansible.builtin.command: >-
-        {{ upgrade_kubectl }} get nodes
-        -o jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}
+      # argv, not a string: the jsonpath has spaces and quotes that the
+      # command module's splitting would mangle.
+      ansible.builtin.command:
+        argv:
+          - /snap/bin/microk8s
+          - kubectl
+          - get
+          - nodes
+          - -o
+          - 'jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}'
       delegate_to: "{{ upgrade_admin_node }}"
       register: upgrade_nodes_ready
       changed_when: false
