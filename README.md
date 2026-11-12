@@ -38,7 +38,7 @@ definitions.
 - `docs/openbao.md` - OpenBao on bao1, the secrets store the clusters read
   through External Secrets Operator: layout, unsealing, setup and restore.
 - `docs/mediamtx.md` - environment wiring, deployment and end-to-end test guide
-  for the MediaMTX contribution ingest (the chart lives in gitops).
+  for the MediaMTX contribution ingest (the chart lives in Frikanalen/contribution-receiver).
 
 ## Development
 
