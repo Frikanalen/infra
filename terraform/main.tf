@@ -12,13 +12,15 @@ locals {
         # "unsafe" will "lie" to the guest OS about whether writes to disk have been committed.
         # It speeds disk I/O at the cost of almost certain data loss on host power failure.
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
-        disk_cache        = try(h.vm.disk_cache, "none")
-        cores             = try(h.vm.cores, 8)
-        memory_max        = try(h.vm.memory_max, 16384)
-        memory_min        = try(h.vm.memory_min, 8192)
-        template          = try(h.vm.template, var.template)
-        storage           = try(h.vm.storage, "localssd-lvm")
-        ceph_storage      = try(h.vm.ceph_storage, "local-lvm")
+        disk_cache   = try(h.vm.disk_cache, "none")
+        cores        = try(h.vm.cores, 8)
+        memory_max   = try(h.vm.memory_max, 16384)
+        memory_min   = try(h.vm.memory_min, 8192)
+        template     = try(h.vm.template, var.template)
+        storage      = try(h.vm.storage, "localssd-lvm")
+        ceph_storage = try(h.vm.ceph_storage, "local-lvm")
+        # The 4 MB cloud-init ISO can stay put when a boot disk is moved.
+        cloudinit_storage = try(h.vm.cloudinit_storage, try(h.vm.storage, "localssd-lvm"))
         ceph_disk_size    = try(h.vm.ceph_disk_size, null)
         local_ssd_size    = try(h.vm.local_ssd_size, null)
         local_ssd_storage = try(h.vm.local_ssd_storage, "localssd-lvm")
@@ -116,7 +118,7 @@ resource "proxmox_vm_qemu" "kube" {
     ide {
       ide2 {
         cloudinit {
-          storage = each.value.storage
+          storage = each.value.cloudinit_storage
         }
       }
     }
