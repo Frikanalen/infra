@@ -8,7 +8,7 @@ use a Secret when it changes.
 
 This is the first stage of moving from "Ansible renders every Secret from
 `data/vault.yml`" to "OpenBao holds every secret value". For the whole plan,
-see the infra and gitops review doc.
+see the infra and gitops review doc (gitops is now Frikanalen/clusters).
 
 ## Layout
 
@@ -112,16 +112,31 @@ OpenBao, is a seal migration and needs no rebuild.
    Healthy in Argo CD. If ESO refuses to adopt a Secret, delete that Secret
    and ESO recreates it within a minute.
 
+## Prod
+
+Prod follows the same steps, from `k8s_platform_prod.yml` and with
+`--limit kubeprod_admin` for the seed. Its root Application is `prod`, over
+`clusters/prod`. Those files were written from prod's live Applications, not
+re-rendered from infra, so the handover leaves every pod as it is: in
+particular playout's and ingest's checksum annotations keep their old values
+until their next release, when they can go (Reloader does their job).
+
+```sh
+ansible-playbook playbooks/k8s_platform_prod.yml --tags openbao,reloader
+ansible-playbook playbooks/openbao_seed.yml --limit kubeprod_admin
+ansible-playbook playbooks/k8s_platform_prod.yml --tags clusters_root
+```
+
 ## After the handover
 
-- Staging's app versions and values live in the clusters repo,
-  `clusters/staging/apps/`. `k8s_apps_staging.yml` no longer creates
-  Applications.
+- Each environment's app versions and values live in the clusters repo,
+  `clusters/<env>/apps/`. `k8s_apps_staging.yml` and `k8s_apps_prod.yml` no
+  longer create Applications.
 - The app Secrets come from OpenBao. Change a value with
-  `bao kv put kv/staging/default/<name> ...` (or the UI on
+  `bao kv put kv/<env>/default/<name> ...` (or the UI on
   https://bao1.dc1.frikanalen.tv:8200), not in the vault. Reloader restarts
   whatever uses it.
-- `app_secrets_from_openbao: true` in `group_vars/staging.yml` makes the
+- `app_secrets_from_openbao: true` in `group_vars/{staging,prod}.yml` makes the
   roles that issue credentials (`playout_live_secret`,
   `ingest_archive_account`) write them to OpenBao instead of to the
   cluster, and `cnpg_cluster` stops writing its Secrets.

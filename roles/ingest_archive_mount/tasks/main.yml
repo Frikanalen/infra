@@ -1,7 +1,8 @@
 ---
 # The ingest chart mounts the archive from an inline nfs volume, which has no
 # way to set mount options. When an environment names some, this makes the same
-# export a PV/PVC pair that does, and data/apps.yml points the chart at it.
+# export a PV/PVC pair that does, and the ingest app (clusters/<env>/apps/
+# ingest.yaml, archive.mount.existingClaim) points the chart at it.
 - name: Create the archive PersistentVolume
   when: ingest_archive_nfs_mount_options | length > 0
   become: true

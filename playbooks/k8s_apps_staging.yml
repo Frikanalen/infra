@@ -17,7 +17,7 @@
   vars:
     argocd_namespace: argocd
     # The same credentials the Kubegres django-postgres database had, which
-    # roles/django_db_secret still puts in DATABASE_URL.
+    # DATABASE_URL in the django-postgres-passwords Secret (OpenBao) uses.
     cnpg_cluster_app_password: "{{ vault_dev_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_dev_django_postgres_super_password }}"
     # Backups to Garage on file01 (roles/garage), one bucket per environment.
@@ -25,8 +25,7 @@
     cnpg_cluster_backup_s3_key_id: "{{ vault_dev_cnpg_s3_key_id }}"
     cnpg_cluster_backup_s3_secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
   roles:
-    # django_db_secret and ingest_api_secret are gone from here: their
-    # Secrets come from OpenBao (clusters/staging/secrets). cnpg_cluster,
+    # The app Secrets come from OpenBao (clusters/staging/secrets). cnpg_cluster,
     # ingest_archive_account and playout_live_secret skip or redirect their
     # Secret writes to OpenBao because app_secrets_from_openbao is on.
 
@@ -40,6 +39,14 @@
     # playout's, which rolls when the key changes.
     - role: playout_live_secret
       tags: [playout, playout_live]
+
+    # Pulled live sources: Django's key for their addresses, created once,
+    # and the credential MediaMTX's pull relay fetches them with. Both go to
+    # OpenBao; clusters/staging/secrets delivers them.
+    - role: pull_url_keys
+      tags: [pull_sources, django]
+    - role: pull_relay_secret
+      tags: [pull_sources, mediamtx]
 
     # Generates the archive key and provisions the file01 account; must precede
     # the ingest app, which reads the key back to roll the pod on rotation.

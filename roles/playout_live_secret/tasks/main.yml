@@ -83,9 +83,3 @@
     definition: "{{ lookup('template', 'live-secret.yml.j2') }}"
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"
-
-- name: Remember which key playout holds
-  # Read by the playout app definition to roll the pod when the key changes;
-  # Helm cannot watch a Secret it does not own. Not secret.
-  ansible.builtin.set_fact:
-    playout_live_key: "{{ playout_live_issued.username }}"

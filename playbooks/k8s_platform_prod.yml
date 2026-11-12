@@ -121,25 +121,60 @@
     - role: argocd
       tags: [argocd]
 
-    # See the note in k8s_platform_dev.yml: both invocations name their
-    # application and path explicitly rather than inheriting the role's
-    # "apps" default.
-    - role: argocd_gitops
-      tags: [argocd_gitops, rook_ceph]
-      vars:
-        argocd_gitops_application_name: rook-ceph
-        argocd_gitops_repo_path: apps/rook-ceph
+    # rook-ceph and local-path-provisioner used to have an app-of-apps each
+    # here, over the old apps/rook-ceph and apps/local-path-provisioner. They
+    # are now files under clusters/prod/platform, synced by the "prod" root
+    # Application at the end of this play. The old parent Applications are
+    # removed alongside it; they carry no finalizer, so removing them leaves
+    # their child Applications running for the root to adopt.
 
     # Rook's connection to the Proxmox Ceph cluster (playbooks/proxmox/ceph.yml):
     # CephX users, keys, mon endpoints and the ceph-rbd StorageClass.
     - role: rook_ceph_external
       tags: [rook_ceph_external]
 
-    - role: argocd_gitops
-      tags: [argocd_gitops, local_path_provisioner]
-      vars:
-        argocd_gitops_application_name: local-path-provisioner
-        argocd_gitops_repo_path: apps/local-path-provisioner
-
     - role: argocd_image_updater
       tags: [argocd_image_updater]
+
+    # OpenBao (bao1, playbooks/openbao.yml) and the operator that copies
+    # this cluster's secrets out of it; see docs/openbao.md.
+    - role: openbao_k8s_auth
+      tags: [openbao, external_secrets]
+
+    - role: external_secrets
+      tags: [openbao, external_secrets]
+
+    - role: reloader
+      tags: [reloader]
+
+    # The root of everything Argo CD runs on prod: clusters/prod in the
+    # clusters repo (Frikanalen/clusters) -- every app with its
+    # version and values, and every ExternalSecret. Replaces the argocd_app
+    # roles k8s_apps_prod.yml used to run. Last, because its ExternalSecrets
+    # need the operator above, and seed OpenBao first
+    # (playbooks/openbao_seed.yml); see docs/openbao.md.
+    - role: argocd_gitops
+      tags: [argocd_gitops, clusters_root]
+      vars:
+        argocd_gitops_application_name: prod
+        argocd_gitops_repo_path: clusters/prod
+        argocd_gitops_recurse: true
+        argocd_gitops_ignore_image_updater: true
+
+  post_tasks:
+    - name: Remove prod's old rook-ceph and local-path-provisioner app-of-apps
+      # Only once the root exists, so the child Applications always have a
+      # parent that wants them. Orphan deletion: the children stay.
+      kubernetes.core.k8s:
+        kubeconfig: "{{ k8s_kubeconfig }}"
+        state: absent
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        namespace: argocd
+        name: "{{ item }}"
+        delete_options:
+          propagationPolicy: Orphan
+      loop: [rook-ceph, local-path-provisioner]
+      become: true
+      run_once: true
+      tags: [argocd_gitops, clusters_root]

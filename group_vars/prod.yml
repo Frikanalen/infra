@@ -15,31 +15,20 @@ frikanalen_intern_ingress_class: internal
 # Prometheus Operator + Prometheus + Alertmanager + Grafana via
 # roles/kube_prometheus_stack, exposed only on frikanalen_intern_zone -- see
 # playbooks/k8s_platform_prod.yml. Also turns on the ServiceMonitors that
-# traefik/argocd/cnpg/metallb would otherwise skip -- see data/apps.yml and
-# each role's tasks.
+# traefik/argocd/cnpg/metallb would otherwise skip -- see each role's tasks.
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: production
 
 frikanalen_domain: frikanalen.tv
-frikanalen_scheme: https
 
-# caspar1 (data/hosts.yml); took over from tx3 (192.168.3.35) on 2026-10-31.
-caspar_host: "192.168.3.100"
-
-# Where Django's DATABASE_URL points (roles/django_db_secret): CloudNativePG's
-# pgcluster since 2026-11-10 (docs/cnpg.md).
+# Django's database: CloudNativePG's pgcluster since 2026-11-10 (docs/cnpg.md),
+# and the Secret holding its credentials (from OpenBao). Read by cnpg_cluster
+# and staging_db_sync.
 django_db_host: pgcluster-rw
 django_db_secret_name: django-postgres-passwords
 
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-prod-contribution'].ip_cidr.split('/')[0] }}"
-# Opus previews converted on demand inside MediaMTX (gitops helm/mediamtx).
-# On in prod since 2026-10-31.
-mediamtx_preview_enabled: true
-# About 4 s of a 10 Mbit/s feed per reader, so CasparCG rides out uplink bursts.
-mediamtx_write_queue_size: 4096
-
-playout_media_path: /mnt/media/
 
 # Ingest archives over SSH, so it runs in Kubernetes rather than on file01
 # itself. The account and key are provisioned by roles/ingest_archive_account;
@@ -60,55 +49,10 @@ ingest_archive_fk_profile: prod
 # attribute, directory or negative-lookup cache. See group_vars/staging.yml.
 ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 
-# The CPU ladder was OOM-killed at the chart's 4Gi on staging, 14% into a
-# 1080p encode.
-ingest_cpu_worker_memory_limit: 16Gi
-
-# One ingest worker encoding on the Arc A310 on prod-kube-4 through Quick Sync,
-# beside the main CPU pool. Needs the device plugin (roles/intel_gpu_plugin)
-# and the host preparation (roles/intel_gpu_node); the worker's own encoder
-# self-test refuses to start it if either is missing. If the plugin reports
-# gpu.intel.com/xe rather than i915, the resource names below have to follow.
-ingest_worker_pools:
-  qsv:
-    encoder: qsv
-    replicaCount: 1
-    nodeSelector:
-      frikanalen.tv/gpu-intel-arc-a310: "true"
-    # One node, one card: spreading is meaningless and would only keep the
-    # worker Pending.
-    topologySpread:
-      enabled: false
-    resources:
-      requests:
-        cpu: "1"
-        memory: 1Gi
-        gpu.intel.com/i915: 1
-      limits:
-        memory: 4Gi
-        gpu.intel.com/i915: 1
-
-# tusd runs alongside ingest in the same pod, served at /upload on
-# frikanalen_domain. Django's FK_UPLOAD_URL must point there.
-ingest_uploads_size: 500Gi
-
 traefik_acme_challenge: web # we don't use DNS01 in prod (yet?)
 
-# The front-page stream takes caspar1's H.264 mezzanine (host_vars/caspar1.yml)
-# straight off multicast, as staging does with caspar-sw1: the in-cluster
-# cubemap joins 239.1.1.51 and ffmpeg re-encodes from it. This replaces the
-# old path through the SDI encoder appliance and simula's cubemap
-# (158.36.191.230:5565). An earlier multicast-joined cubemap here dropped
-# out of the switch's IGMP snooping table; staging's has held since
-# 2026-10-31, but watch for the same symptom (input goes stale after a few
-# minutes) after deploying this. Joining needs the node's network
-# namespace: Calico doesn't carry multicast into pods.
-argocd_stream_cubemap_enabled: true
-argocd_stream_cubemap_host_network: true
-argocd_stream_cubemap_multicast_group: "239.1.1.51"
-# Unused with a multicast group, but data/apps.yml requires it.
-argocd_stream_cubemap_ip: "192.168.3.105"
-# With hostNetwork, cubemap's multicast socket gets the node's default UDP
+# The stream app's cubemap runs with hostNetwork to join caspar1's multicast
+# program out (clusters/prod/apps/stream.yaml). Its socket then gets the node's default UDP
 # receive buffer (212992 bytes), which overflowed at ~20 Mbit/s: UDP
 # RcvbufErrors lined up with ffmpeg's "corrupt input packet" about once a
 # minute. Set on every kubeprod node by playbooks/k8s_cluster_prod.yml
@@ -116,31 +60,29 @@ argocd_stream_cubemap_ip: "192.168.3.105"
 argocd_stream_cubemap_node_sysctls:
   net.core.rmem_max: 33554432
   net.core.rmem_default: 16777216
-# Decoding caspar1's 20 Mbit/s 4:2:2 720p50 mezzanine and encoding both HLS
-# renditions takes more than the chart's 6-core limit: at 6 the transcoder
-# was throttled in ~93% of CFS periods, fell behind cubemap, and cubemap
-# dropped data under it ("corrupt input packet"). prod-kube-3 has 24 cores.
-argocd_stream_ffmpeg_cpu_request: "6"
-argocd_stream_ffmpeg_cpu_limit: "12"
 
-# Every app the cluster runs must have a key here. The roles no longer carry
-# a fallback: a missing key is now an undefined-variable error rather than a
-# silent deploy of whatever the fallback happened to name.
 # Which OpenBao prefix this cluster reads (kv/prod/...), and the name of its
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
 openbao_env: prod
 
-app_versions:
-  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
-  mediamtx: main
-  graphics: v1.5.0
-  playout: v2.5.0
-  frontend: v3.5.0
-  django: v3.0.0
-  stream: v0.4.0
-  # v1.1.1 = v1.0.0 (Frikanalen/ingest#26), the frikanalen.tv move, and a CI
-  # fix that attaches fk-archive-utils' .deb to the release.
-  ingest: v1.1.1
+# The app Secrets (openbao_seed_secrets below) come from OpenBao through
+# External Secrets Operator (clusters/prod/secrets), so the roles that used
+# to write them skip that, or write to OpenBao instead.
+app_secrets_from_openbao: true
+
+# Secrets playbooks/openbao_seed.yml copies from this cluster into OpenBao,
+# unchanged, at kv/prod/<namespace>/<name>. The app Secrets only: the
+# platform's (Traefik, external-dns, monitoring) stay with Ansible until the
+# platform moves to the clusters repo.
+openbao_seed_secrets:
+  - { namespace: default, name: django-postgres-passwords }
+  - { namespace: default, name: django-secret }
+  - { namespace: default, name: pgcluster-app }
+  - { namespace: default, name: pgcluster-superuser }
+  - { namespace: default, name: pgcluster-backup-s3 }
+  - { namespace: default, name: ingest-api }
+  - { namespace: default, name: ingest-archive-ssh }
+  - { namespace: default, name: playout-live }
 
 helm_chart_versions:
   traefik: "41.6.0"

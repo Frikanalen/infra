@@ -1,0 +1,73 @@
+---
+# Owns the pull relay's credential end to end, like playout_live_secret:
+# Django issues it, OpenBao holds the only copy of its password, and ESO
+# copies it into the Secret MediaMTX reads.
+#
+# Every run asks Django whether the key in the Secret is still valid. If it
+# is, nothing changes; if not (first run, revoked, or a staging database just
+# replaced by a copy of production's), Django issues a fresh one and OpenBao
+# is rewritten.
+
+- name: Check that OpenBao delivers the app Secrets here
+  ansible.builtin.assert:
+    that: app_secrets_from_openbao | default(false) | bool
+    fail_msg: The pull relay's Secret is only written to OpenBao.
+    quiet: true
+
+- name: Look for the existing pull relay credential
+  become: true
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ pull_relay_secret_name }}"
+    namespace: "{{ pull_relay_secret_namespace }}"
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: pull_relay_secret_lookup
+  no_log: true
+
+- name: Note the key the existing secret holds
+  # Only the key UUID, the username half; the password stays in the Secret.
+  ansible.builtin.set_fact:
+    pull_relay_current_key: >-
+      {{ ((pull_relay_secret_lookup.resources[0].data | default({})).FK_PULL_CREDENTIAL
+          | default('') | b64decode).split(':')[0]
+         if pull_relay_secret_lookup.resources | length > 0 else '' }}
+  no_log: true
+
+- name: Find a running Django pod
+  become: true
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ pull_relay_django_namespace }}"
+    label_selectors:
+      - "{{ pull_relay_django_selector }}"
+    field_selectors:
+      - status.phase=Running
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: pull_relay_django_pods
+  failed_when: pull_relay_django_pods.resources | length == 0
+
+- name: Ask Django to keep or issue the pull relay credential
+  become: true
+  kubernetes.core.k8s_exec:
+    namespace: "{{ pull_relay_django_namespace }}"
+    pod: "{{ pull_relay_django_pods.resources[0].metadata.name }}"
+    container: "{{ pull_relay_django_container }}"
+    command: >-
+      python manage.py ensure_pull_credential
+      {{ ('--keep ' ~ (pull_relay_current_key | quote)) if pull_relay_current_key else '' }}
+    kubeconfig: "{{ k8s_kubeconfig }}"
+  register: pull_relay_ensure
+  changed_when: (pull_relay_ensure.stdout | from_json).changed
+  # A newly issued password is in stdout.
+  no_log: true
+
+- name: Store a newly issued credential in OpenBao
+  when: (pull_relay_ensure.stdout | from_json).password is defined
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+  vars:
+    pull_relay_issued: "{{ pull_relay_ensure.stdout | from_json }}"
+    openbao_kv_path: "{{ openbao_env }}/{{ pull_relay_secret_namespace }}/{{ pull_relay_secret_name }}"
+    openbao_kv_data:
+      FK_PULL_CREDENTIAL: "{{ pull_relay_issued.username }}:{{ pull_relay_issued.password }}"

@@ -1,8 +1,8 @@
 ---
 ingest_archive_mount_namespace: "{{ frikanalen_app_namespace }}"
 
-# Name of the PersistentVolume and PersistentVolumeClaim. data/apps.yml hands
-# the claim's name to the ingest chart as archive.mount.existingClaim.
+# Name of the PersistentVolume and PersistentVolumeClaim. The ingest app
+# (clusters/<env>/apps/ingest.yaml) names it as archive.mount.existingClaim.
 ingest_archive_mount_claim: ingest-archive
 
 # NFS client options for the read-only archive mount. An inline `nfs:` volume

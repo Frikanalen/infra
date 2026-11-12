@@ -138,7 +138,7 @@
       tags: [argocd]
 
     # rook-ceph and local-path-provisioner used to have an app-of-apps each
-    # here, over gitops apps/rook-ceph and apps/local-path-provisioner. On
+    # here, over the old apps/rook-ceph and apps/local-path-provisioner. On
     # staging they are now files under clusters/staging/platform, synced by
     # the "staging" root Application at the end of this play. The old parent
     # Applications are removed alongside it; they carry no finalizer, so
@@ -166,7 +166,7 @@
       tags: [reloader]
 
     # The root of everything Argo CD runs on staging: clusters/staging in the
-    # clusters repo (today's gitops, being renamed) -- every app with its
+    # clusters repo (Frikanalen/clusters) -- every app with its
     # version and values, and every ExternalSecret. Replaces the argocd_app
     # roles k8s_apps_staging.yml used to run. Last, because its
     # ExternalSecrets need the operator above, and seed OpenBao first

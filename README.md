@@ -38,7 +38,7 @@ definitions.
 - `docs/openbao.md` - OpenBao on bao1, the secrets store the clusters read
   through External Secrets Operator: layout, unsealing, setup and restore.
 - `docs/mediamtx.md` - environment wiring, deployment and end-to-end test guide
-  for the MediaMTX contribution ingest (the chart lives in gitops).
+  for the MediaMTX contribution ingest (the chart lives in Frikanalen/contribution-receiver).
 
 ## Development
 
@@ -167,13 +167,14 @@ ansible-playbook playbooks/k8s_apps_prod.yml
 ansible-playbook playbooks/k8s_apps_staging.yml
 ```
 
-Deploys Argo CD Application definitions for the Django API, frontend,
-graphics, playout, stream and ingest components. Every one of them
-is declared in `data/apps.yml` (`frikanalen_apps`) and rendered by the single
-`argocd_app` role, invoked once per app; adding an app is an entry in that
-file plus three lines in the playbook. Two apps need a credential in place
-before Argo CD syncs them, so they keep a small role of their own:
-`django_db_secret` and `ingest_api_secret`. Also deploys a CloudNativePG `Cluster` named
+The apps themselves (Django API, frontend, graphics, playout, stream, ingest,
+MediaMTX, stream-monitoring), with their versions and values, are files in
+Frikanalen/clusters (`clusters/<env>/apps`); merging there deploys. Their
+Secrets come from OpenBao (`docs/openbao.md`). These playbooks:
+
+Sets up what the apps need besides their Argo CD Applications: the archive
+account and mount for ingest, playout's live credential, the media server, and
+a CloudNativePG `Cluster` named
 `pgcluster` (see `roles/cnpg_cluster`), Django's database since 2026-11-10:
 postgres 16, 3 instances on the `local-ssd` storage class, `fkweb` db/user.
 pgcluster archives WAL continuously and takes a daily base backup to Garage,
@@ -319,5 +320,6 @@ loaded, and sets `device_ownership_from_security_context` in MicroK8s's
 containerd so unprivileged pods can open the device. `intel_gpu_plugin` runs
 the plugin on the labelled node and waits for the node to advertise the GPU,
 printing whether it is `gpu.intel.com/i915` or `gpu.intel.com/xe`. The ingest
-QSV worker pool (`ingest_worker_pools`) is the consumer. Staging has no Intel
+QSV worker pool (`workers.pools.qsv` in the clusters repo,
+`clusters/prod/apps/ingest.yaml`) is the consumer. Staging has no Intel
 GPU since the A310 moved to prod.

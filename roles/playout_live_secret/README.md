@@ -16,13 +16,13 @@ as sources are added.
 3. If Django still accepts that key, nothing changes. Otherwise (first run,
    revoked or expired, or a staging database replaced by a copy of
    production's) Django revokes the old one, issues a new credential and
-   returns its password once, and the Secret is rewritten.
-4. Sets `playout_live_key`, which the playout app definition hashes into a pod
-   annotation, so playout rolls onto a new key. Helm cannot watch a Secret it
-   does not own.
+   returns its password once. With `app_secrets_from_openbao` (both clusters
+   now) it is written to OpenBao, `kv/<env>/default/playout-live`; External
+   Secrets Operator updates the Secret and Reloader restarts playout.
+   Otherwise the Secret is rewritten directly.
 
-Run it after the django app (it needs a running pod with the command, from
-django-api #85) and before the playout app:
+Run it once django is up (it needs a running pod with the command, from
+django-api #85). A new credential restarts playout, so not mid-programme:
 
     ansible-playbook playbooks/k8s_apps_prod.yml --tags playout
 

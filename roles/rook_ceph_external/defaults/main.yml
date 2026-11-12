@@ -3,7 +3,7 @@
 # (roles/proxmox_ceph) in external mode: the CephX users, their keys and the
 # mon endpoints, read from Ceph with Rook's own export script, the external
 # CephCluster resource and the StorageClass. The operator and CSI drivers
-# stay where they are, in gitops (apps/rook-ceph).
+# stay where they are, in the clusters repo (clusters/<env>/platform/rook-ceph).
 
 # Name of this Kubernetes cluster, used in the CephX user names.
 rook_ceph_external_k8s_cluster_name: "{{ 'prod' if 'prod' in group_names else 'staging' }}"
