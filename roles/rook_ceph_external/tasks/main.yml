@@ -54,7 +54,7 @@
   check_mode: false
   no_log: true
 
-- name: Give the Rook and CSI users {{ rook_ceph_external_key_type }} keys
+- name: Rotate the Rook and CSI users to key type {{ rook_ceph_external_key_type }}
   ansible.builtin.command:
     argv: [ceph, auth, rotate, "--key-type={{ rook_ceph_external_key_type }}", "{{ item.item }}"]
   loop: >-
