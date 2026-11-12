@@ -26,6 +26,8 @@
     executable: /bin/bash
   register: intel_gpu_node_render
   changed_when: false
+  # Read-only; without this --check skips it and the assert below fails.
+  check_mode: false
 
 - name: Verify an Intel render node is served by a media-capable driver
   ansible.builtin.assert:
@@ -48,6 +50,8 @@
     executable: /bin/bash
   register: intel_gpu_node_huc
   changed_when: false
+  # Read-only; without this --check skips it and the assert below fails.
+  check_mode: false
 
 - name: Verify the HuC firmware is authenticated
   # Skipped, with a warning, if debugfs does not say: an unreadable status is
