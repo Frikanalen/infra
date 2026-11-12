@@ -145,11 +145,6 @@
     # removing them leaves their child Applications running for the root to
     # adopt. Prod keeps its own app-of-apps (k8s_platform_prod.yml).
 
-    # Rook's connection to the Proxmox Ceph cluster (playbooks/proxmox/ceph.yml):
-    # CephX users, keys, mon endpoints and the ceph-rbd StorageClass.
-    - role: rook_ceph_external
-      tags: [rook_ceph_external]
-
     - role: argocd_image_updater
       tags: [argocd_image_updater]
 
@@ -178,6 +173,12 @@
         argocd_gitops_repo_path: clusters/staging
         argocd_gitops_recurse: true
         argocd_gitops_ignore_image_updater: true
+
+    # Rook's connection to the Proxmox Ceph cluster (playbooks/proxmox/ceph.yml):
+    # CephX users, keys, mon endpoints and the ceph-rbd StorageClass. After
+    # the root Application, which installs the Rook operator and its CRDs.
+    - role: rook_ceph_external
+      tags: [rook_ceph_external]
 
   post_tasks:
     - name: Remove staging's old rook-ceph and local-path-provisioner app-of-apps

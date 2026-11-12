@@ -46,6 +46,28 @@
       changed_when: true
       run_once: true
 
+    # The hand-made storage named file01 by its old frikanalen.no name, which
+    # stopped resolving when that domain was lost, leaving the storage
+    # offline on every node. Point it at file01's address like the create
+    # above; its content types stay as they are.
+    - name: Point the backup storage at file01's address
+      ansible.builtin.command:
+        argv:
+          - pvesh
+          - set
+          - "/storage/{{ proxmox_backup_storage }}"
+          - --server
+          - "{{ host_config['file01'].ip_cidr.split('/')[0] }}"
+      vars:
+        existing: >-
+          {{ (proxmox_storage_current.stdout | from_json
+              | selectattr('storage', 'equalto', proxmox_backup_storage) | list | first) | default({}) }}
+      when:
+        - existing | length > 0
+        - existing.server | default('') != host_config['file01'].ip_cidr.split('/')[0]
+      changed_when: true
+      run_once: true
+
     - name: Read cluster backup jobs
       ansible.builtin.command:
         argv: [pvesh, get, /cluster/backup, --output-format, json]
