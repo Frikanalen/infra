@@ -51,5 +51,5 @@
 - name: Grow the root filesystem
   ansible.builtin.command:
     argv: [resize2fs, "{{ qemu_guest_root_source.stdout }}"]
-  when: qemu_guest_growpart is changed
+  when: qemu_guest_growpart.rc | default(1) == 0
   changed_when: true
