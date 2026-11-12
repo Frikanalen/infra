@@ -1,0 +1,96 @@
+---
+# Upgrades MicroK8s nodes in place to the next Ubuntu LTS, one node at a
+# time: drain, do-release-upgrade, reboot, wait for Ready, uncordon. A node
+# already on the target release is skipped before
+# the drain, so re-running after a partial rollout only touches the rest.
+#
+# Staging first, always, and prod only with explicit clearance:
+#
+#   ansible-playbook playbooks/upgrade_microk8s_nodes_ubuntu.yml -l dev-kube-2
+#   ansible-playbook playbooks/upgrade_microk8s_nodes_ubuntu.yml -l kubedev
+#
+# Do the cluster's admin node (dev-kube-1 / prod-kube-1) on its own run, after
+# the others: the drain and uncordon are run from it.
+#
+# prod-kube-4 holds the A310 and is the only QSV ingest path, so ingest stops
+# while it is drained. Afterwards re-run
+#   ansible-playbook playbooks/k8s_cluster_prod.yml --tags gpu
+# to check the GPU driver and HuC firmware on the new kernel.
+
+- name: Upgrade MicroK8s nodes to the next Ubuntu LTS, one at a time
+  hosts: microk8s
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    # The node the cluster is driven from: kubectl runs there.
+    upgrade_admin_node: >-
+      {{ groups['kubeprod_admin'][0] if inventory_hostname in groups['kubeprod']
+         else groups['kubedev_admin'][0] }}
+    upgrade_kubectl: /snap/bin/microk8s kubectl
+  pre_tasks:
+    - name: Read the running release
+      ansible.builtin.command: lsb_release -rs
+      register: upgrade_release
+      changed_when: false
+
+    - name: Skip nodes already on the target release
+      ansible.builtin.meta: end_host
+      when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
+
+    - name: Check that every node in the cluster is Ready before taking one out
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} get nodes
+        -o jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}
+      delegate_to: "{{ upgrade_admin_node }}"
+      register: upgrade_nodes_ready
+      changed_when: false
+      failed_when: >-
+        upgrade_nodes_ready.rc != 0
+        or upgrade_nodes_ready.stdout_lines | reject('search', '=True$') | list | length > 0
+
+    - name: Cordon the node
+      ansible.builtin.command: "{{ upgrade_kubectl }} cordon {{ inventory_hostname }}"
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: true
+
+    # CloudNativePG's primary PDB allows no evictions, so a drain blocks on
+    # a node holding a primary. The operator switches over by itself once the
+    # primary's node is unschedulable; wait for that before draining.
+    - name: Wait for CloudNativePG primaries to move off the node
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} get pods -A -l cnpg.io/instanceRole=primary
+        --field-selector spec.nodeName={{ inventory_hostname }} -o name
+      delegate_to: "{{ upgrade_admin_node }}"
+      register: upgrade_cnpg_primaries
+      changed_when: false
+      until: upgrade_cnpg_primaries.stdout | trim | length == 0
+      retries: 30
+      delay: 10
+
+    - name: Drain the node
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} drain {{ inventory_hostname }}
+        --ignore-daemonsets --delete-emptydir-data --timeout=900s
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: true
+
+  roles:
+    - ubuntu_release_upgrade
+
+  post_tasks:
+    - name: Wait for MicroK8s on the upgraded node
+      ansible.builtin.command: /snap/bin/microk8s status --wait-ready --timeout 600
+      changed_when: false
+
+    - name: Wait for the node to report Ready
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} wait node/{{ inventory_hostname }}
+        --for=condition=Ready --timeout=600s
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: false
+
+    - name: Uncordon the node
+      ansible.builtin.command: "{{ upgrade_kubectl }} uncordon {{ inventory_hostname }}"
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: true
