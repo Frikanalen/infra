@@ -48,5 +48,7 @@
       ansible.builtin.file:
         path: "{{ media_disk_mount_path }}/{{ item }}"
         state: directory
-        mode: "0775"
+        # setgid, as kubelet leaves it after applying the pod's fsGroup;
+        # plain 0775 would strip it on every run.
+        mode: "02775"
       loop: "{{ media_disk_mount_dirs }}"

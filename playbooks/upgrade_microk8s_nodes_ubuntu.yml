@@ -43,6 +43,16 @@
       changed_when: "'already uncordoned' not in upgrade_uncordon_done.stdout"
       when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
 
+    - name: Clear a load-balancer exclusion left by an earlier run
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} label node {{ inventory_hostname }}
+        node.kubernetes.io/exclude-from-external-load-balancers-
+      delegate_to: "{{ upgrade_admin_node }}"
+      register: upgrade_unlabel
+      changed_when: "'unlabeled' in upgrade_unlabel.stdout"
+      failed_when: upgrade_unlabel.rc != 0 and 'not found' not in upgrade_unlabel.stderr
+      when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
+
     - name: Skip nodes already on the target release
       ansible.builtin.meta: end_host
       when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
@@ -64,6 +74,15 @@
       failed_when: >-
         upgrade_nodes_ready.rc != 0
         or upgrade_nodes_ready.stdout_lines | reject('search', '=True$') | list | length > 0
+
+    # MetalLB stops announcing service IPs from a node with this label, so the
+    # traefik and cubemap IPs move before the drain rather than during it.
+    - name: Move the external load-balancer IPs off the node
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} label node {{ inventory_hostname }}
+        node.kubernetes.io/exclude-from-external-load-balancers=true --overwrite
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: true
 
     - name: Cordon the node
       ansible.builtin.command: "{{ upgrade_kubectl }} cordon {{ inventory_hostname }}"
@@ -108,5 +127,12 @@
 
     - name: Uncordon the node
       ansible.builtin.command: "{{ upgrade_kubectl }} uncordon {{ inventory_hostname }}"
+      delegate_to: "{{ upgrade_admin_node }}"
+      changed_when: true
+
+    - name: Let the node announce external load-balancer IPs again
+      ansible.builtin.command: >-
+        {{ upgrade_kubectl }} label node {{ inventory_hostname }}
+        node.kubernetes.io/exclude-from-external-load-balancers-
       delegate_to: "{{ upgrade_admin_node }}"
       changed_when: true
