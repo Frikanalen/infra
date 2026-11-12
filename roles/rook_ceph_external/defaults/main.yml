@@ -36,3 +36,10 @@ rook_ceph_external_ceph_users:
 # cluster uses it, drop aes from proxmox_ceph_allowed_ciphers and un-mute
 # the warnings in roles/proxmox_ceph (infra#82).
 rook_ceph_external_key_type: aes
+
+# Users every cluster shares, and their key type: the lowest any cluster can
+# use. Set it to aes256k only once rook_ceph_external_key_type is aes256k
+# everywhere, and run the role on every cluster after.
+rook_ceph_external_shared_users:
+  - client.healthchecker
+rook_ceph_external_shared_key_type: aes

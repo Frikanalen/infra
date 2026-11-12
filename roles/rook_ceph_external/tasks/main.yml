@@ -54,15 +54,21 @@
   check_mode: false
   no_log: true
 
-- name: Rotate the Rook and CSI users to key type {{ rook_ceph_external_key_type }}
+# client.healthchecker is the same user for every cluster (the export script
+# names it so whatever --k8s-cluster-name says), so it gets the shared key
+# type, which may move only once every cluster can use it.
+- name: Rotate the Rook and CSI users to their key type
+  vars:
+    rook_ceph_external_wanted_type: >-
+      {{ rook_ceph_external_shared_key_type
+         if item.item in rook_ceph_external_shared_users
+         else rook_ceph_external_key_type }}
   ansible.builtin.command:
-    argv: [ceph, auth, rotate, "--key-type={{ rook_ceph_external_key_type }}", "{{ item.item }}"]
-  loop: >-
-    {{ rook_ceph_external_keys.results
-       | rejectattr('stdout', 'match', '^' ~ rook_ceph_external_key_prefixes[rook_ceph_external_key_type])
-       | list }}
+    argv: [ceph, auth, rotate, "--key-type={{ rook_ceph_external_wanted_type }}", "{{ item.item }}"]
+  loop: "{{ rook_ceph_external_keys.results }}"
   loop_control:
     label: "{{ item.item }}"
+  when: item.stdout is not match('^' ~ rook_ceph_external_key_prefixes[rook_ceph_external_wanted_type])
   register: rook_ceph_external_rotated
   delegate_to: "{{ rook_ceph_external_ceph_host }}"
   become: true
@@ -73,7 +79,7 @@
   ansible.builtin.command:
     argv: "{{ rook_ceph_external_export.cmd }}"
   register: rook_ceph_external_reexport
-  when: rook_ceph_external_rotated.results | length > 0
+  when: rook_ceph_external_rotated is changed
   delegate_to: "{{ rook_ceph_external_ceph_host }}"
   become: true
   changed_when: false
@@ -82,7 +88,7 @@
 - name: Use the fresh export
   ansible.builtin.set_fact:
     rook_ceph_external_export: "{{ rook_ceph_external_reexport }}"
-  when: rook_ceph_external_rotated.results | length > 0
+  when: rook_ceph_external_rotated is changed
   no_log: true
 
 - name: Parse the export
