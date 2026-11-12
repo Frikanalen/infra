@@ -29,17 +29,17 @@ rook_ceph_external_ceph_users:
   - "client.csi-rbd-node-{{ rook_ceph_external_k8s_cluster_name }}-{{ rook_ceph_external_pool }}"
   - "client.csi-rbd-provisioner-{{ rook_ceph_external_k8s_cluster_name }}-{{ rook_ceph_external_pool }}"
 
-# CephX key type for the users above. aes256k needs every node of the
-# cluster on Linux >= 7.0 (krbd) and ceph-csi >= v3.17.2 (Rook >= v1.20.10
-# with the cephcsi tag pinned, clusters/<env>/platform/rook-ceph). Classic
-# aes is the stopgap from 2026-11-11 for clusters not there yet; once no
-# cluster uses it, drop aes from proxmox_ceph_allowed_ciphers and un-mute
-# the warnings in roles/proxmox_ceph (infra#82).
-rook_ceph_external_key_type: aes
+# CephX key type for the users above: aes256k, what Proxmox's Ceph prefers.
+# It needs every node of the cluster on Linux >= 7.0 (krbd) and ceph-csi >=
+# v3.17.2 (Rook >= v1.20.10 with the cephcsi tag pinned,
+# clusters/<env>/platform/rook-ceph); both clusters are, since 2026-11-12.
+# A cluster that falls behind can set aes here, but Proxmox's Ceph then has
+# to allow aes again (proxmox_ceph_allowed_ciphers).
+rook_ceph_external_key_type: aes256k
 
 # Users every cluster shares, and their key type: the lowest any cluster can
-# use. Set it to aes256k only once rook_ceph_external_key_type is aes256k
-# everywhere, and run the role on every cluster after.
+# use. Change it only together with every cluster's
+# rook_ceph_external_key_type, and run the role on every cluster after.
 rook_ceph_external_shared_users:
   - client.healthchecker
-rook_ceph_external_shared_key_type: aes
+rook_ceph_external_shared_key_type: aes256k
