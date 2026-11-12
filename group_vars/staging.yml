@@ -91,3 +91,8 @@ helm_chart_versions:
   # (roles/reloader); see docs/openbao.md.
   external_secrets: "2.13.0"
   reloader: "2.2.18"
+
+# Staging's nodes run Linux 7.0 and its ceph-csi is v3.17.2
+# (clusters/staging/platform/rook-ceph), so its CephX users can have the
+# keys Proxmox's Ceph prefers (roles/rook_ceph_external, infra#82).
+rook_ceph_external_key_type: aes256k

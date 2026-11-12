@@ -38,12 +38,11 @@
   check_mode: false
   no_log: true
 
-# The script creates its users with the cluster's preferred key type,
-# aes256k on Proxmox's Ceph, which neither the nodes' krbd nor ceph-csi
-# 3.17.0 can use. Give these users classic aes keys (roles/proxmox_ceph
-# allows the cipher) and export again so the Secrets carry the new keys.
-# Move them to aes256k once every node runs Linux 7.0+: infra#82.
-# Classic aes keys are 40 base64 characters starting AQ; aes256k ones start Ag.
+# The script creates its users with the cluster's preferred key type
+# (aes256k on Proxmox's Ceph). Give them rook_ceph_external_key_type instead
+# when that differs, and export again so the Secrets carry the new keys.
+# A key's type shows in its base64 prefix: classic aes keys start AQ,
+# aes256k ones Ag.
 - name: Read the Rook and CSI users' keys
   ansible.builtin.command:
     argv: [ceph, auth, get-key, "{{ item }}"]
@@ -55,10 +54,13 @@
   check_mode: false
   no_log: true
 
-- name: Give the Rook and CSI users aes keys
+- name: Give the Rook and CSI users {{ rook_ceph_external_key_type }} keys
   ansible.builtin.command:
-    argv: [ceph, auth, rotate, --key-type=aes, "{{ item.item }}"]
-  loop: "{{ rook_ceph_external_keys.results | rejectattr('stdout', 'match', '^AQ') | list }}"
+    argv: [ceph, auth, rotate, "--key-type={{ rook_ceph_external_key_type }}", "{{ item.item }}"]
+  loop: >-
+    {{ rook_ceph_external_keys.results
+       | rejectattr('stdout', 'match', '^' ~ rook_ceph_external_key_prefixes[rook_ceph_external_key_type])
+       | list }}
   loop_control:
     label: "{{ item.item }}"
   register: rook_ceph_external_rotated
