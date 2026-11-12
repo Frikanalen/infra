@@ -1,0 +1,8 @@
+---
+# Pin the interpreter rather than let Ansible discover it. After the in-place
+# upgrade to Ubuntu 26.04 the discovered (and fact-cached) interpreter stayed
+# /usr/bin/python3.12, a package 26.04 no longer ships or patches and which
+# only survived because the upgrade keeps obsolete packages. /usr/bin/python3
+# is 3.12 on 24.04 and 3.14 on 26.04; roles/k8s_python_deps installs the
+# kubernetes library for whichever it is.
+ansible_python_interpreter: /usr/bin/python3
