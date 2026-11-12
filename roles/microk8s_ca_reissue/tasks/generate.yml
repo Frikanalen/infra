@@ -1,0 +1,107 @@
+---
+# Makes the re-issued CA certificate on one node and sets
+# microk8s_ca_reissue_pem. Read-only as far as MicroK8s goes: everything is
+# written to a temporary directory and removed again, so it also runs under
+# --check.
+#
+# The new certificate keeps the old one's key, subject, serial number and
+# validity dates, and only changes the extensions. That makes it a drop-in
+# replacement in both directions:
+#   - every certificate the old CA signed still verifies against it. The
+#     server certificates MicroK8s makes carry authorityKeyIdentifier with
+#     "issuer:always", i.e. the CA's name and serial number, and OpenSSL
+#     rejects an issuer whose serial differs, so keeping the serial matters.
+#   - clients still holding the old CA (kubeconfigs on laptops, pods'
+#     kube-root-ca.crt, OpenBao's Kubernetes auth config) keep working too,
+#     because it is the same key and name.
+# So nothing has to be re-signed and no client breaks while it waits for the
+# new copy.
+
+- name: Make a scratch directory for the new CA
+  ansible.builtin.tempfile:
+    state: directory
+    suffix: .ca-reissue
+  register: microk8s_ca_reissue_tmp
+  check_mode: false
+
+- name: Re-issue the CA certificate
+  block:
+    - name: Write the extensions for the new CA
+      ansible.builtin.copy:
+        content: "{{ microk8s_ca_reissue_extensions }}"
+        dest: "{{ microk8s_ca_reissue_tmp.path }}/ca.ext"
+        mode: "0600"
+      check_mode: false
+
+    - name: Read the current CA's serial number
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ microk8s_ca_reissue_certs_dir }}/ca.crt", -noout, -serial]
+      register: microk8s_ca_reissue_serial
+      changed_when: false
+      check_mode: false
+
+    - name: Self-sign the new CA with the existing key, serial and dates
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+          - -signkey
+          - "{{ microk8s_ca_reissue_certs_dir }}/ca.key"
+          - -sha256
+          - -set_serial
+          - "0x{{ microk8s_ca_reissue_serial.stdout.split('=', 1)[1] }}"
+          - -preserve_dates
+          - -clrext
+          - -extfile
+          - "{{ microk8s_ca_reissue_tmp.path }}/ca.ext"
+          - -out
+          - "{{ microk8s_ca_reissue_tmp.path }}/ca.crt"
+      changed_when: false
+      check_mode: false
+
+    - name: Compare the old and new CA (key, subject, serial, dates)
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, "{{ item }}", -noout, -pubkey, -subject, -serial, -dates]
+      loop:
+        - "{{ microk8s_ca_reissue_certs_dir }}/ca.crt"
+        - "{{ microk8s_ca_reissue_tmp.path }}/ca.crt"
+      register: microk8s_ca_reissue_compare
+      changed_when: false
+      check_mode: false
+
+    - name: Check the new CA is the old one with new extensions
+      ansible.builtin.assert:
+        that:
+          - microk8s_ca_reissue_compare.results[0].stdout == microk8s_ca_reissue_compare.results[1].stdout
+        fail_msg: The re-issued CA differs from the old one in key, subject, serial or dates.
+        quiet: true
+
+    - name: Check the API server certificate verifies strictly against the new CA
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -x509_strict
+          - -CAfile
+          - "{{ microk8s_ca_reissue_tmp.path }}/ca.crt"
+          - "{{ microk8s_ca_reissue_certs_dir }}/server.crt"
+      changed_when: false
+      check_mode: false
+
+    - name: Read the new CA
+      ansible.builtin.slurp:
+        src: "{{ microk8s_ca_reissue_tmp.path }}/ca.crt"
+      register: microk8s_ca_reissue_new
+
+    - name: Hand the new CA to the install step
+      ansible.builtin.set_fact:
+        microk8s_ca_reissue_pem: "{{ microk8s_ca_reissue_new.content | b64decode }}"
+
+  always:
+    - name: Remove the scratch directory
+      ansible.builtin.file:
+        path: "{{ microk8s_ca_reissue_tmp.path }}"
+        state: absent
+      check_mode: false

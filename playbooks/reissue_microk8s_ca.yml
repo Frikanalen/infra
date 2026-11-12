@@ -1,0 +1,125 @@
+---
+# Re-issues a MicroK8s cluster's CA certificate with the keyUsage extension
+# (and a critical basicConstraints), keeping its key, name, serial and dates.
+#
+# Why: MicroK8s before 1.33-ish made its CA without keyUsage. Python 3.13+
+# verifies TLS in strict X.509 mode and refuses such a CA ("CA cert does not
+# include key usage extension"), so kubernetes.core fails under the system
+# Python on Ubuntu 26.04. group_vars/microk8s.yml pins Python 3.12 until
+# both clusters have been through this.
+#
+# It is a drop-in swap (see roles/microk8s_ca_reissue/tasks/generate.yml):
+# nothing is re-signed, and clients holding the old CA keep working, so it
+# needs no drain. Each node gets the new CA in its certs and kubeconfigs and a
+# kubelite restart (pods keep running), one node at a time; then the users'
+# ~/.kube/config files are rewritten.
+#
+# Whole cluster per run, staging first, prod only with explicit clearance:
+#
+#   ansible-playbook playbooks/reissue_microk8s_ca.yml -l kubedev --check
+#   ansible-playbook playbooks/reissue_microk8s_ca.yml -l kubedev
+#
+# Afterwards re-run the OpenBao Kubernetes auth role so OpenBao holds the new
+# CA too (the old one keeps working, so this is tidying, not a fix):
+#
+#   ansible-playbook playbooks/k8s_platform_dev.yml --tags openbao
+#
+# Kubeconfigs copied off the cluster by hand (e.g. on a laptop) keep working
+# with the old CA; refresh them from `microk8s config` when convenient.
+
+- name: Make the re-issued CA once per cluster
+  hosts: microk8s
+  become: true
+  gather_facts: false
+  vars:
+    ca_reissue_cluster: "{{ 'kubeprod' if inventory_hostname in groups['kubeprod'] else 'kubedev' }}"
+  tasks:
+    - name: Check the run covers exactly one whole cluster
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | sort == groups[ca_reissue_cluster] | sort
+        fail_msg: >-
+          Limit the run to one whole cluster (-l kubedev or -l kubeprod).
+          Every node must end up with the same CA, and one run makes it once.
+        quiet: true
+      run_once: true
+
+    - name: Fingerprint each node's CA certificate and key
+      ansible.builtin.stat:
+        path: "/var/snap/microk8s/current/certs/{{ item }}"
+        checksum_algorithm: sha256
+      loop: [ca.crt, ca.key]
+      register: ca_reissue_files
+
+    - name: Note this node's CA fingerprints
+      ansible.builtin.set_fact:
+        ca_reissue_fingerprint: "{{ ca_reissue_files.results | map(attribute='stat.checksum') | join(' ') }}"
+
+    - name: Check every node shares one CA
+      ansible.builtin.assert:
+        that:
+          - ansible_play_hosts_all | map('extract', hostvars, 'ca_reissue_fingerprint') | unique | length == 1
+        fail_msg: >-
+          The nodes do not all hold the same ca.crt and ca.key. Find out why
+          before re-issuing anything.
+        quiet: true
+      run_once: true
+
+    # The real test: does the API server certificate verify against the
+    # installed CA the way Python 3.13+ will check it?
+    - name: Check whether the installed CA passes strict verification
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -x509_strict
+          - -CAfile
+          - /var/snap/microk8s/current/certs/ca.crt
+          - /var/snap/microk8s/current/certs/server.crt
+      register: ca_reissue_strict
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      run_once: true
+
+    - name: Report the installed CA's state
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'The installed CA already passes strict verification; nothing to re-issue.'
+             if ca_reissue_strict.rc == 0
+             else 'The installed CA fails strict verification: ' ~ (ca_reissue_strict.stdout_lines + ca_reissue_strict.stderr_lines) | join(' ') }}
+      run_once: true
+
+    - name: Make the new CA
+      ansible.builtin.include_role:
+        name: microk8s_ca_reissue
+        tasks_from: generate
+      when: ca_reissue_strict.rc != 0
+      run_once: true
+
+    - name: Read the installed CA, as nothing needs re-issuing
+      ansible.builtin.slurp:
+        src: /var/snap/microk8s/current/certs/ca.crt
+      register: ca_reissue_installed
+      when: ca_reissue_strict.rc == 0
+      run_once: true
+
+    - name: Settle on the CA every node should have
+      ansible.builtin.set_fact:
+        ca_reissue_target: >-
+          {{ microk8s_ca_reissue_pem if ca_reissue_strict.rc != 0
+             else ca_reissue_installed.content | b64decode }}
+      run_once: true
+
+- name: Install the re-issued CA, one node at a time
+  hosts: microk8s
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  roles:
+    - role: microk8s_ca_reissue
+      vars:
+        microk8s_ca_reissue_pem: "{{ ca_reissue_target }}"
+    # Rewrites the users' ~/.kube/config from `microk8s config`, which now
+    # carries the new CA.
+    - role: microk8s_kubectl
