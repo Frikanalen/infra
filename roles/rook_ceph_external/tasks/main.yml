@@ -79,7 +79,7 @@
   ansible.builtin.command:
     argv: "{{ rook_ceph_external_export.cmd }}"
   register: rook_ceph_external_reexport
-  when: rook_ceph_external_rotated is changed
+  when: rook_ceph_external_rotated.results | selectattr('changed') | list | length > 0
   delegate_to: "{{ rook_ceph_external_ceph_host }}"
   become: true
   changed_when: false
@@ -88,7 +88,7 @@
 - name: Use the fresh export
   ansible.builtin.set_fact:
     rook_ceph_external_export: "{{ rook_ceph_external_reexport }}"
-  when: rook_ceph_external_rotated is changed
+  when: rook_ceph_external_rotated.results | selectattr('changed') | list | length > 0
   no_log: true
 
 - name: Parse the export
