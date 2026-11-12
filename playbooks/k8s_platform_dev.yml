@@ -51,6 +51,10 @@
     # Loki + Alloy for log aggregation. Runs after kube_prometheus_stack so
     # its Grafana datasource ConfigMap lands in an already-existing
     # namespace and Grafana's sidecar is up to pick it up.
+    # No default StorageClass; see the role.
+    - role: k8s_default_storage_class
+      tags: [storage_classes]
+
     - role: loki
       tags: [loki, monitoring, logging]
 

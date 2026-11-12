@@ -15,6 +15,9 @@
   community.general.filesystem:
     dev: "{{ local_ssd_by_id.files[0].path }}"
     fstype: "{{ local_ssd_mount_fstype }}"
+    # Grows the filesystem after the disk is enlarged (data/hosts.yml
+    # local_ssd_size); does nothing when they already match.
+    resizefs: true
 
 - name: Mount local SSD disk
   ansible.posix.mount:

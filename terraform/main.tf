@@ -23,6 +23,7 @@ locals {
         cloudinit_storage = try(h.vm.cloudinit_storage, try(h.vm.storage, "localssd-lvm"))
         ceph_disk_size    = try(h.vm.ceph_disk_size, null)
         local_ssd_size    = try(h.vm.local_ssd_size, null)
+        root_disk_size    = try(h.vm.root_disk_size, "40G")
         local_ssd_storage = try(h.vm.local_ssd_storage, "localssd-lvm")
         pci_mappings      = try(h.vm.pci_mappings, [])
       },
@@ -74,7 +75,7 @@ resource "proxmox_vm_qemu" "kube" {
     scsi {
       scsi0 {
         disk {
-          size     = "40G"
+          size     = each.value.root_disk_size
           storage  = each.value.storage
           cache    = each.value.disk_cache
           iothread = true
