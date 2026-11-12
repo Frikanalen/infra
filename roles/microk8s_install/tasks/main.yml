@@ -43,6 +43,7 @@
   become: true
   register: microk8s_status_yaml
   changed_when: false
+  check_mode: false
   when: microk8s_addons | length > 0
 
 - name: Build list of enabled addons

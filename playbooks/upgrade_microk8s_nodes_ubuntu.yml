@@ -34,6 +34,15 @@
       register: upgrade_release
       changed_when: false
 
+    # A run that failed after the drain leaves the node cordoned, and a re-run
+    # skips it below as already upgraded, so uncordon it here.
+    - name: Uncordon a node left cordoned by an earlier run
+      ansible.builtin.command: "{{ upgrade_kubectl }} uncordon {{ inventory_hostname }}"
+      delegate_to: "{{ upgrade_admin_node }}"
+      register: upgrade_uncordon_done
+      changed_when: "'already uncordoned' not in upgrade_uncordon_done.stdout"
+      when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
+
     - name: Skip nodes already on the target release
       ansible.builtin.meta: end_host
       when: upgrade_release.stdout is version(ubuntu_release_upgrade_target | default('26.04'), '>=')
