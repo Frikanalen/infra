@@ -33,7 +33,7 @@
         api_version: argoproj.io/v1alpha1
         kind: Application
         namespace: argocd
-        name: "{{ frikanalen_apps.django.name }}"
+        name: "django-api"
       register: kubegres_django_app
 
     # Otherwise Argo CD's selfHeal recreates what this deletes, or, once the
@@ -44,7 +44,7 @@
           kubegres_django_app.resources[0].status.resources | default([])
           | selectattr('kind', 'equalto', 'Kubegres') | list | length == 0
         fail_msg: >-
-          {{ frikanalen_apps.django.name }} still renders a Kubegres resource;
+          django-api still renders a Kubegres resource;
           deploy a django-api chart without it first (django-api#103).
 
     - name: List Kubegres resources

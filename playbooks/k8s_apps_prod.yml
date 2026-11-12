@@ -16,7 +16,7 @@
   vars:
     argocd_namespace: "argocd"
     # The same credentials the Kubegres django-postgres database had, which
-    # roles/django_db_secret still puts in DATABASE_URL.
+    # DATABASE_URL in the django-postgres-passwords Secret (OpenBao) uses.
     cnpg_cluster_app_password: "{{ vault_prod_django_postgres_django_password }}"
     cnpg_cluster_superuser_password: "{{ vault_prod_django_postgres_super_password }}"
     # Backups to Garage on file01 (roles/garage), one bucket per environment.
@@ -24,8 +24,7 @@
     cnpg_cluster_backup_s3_key_id: "{{ vault_prod_cnpg_s3_key_id }}"
     cnpg_cluster_backup_s3_secret_key: "{{ vault_prod_cnpg_s3_secret_key }}"
   roles:
-    # django_db_secret and ingest_api_secret are gone from here: their
-    # Secrets come from OpenBao (clusters/prod/secrets). cnpg_cluster,
+    # The app Secrets come from OpenBao (clusters/prod/secrets). cnpg_cluster,
     # ingest_archive_account and playout_live_secret skip or redirect their
     # Secret writes to OpenBao because app_secrets_from_openbao is on.
 

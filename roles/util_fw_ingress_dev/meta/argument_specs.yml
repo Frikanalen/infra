@@ -18,7 +18,7 @@ argument_specs:
         required: true
         description: >-
           Internal address of the live stream ingest
-          (argocd_stream_cubemap_ip in group_vars/staging.yml).
+          (cubemap.loadBalancerIP in the clusters repo, clusters/staging/apps/stream.yaml).
       fw_int_if:
         type: str
         required: false
