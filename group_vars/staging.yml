@@ -52,18 +52,6 @@ kube_prometheus_stack_environment: development
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
 openbao_env: staging
 
-<<<<<<< HEAD
-# Every app the cluster runs must have a key here -- see group_vars/prod.yml.
-app_versions:
-  # Git revision of Frikanalen/gitops (helm/mediamtx), not an image tag.
-  mediamtx: main
-  graphics: main
-  playout: main
-  frontend: main
-  django: main
-  stream: main
-  ingest: main
-=======
 # The app Secrets (openbao_seed_secrets below) come from OpenBao through
 # External Secrets Operator (clusters/staging/secrets), so the roles that
 # used to write them skip that, or write to OpenBao instead.
@@ -82,7 +70,6 @@ openbao_seed_secrets:
   - { namespace: default, name: ingest-api }
   - { namespace: default, name: ingest-archive-ssh }
   - { namespace: default, name: playout-live }
->>>>>>> origin/main
 
 helm_chart_versions:
   traefik: "41.6.0"
