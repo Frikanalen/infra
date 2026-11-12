@@ -1,0 +1,6 @@
+---
+# Base64 prefix of a CephX key of each type (its type byte and the start of
+# its length field).
+rook_ceph_external_key_prefixes:
+  aes: AQ
+  aes256k: Ag

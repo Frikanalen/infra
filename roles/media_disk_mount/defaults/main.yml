@@ -10,3 +10,5 @@ media_disk_mount_serial_pattern: "^media-"
 # path must exist before the pod starts; kubelet applies the pod's fsGroup.
 media_disk_mount_dirs:
   - ingest-uploads
+  # The ingest workers' scratch (/work), off the node's root disk.
+  - ingest-work
