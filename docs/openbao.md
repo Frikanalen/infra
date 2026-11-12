@@ -8,7 +8,7 @@ use a Secret when it changes.
 
 This is the first stage of moving from "Ansible renders every Secret from
 `data/vault.yml`" to "OpenBao holds every secret value". For the whole plan,
-see the infra and gitops review doc.
+see the infra and gitops review doc (gitops is now Frikanalen/clusters).
 
 ## Layout
 
