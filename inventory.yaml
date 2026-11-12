@@ -70,6 +70,15 @@ all:
         vm4:
         vmtx1:
 
+    # The Proxmox hosts that run Ceph (roles/proxmox_ceph). vm1 is left out:
+    # its third bay holds simula's disk. vmtx1 is left out: its disks sit
+    # behind a RAID controller and it runs caspar1's playout.
+    proxmox_ceph:
+      hosts:
+        vm2:
+        vm3:
+        vm4:
+
     caspar:
       children:
         caspar_hw:

@@ -7,3 +7,22 @@
     name: qemu-guest-agent
     state: started
     enabled: true
+
+# Proxmox derives the cloud-init instance-id from the VM's cloud-init
+# settings, so any change to them (a Terraform apply that touches
+# searchdomain, say) looks like a new instance at the next boot, and
+# cloud-init's ssh module then deletes and regenerates the host keys.
+# Keep the existing keys; only missing key types are generated.
+- name: Check for cloud-init
+  ansible.builtin.stat:
+    path: /etc/cloud/cloud.cfg.d
+  register: qemu_guest_cloud_cfg_d
+
+- name: Keep SSH host keys when cloud-init sees a new instance-id
+  ansible.builtin.copy:
+    dest: /etc/cloud/cloud.cfg.d/99-keep-ssh-host-keys.cfg
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/qemu_guest).
+      ssh_deletekeys: false
+  when: qemu_guest_cloud_cfg_d.stat.exists

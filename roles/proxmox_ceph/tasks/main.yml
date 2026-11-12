@@ -1,0 +1,245 @@
+---
+# Every step is a pveceph command guarded by a check, so a re-run on a
+# finished cluster changes nothing.
+
+- name: Install Ceph packages
+  ansible.builtin.command:
+    argv:
+      - pveceph
+      - install
+      - --repository
+      - "{{ proxmox_ceph_repository }}"
+      - --version
+      - "{{ proxmox_ceph_release }}"
+    stdin: "y"
+    creates: /usr/bin/ceph-mon
+
+- name: Initialise the cluster config
+  ansible.builtin.command:
+    argv: [pveceph, init, --network, "{{ proxmox_ceph_network }}"]
+    creates: /etc/pve/ceph.conf
+  run_once: true
+
+- name: Create a monitor
+  ansible.builtin.command:
+    argv: [pveceph, mon, create]
+    creates: "/var/lib/ceph/mon/ceph-{{ inventory_hostname }}"
+  throttle: 1
+
+- name: Create a manager
+  ansible.builtin.command:
+    argv: [pveceph, mgr, create]
+    creates: "/var/lib/ceph/mgr/ceph-{{ inventory_hostname }}"
+
+- name: Read the cluster fsid
+  ansible.builtin.command:
+    argv: [ceph, fsid]
+  register: proxmox_ceph_fsid
+  changed_when: false
+  check_mode: false
+
+- name: Resolve the OSD device
+  ansible.builtin.command:
+    argv: [readlink, -f, "{{ proxmox_ceph_osd_device }}"]
+  register: proxmox_ceph_osd_dev
+  changed_when: false
+  check_mode: false
+
+- name: Read what Ceph already has on the OSD device
+  ansible.builtin.command:
+    argv: [ceph-volume, lvm, list, --format, json, "{{ proxmox_ceph_osd_dev.stdout }}"]
+  register: proxmox_ceph_osd_list
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Find state left by an earlier Ceph cluster
+  ansible.builtin.shell: |
+    set -o pipefail
+    find /etc/systemd/system -name 'ceph-volume@*' -o -name 'ceph-osd@*' | sed 's/^/unit /'
+    findmnt -rn -o TARGET | grep '^/var/lib/ceph/osd/' | sed 's/^/mount /' || true
+    find /var/lib/ceph/osd -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed 's/^/dir /'
+    lsblk -nr -o NAME,TYPE "{{ proxmox_ceph_osd_dev.stdout }}" | awk '$2 == "crypt" {print "crypt " $1}'
+  args:
+    executable: /bin/bash
+  register: proxmox_ceph_remnants
+  changed_when: false
+  check_mode: false
+
+- name: Classify the OSD device
+  ansible.builtin.set_fact:
+    # ceph-volume returns {osd_id: [lv, ...]}; each lv carries the fsid of
+    # the cluster it was made for. The tag names contain dots, which
+    # map(attribute=...) would read as nesting, hence dict2items.
+    proxmox_ceph_osd_fsids: >-
+      {{ (proxmox_ceph_osd_list.stdout | default('{}', true) | from_json).values()
+         | flatten | map(attribute='tags') | map('dict2items') | flatten
+         | selectattr('key', 'equalto', 'ceph.cluster_fsid') | map(attribute='value') | unique }}
+    proxmox_ceph_osd_has_lvm: >-
+      {{ (ansible_facts.lvm.pvs | default({})).keys() | select('equalto', proxmox_ceph_osd_dev.stdout) | list | length > 0 }}
+
+# The device is ours once it holds an OSD of this cluster. Until then,
+# anything Ceph-shaped on it or on the host (old OSD LVs, units, tmpfs
+# mounts, dm-crypt mappings, /var/lib/ceph/osd dirs) is from an earlier
+# cluster and in the way of the new OSD.
+- name: Decide whether the host needs cleaning
+  ansible.builtin.set_fact:
+    proxmox_ceph_needs_osd: "{{ proxmox_ceph_fsid.stdout not in proxmox_ceph_osd_fsids }}"
+    proxmox_ceph_needs_clean: >-
+      {{ proxmox_ceph_fsid.stdout not in proxmox_ceph_osd_fsids and
+         (proxmox_ceph_osd_fsids | length > 0 or proxmox_ceph_osd_has_lvm or
+          proxmox_ceph_remnants.stdout_lines | length > 0) }}
+
+- name: Refuse to wipe earlier Ceph state unless told to
+  ansible.builtin.assert:
+    that: proxmox_ceph_allow_zap | bool
+    fail_msg: >-
+      {{ inventory_hostname }} has Ceph or LVM state not from this cluster
+      (OSD fsids {{ proxmox_ceph_osd_fsids | join(', ') or 'none' }} on
+      {{ proxmox_ceph_osd_device }}; {{ proxmox_ceph_remnants.stdout_lines | join('; ') }}).
+      Check it is disposable, then re-run with -e proxmox_ceph_allow_zap=true.
+  when: proxmox_ceph_needs_clean | bool
+
+# Their daemons are long gone (the units are not-found), so only the enable
+# symlinks are left; systemctl disable refuses a unit it cannot find.
+- name: Remove the earlier cluster's unit links
+  ansible.builtin.file:
+    path: "{{ item.split(' ', 1)[1] }}"
+    state: absent
+  loop: "{{ proxmox_ceph_remnants.stdout_lines | select('match', '^unit ') | list }}"
+  when: proxmox_ceph_needs_clean | bool
+  notify: Reload systemd
+
+- name: Unmount the earlier cluster's OSD dirs
+  ansible.posix.mount:
+    path: "{{ item.split(' ', 1)[1] }}"
+    state: unmounted
+  loop: "{{ proxmox_ceph_remnants.stdout_lines | select('match', '^mount ') | list }}"
+  when: proxmox_ceph_needs_clean | bool
+
+- name: Close the earlier cluster's dm-crypt mappings
+  ansible.builtin.command:
+    argv: [cryptsetup, close, "{{ item.split(' ', 1)[1] }}"]
+  loop: "{{ proxmox_ceph_remnants.stdout_lines | select('match', '^crypt ') | list }}"
+  when: proxmox_ceph_needs_clean | bool
+  changed_when: true
+
+- name: Remove the earlier cluster's OSD dirs
+  ansible.builtin.file:
+    path: "{{ item.split(' ', 1)[1] }}"
+    state: absent
+  loop: "{{ proxmox_ceph_remnants.stdout_lines | select('match', '^dir ') | list }}"
+  when: proxmox_ceph_needs_clean | bool
+
+- name: Wipe the OSD device
+  ansible.builtin.command:
+    argv: [ceph-volume, lvm, zap, --destroy, "{{ proxmox_ceph_osd_dev.stdout }}"]
+  when:
+    - proxmox_ceph_needs_clean | bool
+    - proxmox_ceph_osd_fsids | length > 0 or proxmox_ceph_osd_has_lvm
+  changed_when: true
+
+# Installing ceph-osd makes the earlier cluster's still-enabled ceph-volume
+# units loadable; they start its old ceph-osd@N, which fails until systemd's
+# start limit trips. A new OSD that gets the same id is then refused with
+# "Start request repeated too quickly", and pveceph rolls it back.
+# The systemd module has neither unit globs nor reset-failed.
+- name: Clear failed OSD units left by the earlier cluster  # noqa: command-instead-of-module
+  ansible.builtin.shell: |
+    systemctl stop 'ceph-osd@*'
+    systemctl reset-failed 'ceph-osd@*' 'ceph-volume@*' || true
+  when: proxmox_ceph_needs_osd | bool
+  changed_when: true
+
+- name: Create the OSD
+  ansible.builtin.command:
+    argv: [pveceph, osd, create, "{{ proxmox_ceph_osd_dev.stdout }}"]
+  when: proxmox_ceph_needs_osd | bool
+  changed_when: true
+  throttle: 1
+
+- name: Read existing pools
+  ansible.builtin.command:
+    argv: [ceph, osd, pool, ls, --format, json]
+  register: proxmox_ceph_pools_current
+  changed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Create the RBD pools
+  ansible.builtin.command:
+    argv:
+      - pveceph
+      - pool
+      - create
+      - "{{ item.name }}"
+      - --application
+      - rbd
+      - --size
+      - "{{ item.size }}"
+      - --min_size
+      - "{{ item.min_size }}"
+      - --pg_num
+      - "{{ item.pg_num }}"
+      - --pg_autoscale_mode
+      - "on"
+      - --add_storages
+      - "0"
+  loop: "{{ proxmox_ceph_pools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: item.name not in (proxmox_ceph_pools_current.stdout | from_json)
+  changed_when: true
+  run_once: true
+
+# pveceph pool create exits 0 even when its worker task fails (as it did
+# when two pools at pveceph's default 128 PGs went over mon_max_pg_per_osd
+# on three OSDs), so check the result rather than trust the exit code.
+- name: Read pools after creating them
+  ansible.builtin.command:
+    argv: [ceph, osd, pool, ls, --format, json]
+  register: proxmox_ceph_pools_after
+  changed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Check every pool exists
+  ansible.builtin.assert:
+    that: item.name in (proxmox_ceph_pools_after.stdout | from_json)
+    fail_msg: "Pool {{ item.name }} was not created; see the cephcreatepool task log in /var/log/pve/tasks on {{ inventory_hostname }}."
+  loop: "{{ proxmox_ceph_pools }}"
+  loop_control:
+    label: "{{ item.name }}"
+  run_once: true
+
+# Proxmox's Ceph (squid 19.2.7) makes every key aes256k and allows only that
+# cipher. The Kubernetes clients cannot use it yet: krbd needs Linux 7.0
+# (the nodes run Ubuntu 24.04's 6.8) and ceph-csi needs 3.17.1 or later. So
+# the monitors also allow classic aes, and roles/rook_ceph_external gives
+# only the Rook and CSI users aes keys; daemons and admin stay on aes256k.
+# Drop aes from this list once the nodes and ceph-csi can do aes256k:
+# infra#82 has the steps.
+- name: Read the monitors' allowed ciphers
+  ansible.builtin.command:
+    argv: [ceph, mon, dump, --format, json]
+  register: proxmox_ceph_mon_dump
+  changed_when: false
+  check_mode: false
+  run_once: true
+
+- name: Allow the ciphers the Kubernetes clients need
+  ansible.builtin.command:
+    argv: [ceph, mon, set, auth_allowed_ciphers, "{{ proxmox_ceph_allowed_ciphers | join(',') }}"]
+  when: >-
+    (proxmox_ceph_mon_dump.stdout | from_json).auth_allowed_ciphers | map(attribute='name') | sort
+    != proxmox_ceph_allowed_ciphers | sort
+  changed_when: true
+  run_once: true
+
+# Allowing aes raises these on purpose; muted so a real warning shows.
+- name: Mute the warnings that allowing aes raises
+  ansible.builtin.command:
+    argv: [ceph, health, mute, "{{ item }}", --sticky]
+  loop: "{{ proxmox_ceph_muted_health_checks }}"
+  changed_when: false
+  run_once: true

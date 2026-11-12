@@ -145,6 +145,11 @@
     # removing them leaves their child Applications running for the root to
     # adopt. Prod keeps its own app-of-apps (k8s_platform_prod.yml).
 
+    # Rook's connection to the Proxmox Ceph cluster (playbooks/proxmox/ceph.yml):
+    # CephX users, keys, mon endpoints and the ceph-rbd StorageClass.
+    - role: rook_ceph_external
+      tags: [rook_ceph_external]
+
     - role: argocd_image_updater
       tags: [argocd_image_updater]
 
