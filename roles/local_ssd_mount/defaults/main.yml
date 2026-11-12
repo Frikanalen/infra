@@ -1,3 +1,5 @@
 ---
 local_ssd_mount_path: /mnt/localssd
 local_ssd_mount_fstype: ext4
+# Regex the disk's serial must match (lsblk SERIAL column).
+local_ssd_mount_serial_pattern: localssd

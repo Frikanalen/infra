@@ -23,6 +23,28 @@
           {{ inventory_hostname }} has less than {{ ubuntu_release_upgrade_min_free_mb }} MiB
           free on /; do-release-upgrade would stop part-way.
 
+    # 26.04's udev stops making the serial-based scsi-S<vendor>_<model>_<serial>
+    # by-id links (only scsi-0QEMU_QEMU_HARDDISK_drive-scsiN remain), and a
+    # mount naming one times out and leaves the host in emergency mode with
+    # no sshd. Mount by UUID= or LABEL= instead (roles/local_ssd_mount does).
+    - name: Read /etc/fstab
+      ansible.builtin.slurp:
+        src: /etc/fstab
+      register: ubuntu_release_upgrade_fstab
+
+    - name: Refuse to upgrade with fstab entries on serial-based by-id links
+      ansible.builtin.assert:
+        that: _bad | length == 0
+        fail_msg: >-
+          /etc/fstab on {{ inventory_hostname }} mounts {{ _bad | join(', ') }};
+          these links are gone on Ubuntu {{ ubuntu_release_upgrade_target }}.
+          Switch them to UUID= first.
+      vars:
+        _bad: >-
+          {{ (ubuntu_release_upgrade_fstab.content | b64decode).splitlines()
+             | select('match', '\s*/dev/disk/by-id/scsi-S')
+             | map('split') | map('first') | list }}
+
     - name: Find packages to keep that are installed
       ansible.builtin.command:
         argv:

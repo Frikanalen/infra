@@ -1,25 +1,46 @@
 ---
-- name: Find local SSD disk by serial
-  ansible.builtin.find:
-    paths: /dev/disk/by-id
-    patterns: "*localssd*"
-    file_type: any
-  register: local_ssd_by_id
+# Find the disk by its serial (Proxmox sets serial=localssd-<vmid> on scsi2)
+# rather than by a /dev/disk/by-id name: Ubuntu 26.04's udev no longer makes
+# the scsi-SQEMU_QEMU_HARDDISK_<serial> links that 24.04 did, only
+# scsi-0QEMU_QEMU_HARDDISK_drive-scsiN, so an fstab entry naming the old link
+# drops the node into emergency mode after the release upgrade.
+- name: List disks with their serials
+  ansible.builtin.command:
+    argv: [lsblk, --json, --nodeps, --output, "PATH,SERIAL"]
+  register: local_ssd_lsblk
+  changed_when: false
+  check_mode: false
+
+- name: Pick the local SSD disk
+  ansible.builtin.set_fact:
+    local_ssd_device: >-
+      {{ (local_ssd_lsblk.stdout | from_json).blockdevices
+         | selectattr('serial', 'defined') | selectattr('serial', 'string')
+         | selectattr('serial', 'search', local_ssd_mount_serial_pattern)
+         | map(attribute='path') | first | default('') }}
 
 - name: Fail if local SSD disk is not attached
   ansible.builtin.fail:
-    msg: "No /dev/disk/by-id/*localssd* device found -- check the scsi2 disk was provisioned for this VM."
-  when: local_ssd_by_id.matched == 0
+    msg: "No disk with a serial matching '{{ local_ssd_mount_serial_pattern }}' -- check the scsi2 disk was provisioned for this VM."
+  when: local_ssd_device | length == 0
 
 - name: Format local SSD disk
   community.general.filesystem:
-    dev: "{{ local_ssd_by_id.files[0].path }}"
+    dev: "{{ local_ssd_device }}"
     fstype: "{{ local_ssd_mount_fstype }}"
 
+- name: Read the local SSD filesystem UUID
+  ansible.builtin.command:
+    argv: [blkid, --match-tag, UUID, --output, value, "{{ local_ssd_device }}"]
+  register: local_ssd_uuid
+  changed_when: false
+  check_mode: false
+
+# By filesystem UUID, which no udev naming change can move.
 - name: Mount local SSD disk
   ansible.posix.mount:
     path: "{{ local_ssd_mount_path }}"
-    src: "{{ local_ssd_by_id.files[0].path }}"
+    src: "UUID={{ local_ssd_uuid.stdout | trim }}"
     fstype: "{{ local_ssd_mount_fstype }}"
     opts: defaults,discard,noatime
     state: mounted
