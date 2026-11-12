@@ -25,6 +25,8 @@ locals {
         local_ssd_size    = try(h.vm.local_ssd_size, null)
         root_disk_size    = try(h.vm.root_disk_size, "40G")
         local_ssd_storage = try(h.vm.local_ssd_storage, "localssd-lvm")
+        media_disk_size    = try(h.vm.media_disk_size, null)
+        media_disk_storage = try(h.vm.media_disk_storage, "localssd-lvm")
         pci_mappings      = try(h.vm.pci_mappings, [])
       },
       h.vm
@@ -112,6 +114,25 @@ resource "proxmox_vm_qemu" "kube" {
             backup     = true
             emulatessd = true
             serial     = "localssd-${each.value.vmid}"
+          }
+        }
+      }
+      # Media receiver: a large disk on vmtx1's HDD array that
+      # roles/media_disk_mount mounts at /mnt/media, holding ingest's
+      # uploads until they are archived to file01. Not backed up: it is
+      # transient by design and would dwarf every other backup.
+      dynamic "scsi3" {
+        for_each = each.value.media_disk_size == null ? [] : [each.value.media_disk_size]
+        content {
+          disk {
+            size      = scsi3.value
+            storage   = each.value.media_disk_storage
+            cache     = "none"
+            iothread  = true
+            discard   = true
+            backup    = false
+            replicate = false
+            serial    = "media-${each.value.vmid}"
           }
         }
       }

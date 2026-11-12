@@ -90,6 +90,14 @@
   tags:
     - k8s
     - local_ssd
+- name: Mount the media receiver disk on the kube nodes that have one
+  hosts: microk8s
+  become: true
+  roles:
+    - media_disk_mount
+  tags:
+    - k8s
+    - media_disk
 - name: Install microk8s on kube nodes
   hosts: microk8s
   become: true
