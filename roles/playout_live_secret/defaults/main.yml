@@ -1,7 +1,7 @@
 ---
 # Secret playout reads LIVE_READER_CREDENTIAL from. Its name is
-# playout_live_secret_name, in data/apps.yml -- the playout app definition
-# there reads it too.
+# playout_live_secret_name, in data/apps.yml -- the playout app
+# (clusters/<env>/apps/playout.yaml) reads it too.
 playout_live_secret_namespace: "{{ frikanalen_app_namespace }}"
 
 # Where Django runs, to issue the credential. Matches the django-api chart.

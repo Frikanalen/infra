@@ -1,7 +1,7 @@
 # MediaMTX contribution ingest
 
 Environment wiring for the MediaMTX chart. The chart itself lives in
-[Frikanalen/gitops `helm/mediamtx`](https://github.com/Frikanalen/gitops/tree/main/helm/mediamtx),
+[Frikanalen/contribution-receiver `chart`](https://github.com/Frikanalen/contribution-receiver/tree/main/chart),
 which documents its values, WebRTC paths, Opus preview workers and monitoring.
 
 A single MediaMTX 1.21.3 instance receives authenticated SRT, RTMP and RTSP contributions.
@@ -9,12 +9,11 @@ Django owns the source UUIDs and credentials. MediaMTX calls
 `http://django-api.default.svc.cluster.local:8080/api/mediamtx/auth` for every
 publish/read request; an unavailable or rejecting callback fails closed.
 
-The standard `argocd_app` role deploys the gitops chart via
-`frikanalen_apps.mediamtx`; `app_versions.mediamtx` is the gitops revision Argo
-tracks. Both app playbooks have a `mediamtx` tag. The MediaMTX image is pinned in
-the chart, independently of either Git revision. The Application name and
-Kubernetes resource names are still `mediamtx`, so re-running the role after the
-move retargets the existing Application rather than creating a second service.
+Each environment's `mediamtx` Application, with its values and the chart
+revision (staging follows `main`, prod is pinned to a commit), is in
+Frikanalen/clusters at `clusters/<env>/apps/mediamtx.yaml`. The MediaMTX image
+is pinned in the chart. infra keeps the listener addresses, MetalLB
+reservations and PF rules below.
 
 ## Network
 
@@ -60,7 +59,7 @@ ansible-playbook playbooks/firewall.yml --tags dev
 ```
 
 The Django app definition adds its internal service FQDN to ALLOWED_HOSTS and
-sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL`, `FK_MEDIAMTX_RTSP_URL` and `FK_MEDIAMTX_WEBRTC_URL`. ArgoCD syncs the chart from gitops main after merge.
+sets `FK_MEDIAMTX_SRT_URL`, `FK_MEDIAMTX_RTMP_URL`, `FK_MEDIAMTX_RTSP_URL` and `FK_MEDIAMTX_WEBRTC_URL`. Argo CD syncs the chart revision named in the clusters repo.
 Check the Django rollout and its migration hook before trying credentials.
 
 If using an unmerged Django branch for a staging trial, explicitly override both
@@ -140,10 +139,7 @@ SRT reader received both tracks through the public forwarding path. Publish-only
 credentials used for reading and a revoked read credential were rejected.
 Temporary test organization, source and credentials were removed afterward.
 
-After merging the prerequisite PRs, reapply the staging app definitions so the
-MediaMTX Application tracks gitops main and Django/ImageUpdater track the main
-image again. Until then, preserve the test branch overrides when reconciling
-staging. Operators can issue their own source credentials in staging admin to
+Operators can issue their own source credentials in staging admin to
 repeat the public SRT test; the SRT, RTMP and RTSP listeners and credential URLs are deployed in staging.
 
 Staging listener URLs and ALLOWED_HOSTS are stored in the Django Application's
@@ -173,7 +169,7 @@ testing. Production was not deployed or tested.
 ## WebRTC transport for source preview / return feeds
 
 The environment app definition enables authenticated WebRTC on the site's own
-hostname. Every MediaMTX stream path starts with `contrib/`, and the gitops
+hostname. Every MediaMTX stream path starts with `contrib/`, and the
 chart's Ingress routes `/contrib` to MediaMTX without rewriting, so
 `FK_MEDIAMTX_WEBRTC_URL` is the bare site origin:
 

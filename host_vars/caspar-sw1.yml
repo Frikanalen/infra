@@ -1,8 +1,8 @@
 ---
-# caspar-sw1 is staging's playout box (see caspar_host in
-# group_vars/staging.yml, which points the playout app's AMCP control at
-# this host). Program out goes to multicast 239.1.1.50:5004 only; staging's
-# cubemap joins that group (argocd_stream_cubemap_multicast_group), as can
+# caspar-sw1 is staging's playout box (CASPAR_HOST in the clusters repo,
+# clusters/staging/apps/playout.yaml, points playout's AMCP control at this
+# host). Program out goes to multicast 239.1.1.50:5004 only; staging's
+# cubemap joins that group (clusters/staging/apps/stream.yaml), as can
 # anything else on the LAN.
 casparcg_ffmpeg_path: "udp://239.1.1.50:5004"
 
