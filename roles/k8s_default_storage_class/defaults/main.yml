@@ -1,0 +1,8 @@
+---
+# microk8s's hostpath-storage addon (roles/microk8s_install's "storage")
+# makes microk8s-hostpath the default StorageClass, which put volumes on the
+# nodes' small root disks. No class is the default: every chart names its
+# class (ceph-rbd, local-ssd), and one that forgets stays Pending rather than
+# quietly filling a root disk.
+k8s_default_storage_class_unset:
+  - microk8s-hostpath

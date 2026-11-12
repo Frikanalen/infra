@@ -1,0 +1,32 @@
+---
+- name: Find the media disk by serial
+  ansible.builtin.find:
+    paths: /dev/disk/by-id
+    patterns: "*media-*"
+    file_type: any
+  register: media_disk_by_id
+
+# Only some nodes have one (data/hosts.yml media_disk_size).
+- name: Mount the media disk
+  when: media_disk_by_id.matched > 0
+  block:
+    - name: Format the media disk
+      community.general.filesystem:
+        dev: "{{ media_disk_by_id.files[0].path }}"
+        fstype: "{{ media_disk_mount_fstype }}"
+        resizefs: true
+
+    - name: Mount the media disk
+      ansible.posix.mount:
+        path: "{{ media_disk_mount_path }}"
+        src: "{{ media_disk_by_id.files[0].path }}"
+        fstype: "{{ media_disk_mount_fstype }}"
+        opts: defaults,noatime
+        state: mounted
+
+    - name: Make the directories the local PersistentVolumes use
+      ansible.builtin.file:
+        path: "{{ media_disk_mount_path }}/{{ item }}"
+        state: directory
+        mode: "0775"
+      loop: "{{ media_disk_mount_dirs }}"

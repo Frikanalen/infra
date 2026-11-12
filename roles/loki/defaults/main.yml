@@ -12,6 +12,9 @@ loki_namespace: loki
 loki_release_name: loki
 
 loki_persistence_size: 10Gi
+# Ceph (the Proxmox cluster, roles/rook_ceph_external), so the volume
+# follows the pod and stays off the nodes' root disks.
+loki_storage_class: ceph-rbd
 
 # The Grafana datasource ConfigMap this role creates must land in the same
 # namespace kube_prometheus_stack's Grafana runs in -- its sidecar only
