@@ -47,7 +47,7 @@
     line: "{{ item.line }}"
   loop:
     - {regexp: '^#?\s*API_KEY=', line: "API_KEY={{ mailcow_api_key }}"}
-    - {regexp: '^#?\s*API_ALLOW_FROM=', line: API_ALLOW_FROM=172.22.1.1,127.0.0.1}
+    - {regexp: '^#?\s*API_ALLOW_FROM=', line: 'API_ALLOW_FROM=172.22.1.1,127.0.0.1'}
   register: mailcow_api_conf
   no_log: true
 
@@ -57,7 +57,7 @@
   ansible.builtin.command:
     cmd: docker compose up -d
     chdir: "{{ mailcow_dir }}"
-  when: mailcow_api_conf is changed
+  when: mailcow_api_conf.results | selectattr('changed') | list | length > 0
   changed_when: true
 
 - name: Wait for the mailcow API
