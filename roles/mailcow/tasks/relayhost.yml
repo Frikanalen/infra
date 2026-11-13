@@ -5,11 +5,22 @@
 # main.cf is mailcow's to manage; a global relayhost in extra.cf would fight
 # its sender_dependent_relayhost_maps.
 #
-# The API key is mailcow.conf's API_KEY. The API is reached on the host's own
-# loopback, which nginx sees as the Docker gateway, so API_ALLOW_FROM must
-# include 172.22.1.1. The certificate is for mailcow_hostname, not 127.0.0.1,
-# hence validate_certs: false on a loopback-only connection.
+# The certificate is for mailcow_hostname, not 127.0.0.1, hence
+# validate_certs: false on a loopback-only connection.
 
+- name: Require the relay credentials
+  ansible.builtin.assert:
+    that:
+      - mailcow_relayhost_username | length > 0
+      - mailcow_relayhost_password | length > 0
+    fail_msg: >-
+      Needs mailcow_relayhost_username and mailcow_relayhost_password set
+      (the password as vault_mailcow_relayhost_password in data/vault.yml).
+    quiet: true
+
+# generate_config.sh leaves the API off. It is turned on here for loopback
+# callers only (nginx sees the host as the Docker gateway), with a key made
+# once on first run and kept in mailcow.conf, which never leaves mail1.
 - name: Read mailcow.conf
   ansible.builtin.slurp:
     src: "{{ mailcow_dir }}/mailcow.conf"
@@ -23,17 +34,42 @@
          | regex_search('(?m)^API_KEY=(\S+)', '\1') | default([''], true) | first }}
   no_log: true
 
-- name: Require the API key and the relay credentials
-  ansible.builtin.assert:
-    that:
-      - mailcow_api_key | length > 0
-      - mailcow_relayhost_username | length > 0
-      - mailcow_relayhost_password | length > 0
-    fail_msg: >-
-      Needs API_KEY (and API_ALLOW_FROM including 172.22.1.1) in
-      {{ mailcow_dir }}/mailcow.conf, and mailcow_relayhost_username and
-      mailcow_relayhost_password set (the password in data/vault.yml).
-    quiet: true
+- name: Make an API key
+  ansible.builtin.set_fact:
+    mailcow_api_key: "{{ lookup('ansible.builtin.password', '/dev/null', length=64, chars=['hexdigits']) | upper }}"
+  when: mailcow_api_key | length == 0
+  no_log: true
+
+- name: Store the API key and allow loopback callers
+  ansible.builtin.lineinfile:
+    path: "{{ mailcow_dir }}/mailcow.conf"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - {regexp: '^#?\s*API_KEY=', line: "API_KEY={{ mailcow_api_key }}"}
+    - {regexp: '^#?\s*API_ALLOW_FROM=', line: API_ALLOW_FROM=172.22.1.1,127.0.0.1}
+  register: mailcow_api_conf
+  no_log: true
+
+# The API settings are read by php-fpm and nginx at container start; compose
+# recreates exactly the containers whose environment changed.
+- name: Recreate the containers that read the API settings
+  ansible.builtin.command:
+    cmd: docker compose up -d
+    chdir: "{{ mailcow_dir }}"
+  when: mailcow_api_conf is changed
+  changed_when: true
+
+- name: Wait for the mailcow API
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/get/status/version
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    validate_certs: false
+  register: mailcow_api_up
+  until: mailcow_api_up.status == 200
+  retries: 30
+  delay: 5
 
 - name: Set the relay's mailcow hostname
   ansible.builtin.set_fact:
