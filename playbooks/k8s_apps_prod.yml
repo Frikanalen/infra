@@ -40,6 +40,14 @@
     - role: playout_live_secret
       tags: [playout, playout_live]
 
+    # Pulled live sources: Django's key for their addresses, created once,
+    # and the credential MediaMTX's pull relay fetches them with. Both go to
+    # OpenBao; clusters/prod/secrets delivers them.
+    - role: pull_url_keys
+      tags: [pull_sources, django]
+    - role: pull_relay_secret
+      tags: [pull_sources, mediamtx]
+
     # Generates the archive key and provisions the file01 account.
     - role: ingest_archive_account
       tags: [ingest, ingest_account]
