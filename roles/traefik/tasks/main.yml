@@ -188,6 +188,30 @@
   run_once: true
   when: traefik_legacy_namespace | length > 0
 
+# Before the Helm upgrade: an entrypoint naming a Middleware that doesn't
+# exist yet disables every router on it until it appears. The CRD comes with
+# the chart, so on a cluster's very first install run the role once with this
+# off.
+- name: Create the security headers Middleware
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      metadata:
+        name: security-headers
+        namespace: "{{ traefik_namespace }}"
+      spec:
+        headers:
+          stsSeconds: "{{ traefik_hsts_seconds | int }}"
+          contentTypeNosniff: true
+          referrerPolicy: strict-origin-when-cross-origin
+          frameDeny: true
+  become: true
+  run_once: true
+  when: traefik_security_headers_enabled
+
 - name: Install Traefik via Helm
   kubernetes.core.helm:
     kubeconfig: "{{ k8s_kubeconfig }}"
@@ -294,6 +318,13 @@
               entryPoint:
                 to: websecure
                 scheme: https
+        websecure:
+          http:
+            middlewares: >-
+              {{
+                [traefik_namespace ~ '-security-headers@kubernetescrd']
+                if traefik_security_headers_enabled else []
+              }}
 
       providers:
         kubernetesCRD:
