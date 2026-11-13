@@ -16,4 +16,4 @@ frikanalen_intern_zone: intern.frikanalen.tv
 mailcow_relayhost: freebeast.nuug.no
 mailcow_relayhost_port: 587
 mailcow_relayhost_username: frikanalen-smtp
-mailcow_relayhost_password: "{{ vault_smtp_password }}"
+mailcow_relayhost_password: "{{ vault_mailcow_relayhost_password }}"

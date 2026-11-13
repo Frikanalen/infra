@@ -233,7 +233,7 @@ leave from that address instead of util1's own.
 Outbound mail from frikanalen.tv is relayed through NUUG's SMTP server
 (`mailcow_relayhost` in `host_vars/mail1.yml`), set up as a mailcow
 sender-dependent transport through mailcow's API. Its password is
-`vault_smtp_password` in `data/vault.yml`. Inbound mail still
+`vault_mailcow_relayhost_password` in `data/vault.yml`. Inbound mail still
 arrives directly.
 
 ```sh
