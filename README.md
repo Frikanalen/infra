@@ -230,6 +230,12 @@ address, 158.36.191.253, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
 (`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
 leave from that address instead of util1's own.
 
+Outbound mail from frikanalen.tv is relayed through NUUG's SMTP server
+(`mailcow_relayhost` in `host_vars/mail1.yml`), set up as a mailcow
+sender-dependent transport through mailcow's API. Its password is
+`vault_mailcow_relayhost_password` in `data/vault.yml`. Inbound mail still
+arrives directly.
+
 ```sh
 ansible-playbook playbooks/staging_db_sync.yml
 ```

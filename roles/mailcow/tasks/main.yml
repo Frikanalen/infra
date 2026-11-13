@@ -57,3 +57,7 @@
     'Started' in mailcow_compose_up.stderr or
     'Created' in mailcow_compose_up.stderr or
     'Recreated' in mailcow_compose_up.stderr
+
+- name: Route outbound mail through the relay
+  ansible.builtin.include_tasks: relayhost.yml
+  when: mailcow_relayhost | length > 0

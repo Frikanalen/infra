@@ -1,0 +1,148 @@
+---
+# Mailcow's own relayhost feature (System > Configuration > Routing >
+# Sender-dependent transports), driven through its API so it lives in
+# mailcow's database like a UI change would and survives update.sh. Postfix's
+# main.cf is mailcow's to manage; a global relayhost in extra.cf would fight
+# its sender_dependent_relayhost_maps.
+#
+# The API key is mailcow.conf's API_KEY. The API is reached on the host's own
+# loopback, which nginx sees as the Docker gateway, so API_ALLOW_FROM must
+# include 172.22.1.1. The certificate is for mailcow_hostname, not 127.0.0.1,
+# hence validate_certs: false on a loopback-only connection.
+
+- name: Read mailcow.conf
+  ansible.builtin.slurp:
+    src: "{{ mailcow_dir }}/mailcow.conf"
+  register: mailcow_conf_raw
+  no_log: true
+
+- name: Find the mailcow API key
+  ansible.builtin.set_fact:
+    mailcow_api_key: >-
+      {{ (mailcow_conf_raw.content | b64decode)
+         | regex_search('(?m)^API_KEY=(\S+)', '\1') | default([''], true) | first }}
+  no_log: true
+
+- name: Require the API key and the relay credentials
+  ansible.builtin.assert:
+    that:
+      - mailcow_api_key | length > 0
+      - mailcow_relayhost_username | length > 0
+      - mailcow_relayhost_password | length > 0
+    fail_msg: >-
+      Needs API_KEY (and API_ALLOW_FROM including 172.22.1.1) in
+      {{ mailcow_dir }}/mailcow.conf, and mailcow_relayhost_username and
+      mailcow_relayhost_password set (the password in data/vault.yml).
+    quiet: true
+
+- name: Set the relay's mailcow hostname
+  ansible.builtin.set_fact:
+    # Brackets: deliver to this host itself, no MX lookup.
+    mailcow_relayhost_spec: "[{{ mailcow_relayhost }}]:{{ mailcow_relayhost_port }}"
+
+- name: List mailcow's relayhosts
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/get/relayhost/all
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    validate_certs: false
+    return_content: true
+  register: mailcow_relayhosts
+
+- name: Add the relay
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/add/relayhost
+    method: POST
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    body_format: json
+    body:
+      hostname: "{{ mailcow_relayhost_spec }}"
+      username: "{{ mailcow_relayhost_username }}"
+      password: "{{ mailcow_relayhost_password }}"
+    validate_certs: false
+    return_content: true
+  register: mailcow_relayhost_add
+  failed_when: >-
+    mailcow_relayhost_add.json is not defined or
+    (mailcow_relayhost_add.json | map(attribute='type') | list) is not superset(['success'])
+  changed_when: true
+  no_log: true
+  when: >-
+    mailcow_relayhosts.json | selectattr('hostname', 'equalto', mailcow_relayhost_spec)
+    | list | length == 0
+
+- name: List mailcow's relayhosts again
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/get/relayhost/all
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    validate_certs: false
+    return_content: true
+  register: mailcow_relayhosts
+  when: mailcow_relayhost_add is changed
+
+- name: Pick the relay's id
+  ansible.builtin.set_fact:
+    mailcow_relayhost_id: >-
+      {{ (mailcow_relayhosts.json
+          | selectattr('hostname', 'equalto', mailcow_relayhost_spec) | first).id | string }}
+
+# The API never returns the stored password, so there is nothing to compare
+# against: the username and password are rewritten on every run, which keeps
+# a rotated vault password in effect. Reported as unchanged for that reason.
+- name: Keep the relay's credentials current
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/edit/relayhost
+    method: POST
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    body_format: json
+    body:
+      items: ["{{ mailcow_relayhost_id }}"]
+      attr:
+        hostname: "{{ mailcow_relayhost_spec }}"
+        username: "{{ mailcow_relayhost_username }}"
+        password: "{{ mailcow_relayhost_password }}"
+        active: "1"
+    validate_certs: false
+    return_content: true
+  register: mailcow_relayhost_edit
+  failed_when: >-
+    mailcow_relayhost_edit.json is not defined or
+    (mailcow_relayhost_edit.json | map(attribute='type') | list) is not superset(['success'])
+  changed_when: false
+  no_log: true
+
+- name: Read the relay domains' settings
+  ansible.builtin.uri:
+    url: "https://127.0.0.1/api/v1/get/domain/{{ item }}"
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    validate_certs: false
+    return_content: true
+  loop: "{{ mailcow_relayhost_domains }}"
+  register: mailcow_relay_domains
+
+- name: Send the relay domains' outbound mail through the relay
+  ansible.builtin.uri:
+    url: https://127.0.0.1/api/v1/edit/domain
+    method: POST
+    headers:
+      X-API-Key: "{{ mailcow_api_key }}"
+    body_format: json
+    body:
+      items: ["{{ item.item }}"]
+      attr:
+        relayhost: "{{ mailcow_relayhost_id }}"
+    validate_certs: false
+    return_content: true
+  loop: "{{ mailcow_relay_domains.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: mailcow_relay_domain_edit
+  failed_when: >-
+    mailcow_relay_domain_edit.json is not defined or
+    (mailcow_relay_domain_edit.json | map(attribute='type') | list) is not superset(['success'])
+  changed_when: true
+  when: (item.json.relayhost | default('0') | string) != mailcow_relayhost_id
