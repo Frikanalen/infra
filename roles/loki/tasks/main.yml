@@ -25,6 +25,21 @@
           replication_factor: 1
         storage:
           type: filesystem
+        # The ruler evaluates LogQL alerting rules and sends them to the same
+        # Alertmanager as Prometheus. Rules come from ConfigMaps labelled
+        # loki_rule, which the chart's rules sidecar writes into /rules (see
+        # the stream rules task below). auth_enabled is false, so everything
+        # is tenant "fake" and the ruler reads /rules/fake/.
+        rulerConfig:
+          storage:
+            type: local
+            local:
+              directory: /rules
+          rule_path: /var/loki/rules-temp
+          alertmanager_url: "{{ loki_alertmanager_url }}"
+          enable_api: true
+          external_labels:
+            environment: "{{ kube_prometheus_stack_environment | default(inventory_hostname) }}"
         # SingleBinary mode with local filesystem storage needs an explicit
         # schema -- the chart only ships a testSchemaConfig placeholder for
         # this, which is documented as not for real installs.
@@ -107,5 +122,26 @@
               access: proxy
               url: http://{{ loki_release_name }}-gateway.{{ loki_namespace }}.svc.cluster.local
               isDefault: false
+  become: true
+  run_once: true
+
+- name: Provision Loki alerting rules for the live stream
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: "{{ loki_release_name }}-rules-stream"
+        namespace: "{{ loki_namespace }}"
+        labels:
+          # Picked up by the chart's loki-sc-rules sidecar.
+          loki_rule: "1"
+        annotations:
+          # Tenant directory; see rulerConfig above.
+          k8s-sidecar-target-directory: /rules/fake
+      data:
+        stream.yaml: "{{ lookup('ansible.builtin.file', 'stream-rules.yml') }}"
   become: true
   run_once: true

@@ -46,6 +46,27 @@ groups:
             {{ $labels.instance }}, has been above 10 for the last 30
             minutes, is currently at {{ $value | printf "%.2f" }}.
 
+      - alert: NodeCPUSaturated
+        # The mixin's NodeCPUHighUsage is severity info, which InfoInhibitor
+        # silences, so a node pinned at 99% for three hours (dev-kube-2 on
+        # 2026-11-13, starving the live stream packager) told nobody. Every
+        # core busy for half an hour means something on that node is not
+        # getting the CPU it wants.
+        expr: >-
+          100 * (1 - avg without (cpu, mode) (
+            rate(node_cpu_seconds_total{job="node-exporter", mode="idle"}[5m])
+          )) > 95
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Every CPU on a host is busy.
+          description: >-
+            CPU on {{ $labels.instance }} has been more than 95% busy for 30
+            minutes and is at {{ $value | printf "%.1f" }}%. Latency-sensitive
+            workloads there (the live stream packager, playout) may be
+            starved; look for batch work such as ingest transcodes.
+
   - name: frikanalen-cronjobs
     rules:
       # KubeJobFailed only says that one run failed, and goes quiet once the

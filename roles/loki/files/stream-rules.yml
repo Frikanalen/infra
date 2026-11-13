@@ -1,0 +1,41 @@
+# LogQL alerting rules for the live stream packager's FFmpeg, loaded by the
+# ruler from the ConfigMap roles/loki/tasks/main.yml creates.
+#
+# On 2026-11-13 the staging packager logged "timestamp discontinuity" up to
+# ~80 times a second for ten hours while its HLS output was unplayable, and
+# hundreds of "Packet corrupt" lines per half hour for three hours before
+# that, when CPU contention made Cubemap drop UDP. Nothing read those logs.
+groups:
+  - name: frikanalen-stream-logs
+    rules:
+      - alert: FrikanalenPackagerTimestampDiscontinuities
+        expr: >-
+          sum by (namespace, pod) (
+            rate({container="ffmpeg-transcoder"} |= "timestamp discontinuity" [5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: The live stream packager's FFmpeg keeps correcting timestamps
+          description: >-
+            FFmpeg in {{ $labels.pod }} has logged more than one "timestamp
+            discontinuity" per second for ten minutes. Audio and video are
+            likely out of sync in the HLS output; restart the
+            ffmpeg-transcoder container if its liveness probe has not.
+
+      - alert: FrikanalenPackagerCorruptInput
+        expr: >-
+          sum by (namespace, pod) (
+            rate({container="ffmpeg-transcoder"} |= "Packet corrupt" [10m])
+          ) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: The live stream packager is receiving corrupt MPEG-TS
+          description: >-
+            FFmpeg in {{ $labels.pod }} has logged corrupt input packets at
+            more than three a minute for 15 minutes. Cubemap is likely
+            dropping UDP from playout: look for RcvbufErrors and CPU
+            contention on Cubemap's node, and at the network to playout.
