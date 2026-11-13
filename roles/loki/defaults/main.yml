@@ -31,3 +31,7 @@ loki_grafana_namespace: "{{ kube_prometheus_stack_namespace | default('monitorin
 loki_ingress_class: "{{ frikanalen_intern_ingress_class }}"
 loki_cert_resolver: letsencrypt
 loki_hostname: "loki.{{ frikanalen_intern_zone }}"
+
+# Where the ruler sends alerts: kube_prometheus_stack's Alertmanager, so log
+# alerts take the same route (Telegram) as metric alerts.
+loki_alertmanager_url: "http://kube-prometheus-stack-alertmanager.{{ kube_prometheus_stack_namespace | default('monitoring') }}.svc:9093"
