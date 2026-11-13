@@ -401,6 +401,87 @@
   run_once: true
   when: traefik_tls_mode == 'cert-manager'
 
+# A Service without a selector plus a hand-written EndpointSlice: Traefik
+# routes to it like any other Service, with no ExternalName (which the CRD
+# provider refuses unless allowExternalNameServices is set).
+- name: Create Services for TLS passthrough backends
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ traefik_namespace }}"
+      spec:
+        ports:
+          - name: https
+            port: "{{ item.port | default(443) }}"
+            protocol: TCP
+  loop: "{{ traefik_tls_passthrough_routes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  run_once: true
+
+- name: Point the passthrough Services at their hosts
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: discovery.k8s.io/v1
+      kind: EndpointSlice
+      metadata:
+        name: "{{ item.name }}-1"
+        namespace: "{{ traefik_namespace }}"
+        labels:
+          kubernetes.io/service-name: "{{ item.name }}"
+          endpointslice.kubernetes.io/managed-by: ansible
+      addressType: IPv4
+      ports:
+        - name: https
+          port: "{{ item.port | default(443) }}"
+          protocol: TCP
+      endpoints:
+        - addresses: ["{{ item.address }}"]
+          conditions:
+            ready: true
+  loop: "{{ traefik_tls_passthrough_routes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  run_once: true
+
+- name: Route the passthrough hosts' SNI names to them
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: traefik.io/v1alpha1
+      kind: IngressRouteTCP
+      metadata:
+        name: "{{ item.name }}"
+        namespace: "{{ traefik_namespace }}"
+        annotations:
+          kubernetes.io/ingress.class: "{{ traefik_ingress_class }}"
+      spec:
+        entryPoints:
+          - websecure
+        routes:
+          - match: >-
+              {{ item.hosts | map('regex_replace', '^(.*)$', 'HostSNI(`\1`)') | join(' || ') }}
+            services:
+              - name: "{{ item.name }}"
+                port: "{{ item.port | default(443) }}"
+        tls:
+          passthrough: true
+  loop: "{{ traefik_tls_passthrough_routes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  become: true
+  run_once: true
+
 - name: Create Traefik Grafana dashboard ConfigMap
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_kubeconfig }}"

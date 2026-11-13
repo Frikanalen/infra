@@ -91,3 +91,12 @@ traefik_legacy_namespace: ""
 # TLSStore's default certificate. An empty certResolver rather than none, as
 # the k8s module merges into the existing object and would keep the old one.
 traefik_ingressroute_tls: "{{ {'certResolver': 'letsencrypt' if traefik_tls_mode == 'acme' else ''} }}"
+
+# Hosts outside the cluster whose HTTPS this release passes through untouched
+# (TLS is not terminated here; the backend keeps its own certificate). Each
+# entry: {name, hosts: [SNI names], address: <IPv4>, port: 443}. Plain HTTP
+# for those names hits the web entrypoint's redirect to https, so an ACME
+# HTTP-01 check against the backend follows it to port 443 and lands on the
+# backend too. Created in traefik_namespace, the only one this release's CRD
+# provider watches.
+traefik_tls_passthrough_routes: []

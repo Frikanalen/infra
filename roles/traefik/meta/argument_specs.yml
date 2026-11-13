@@ -162,3 +162,12 @@ argument_specs:
         type: str
         required: false
         description: TSIG secret for the second resolver (required if traefik_internal_acme_enabled is true)
+      traefik_tls_passthrough_routes:
+        type: list
+        elements: dict
+        required: false
+        default: []
+        description: >-
+          Hosts outside the cluster that get this release's HTTPS for their
+          names passed through by SNI, without TLS termination. Each item has
+          name, hosts (SNI names), address (IPv4) and port (default 443).

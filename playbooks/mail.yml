@@ -6,8 +6,9 @@
 #
 #   ansible-playbook playbooks/mail.yml
 #
-# The public side -- 158.36.191.253 mapped 1:1 onto mail1 -- is
-# roles/util_fw_mail, applied by playbooks/firewall.yml --tags mail. Backups
+# The public side is the prod ingress address: util1 forwards the mail ports
+# (roles/util_fw_mail, playbooks/firewall.yml --tags mail) and the prod
+# Traefik passes HTTPS through (playbooks/k8s_platform_prod.yml). Backups
 # are taken at the Proxmox layer by playbooks/proxmox/backup_jobs.yml.
 #
 - name: Provision the mailcow mail server

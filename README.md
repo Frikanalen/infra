@@ -225,10 +225,13 @@ VM of its own rather than a cluster workload, since mailcow is a
 docker-compose stack and needs a fixed public address whose PTR, MX and SPF
 records agree. The data disk is mounted at `/var/lib/docker` first, so every
 mailbox and database lands on it. `generate_config.sh` runs once, and later
-upgrades go through mailcow's own `update.sh` on the host. The public
-address, 158.36.191.253, is mapped 1:1 onto `mail1` by `roles/util_fw_mail`
-(`playbooks/firewall.yml --tags mail`), which also lets mail1's outgoing SMTP
-leave from that address instead of util1's own.
+upgrades go through mailcow's own `update.sh` on the host. `mail1` has no
+public address of its own: mail.frikanalen.tv is the prod ingress address,
+158.36.191.231. The prod Traefik passes HTTPS for the mail names through to
+`mail1` by SNI (`traefik_tls_passthrough_routes` in
+`playbooks/k8s_platform_prod.yml`), so mailcow keeps its own certificate, and
+util1 forwards SMTP, submission and IMAPS straight to it
+(`roles/util_fw_mail`, `playbooks/firewall.yml --tags mail`).
 
 Outbound mail from frikanalen.tv is relayed through NUUG's SMTP server
 (`mailcow_relayhost` in `host_vars/mail1.yml`), set up as a mailcow

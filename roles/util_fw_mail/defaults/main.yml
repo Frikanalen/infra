@@ -3,13 +3,18 @@ fw_int_if: "vtnet0"
 fw_ext_if: "vtnet1"
 fw_lan_net: "192.168.3.0/24"
 
-# Public address of the mail server: what mail.frikanalen.tv resolves to and
-# what its PTR record must name.
-mail_ext_ip: "158.36.191.253"
-mail_ext_netmask: "255.255.255.128"
+# Public address mail.frikanalen.tv resolves to: the prod ingress address
+# (roles/util_fw_ingress_prod). Traefik there passes HTTPS for the mail
+# names through to mail1; the mail ports below are forwarded to mail1
+# directly, so mailcow sees each client's real address.
+mail_ext_ip: "{{ prod_ingress_ext_ip }}"
 
 mail_int_ip: "{{ host_config['mail1'].ip_cidr.split('/')[0] }}"
 
-# SMTP, HTTP (ACME) and HTTPS (web UI, webmail, autodiscover), SMTPS,
-# submission and IMAPS. Plain IMAP/POP3 and ManageSieve stay closed.
-mail_tcp_ports: [25, 80, 443, 465, 587, 993]
+# SMTP, SMTPS, submission and IMAPS. HTTP and HTTPS belong to the prod
+# ingress. Plain IMAP/POP3 and ManageSieve stay closed.
+mail_tcp_ports: [25, 465, 587, 993]
+
+# mail1's old address of its own (1:1 NAT until 2026-11-13). Its alias and
+# rc.conf line are removed if still there; drop this once util1 is clean.
+mail_retired_ext_ip: "158.36.191.253"

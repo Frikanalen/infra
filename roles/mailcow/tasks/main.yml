@@ -48,6 +48,16 @@
     MAILCOW_BRANCH: "{{ mailcow_branch }}"
     SKIP_CLAMD: "n"
 
+# mailcow's ACME client only requests names whose A record matches the
+# address its own outbound connections come from. mail1 reaches the internet
+# through util1's address but is reached on the prod ingress address, so
+# that check would drop every name.
+- name: Let mailcow's ACME client skip its IP check
+  ansible.builtin.lineinfile:
+    path: "{{ mailcow_dir }}/mailcow.conf"
+    regexp: '^#?\s*SKIP_IP_CHECK='
+    line: SKIP_IP_CHECK=y
+
 - name: Start the mailcow stack
   ansible.builtin.command:
     cmd: docker compose up -d

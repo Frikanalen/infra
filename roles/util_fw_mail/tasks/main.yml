@@ -5,24 +5,25 @@
   changed_when: false
   check_mode: false
 
-# As in util_fw_ingress_prod: FreeBSD accepts re-adding an existing address,
-# so look first.
-- name: Add mail IP alias to vtnet1
-  ansible.builtin.command: >
-    ifconfig {{ fw_ext_if }} alias {{ mail_ext_ip }}
-    netmask {{ mail_ext_netmask }}
+# Retiring mail1's own public address. mail.conf no longer refers to it, so
+# the order against the pf reload doesn't matter.
+- name: Remove the retired mail IP alias from vtnet1
+  ansible.builtin.command: ifconfig {{ fw_ext_if }} -alias {{ mail_retired_ext_ip }}
   changed_when: true
-  when: ('inet ' ~ mail_ext_ip ~ ' ') not in ifconfig_current.stdout
+  when:
+    - mail_retired_ext_ip | length > 0
+    - ('inet ' ~ mail_retired_ext_ip ~ ' ') in ifconfig_current.stdout
 
-# alias0 is prod ingress's (roles/util_fw_ingress_prod).
-- name: Ensure mail IP alias persists across reboots
+# alias0 (prod ingress) is the only other alias, so the numbering stays
+# contiguous as rc.conf requires.
+- name: Remove the retired mail IP alias from rc.conf
   ansible.builtin.lineinfile:
     path: /etc/rc.conf
-    regexp: '^ifconfig_{{ fw_ext_if }}_alias[0-9]+="inet {{ mail_ext_ip }}'
-    line: 'ifconfig_{{ fw_ext_if }}_alias1="inet {{ mail_ext_ip }} netmask {{ mail_ext_netmask }}"'
-    create: false
+    regexp: '^ifconfig_{{ fw_ext_if }}_alias[0-9]+="inet {{ mail_retired_ext_ip }}'
+    state: absent
+  when: mail_retired_ext_ip | length > 0
 
-- name: Deploy mail server NAT rules
+- name: Deploy mail server forwarding rules
   ansible.builtin.template:
     src: mail.conf.j2
     dest: /etc/pf.conf.d/mail.conf

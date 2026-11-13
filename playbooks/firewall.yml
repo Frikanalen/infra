@@ -8,6 +8,9 @@
     dev_ingress_live_int_ip: "192.168.3.91"
     pbx_ext_ip: "158.36.191.229"
     pbx_int_ip: "192.168.3.3"
+    # Here rather than only in util_fw_ingress_prod's defaults: util_fw_mail
+    # forwards the mail ports from the same address.
+    prod_ingress_ext_ip: "158.36.191.231"
     # Every anchor pf.conf loads, in evaluation order; each is
     # /etc/pf.conf.d/<name>.conf, written by the role of the same purpose
     # below. nat: true also hooks the anchor into the rdr/nat stage. A role
@@ -18,7 +21,7 @@
       - {name: pbx, nat: true}
       - {name: ingress_dev, nat: true}
       - {name: ingress_prod, nat: true}
-      - {name: mail, nat: true, binat: true}
+      - {name: mail, nat: true}
   # Tags re-apply one piece without the rest. pf.conf itself is rendered in
   # post_tasks on every run, whatever the tags, so it always lists the full
   # set of anchors -- a partial run can no longer drop the others.

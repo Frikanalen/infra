@@ -12,7 +12,7 @@ local_ssd_mount_path: /var/lib/docker
 frikanalen_intern_zone: intern.frikanalen.tv
 
 # Outbound mail goes through NUUG's relay (roles/mailcow/tasks/relayhost.yml);
-# inbound still arrives directly on 158.36.191.253.
+# inbound arrives on the prod ingress address (roles/util_fw_mail).
 mailcow_relayhost: freebeast.nuug.no
 mailcow_relayhost_port: 587
 mailcow_relayhost_username: frikanalen-smtp
