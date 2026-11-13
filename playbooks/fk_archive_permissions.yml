@@ -1,0 +1,95 @@
+---
+# Standardizes ownership of an archive profile's tree on its manager account,
+# so fk-archive can trash and replace media that predates it.
+#
+# The prod archive was written over the years by several accounts (fkupload,
+# root, ingest, a few by hand), and many video and format directories are
+# rwxr-xr-x or owned by a group archive-manager is not in. fk-archive's
+# `trash` is a rename into .trash/, which needs write access on the video
+# directory and, because a directory's ".." changes when it moves, on the
+# format directory being moved as well. Without it, every backfill of an old
+# video fails with archive_failed ("Permission denied: 'large_thumb'") before
+# anything is replaced -- found on video 628694, 2026-11-13.
+#
+# This makes the manager the owner, and the profile's group the group, of
+# everything under the profile root (except .trash), and makes every directory
+# group-writable and setgid so new subdirectories inherit the group. The old
+# owners have no historical value (user, 2026-11-13). Files are not made
+# writable: nothing rewrites a file in place. Read access for "other", which
+# nginx and the NFS clients rely on, is unchanged.
+#
+# The profile's group is its root_group, or the manager's own group for a
+# profile without one -- the same group roles/fk_archive_utils gives the root.
+#
+# Without -e fk_archive_permissions_apply=true this only reports how many
+# entries would change. Staging's archive is a weekly ZFS clone of prod's
+# (roles/media_staging_reset), so it has the same problem and is the place to
+# try this first; the next reset undoes it there.
+#
+#   ansible-playbook playbooks/fk_archive_permissions.yml -e fk_archive_permissions_profile=staging
+#   ansible-playbook playbooks/fk_archive_permissions.yml -e fk_archive_permissions_profile=staging -e fk_archive_permissions_apply=true
+#   ansible-playbook playbooks/fk_archive_permissions.yml -e fk_archive_permissions_profile=prod -e fk_archive_permissions_apply=true
+
+- name: Standardize ownership of an archive profile's tree on its manager
+  hosts: storage
+  become: true
+  gather_facts: false
+  vars:
+    fk_archive_permissions_apply: false
+  tasks:
+    - name: Require a profile name
+      ansible.builtin.assert:
+        that:
+          - fk_archive_permissions_profile is defined
+          - fk_archive_utils_profiles | selectattr('name', 'equalto', fk_archive_permissions_profile) | list | length == 1
+        fail_msg: >-
+          Pass -e fk_archive_permissions_profile=NAME, one of:
+          {{ fk_archive_utils_profiles | map(attribute='name') | join(', ') }}
+
+    - name: Resolve the profile's root, owner and group
+      ansible.builtin.set_fact:
+        fk_archive_permissions_root: "{{ fk_archive_permissions_entry.root }}"
+        fk_archive_permissions_owner: "{{ fk_archive_permissions_entry.manager }}"
+        fk_archive_permissions_group: "{{ fk_archive_permissions_entry.root_group | default(fk_archive_permissions_entry.manager) }}"
+      vars:
+        fk_archive_permissions_entry: >-
+          {{ fk_archive_utils_profiles | selectattr('name', 'equalto', fk_archive_permissions_profile) | first }}
+
+    - name: Count entries with the wrong owner or group, and directories the group cannot write
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          root={{ fk_archive_permissions_root | quote }}
+          owner={{ fk_archive_permissions_owner | quote }}
+          group={{ fk_archive_permissions_group | quote }}
+          chown=$(find "$root" -mindepth 1 -path "$root/.trash" -prune -o \( ! -user "$owner" -o ! -group "$group" \) -print | wc -l)
+          dirs=$(find "$root" -mindepth 1 -path "$root/.trash" -prune -o -type d ! -perm -2070 -print | wc -l)
+          echo "chown=$chown dirs=$dirs"
+        executable: /bin/bash
+      register: fk_archive_permissions_before
+      changed_when: false
+      check_mode: false
+
+    - name: Report what would change
+      ansible.builtin.debug:
+        msg: >-
+          {{ fk_archive_permissions_root }}: {{ fk_archive_permissions_before.stdout }}
+          (owner {{ fk_archive_permissions_owner }}:{{ fk_archive_permissions_group }}).
+          {{ '' if fk_archive_permissions_apply | bool else 'Pass -e fk_archive_permissions_apply=true to change them.' }}
+
+    - name: Chown to the manager and make directories group-writable
+      when: fk_archive_permissions_apply | bool
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          root={{ fk_archive_permissions_root | quote }}
+          owner={{ fk_archive_permissions_owner | quote }}
+          group={{ fk_archive_permissions_group | quote }}
+          # -h: change a symlink itself, never what it points at. chown clears
+          # setgid on directories, so the chmod below runs after it.
+          find "$root" -mindepth 1 -path "$root/.trash" -prune -o \( ! -user "$owner" -o ! -group "$group" \) -print0 \
+            | xargs -0 -r chown -h "$owner:$group"
+          find "$root" -mindepth 1 -path "$root/.trash" -prune -o -type d ! -perm -2070 -print0 \
+            | xargs -0 -r chmod g+rwxs
+        executable: /bin/bash
+      changed_when: fk_archive_permissions_before.stdout != 'chown=0 dirs=0'
