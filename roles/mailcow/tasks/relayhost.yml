@@ -72,6 +72,7 @@
     mailcow_relayhosts.json | selectattr('hostname', 'equalto', mailcow_relayhost_spec)
     | list | length == 0
 
+# Again, unconditionally: a fresh add's id is only known from a new listing.
 - name: List mailcow's relayhosts again
   ansible.builtin.uri:
     url: https://127.0.0.1/api/v1/get/relayhost/all
@@ -80,7 +81,6 @@
     validate_certs: false
     return_content: true
   register: mailcow_relayhosts
-  when: mailcow_relayhost_add is changed
 
 - name: Pick the relay's id
   ansible.builtin.set_fact:
