@@ -1,18 +1,12 @@
 ---
 argument_specs:
   main:
-    short_description: 1:1 NAT of a public address onto the mail server
+    short_description: Forward the mail ports on the prod ingress address to the mail server
     options:
       mail_ext_ip:
         type: str
         required: false
-        default: 158.36.191.253
-        description: Public address of the mail server, aliased onto the external interface.
-      mail_ext_netmask:
-        type: str
-        required: false
-        default: 255.255.255.128
-        description: Netmask for the alias, as for prod_ingress_ext_ip.
+        description: Public address the mail ports are forwarded from; defaults to prod_ingress_ext_ip.
       mail_int_ip:
         type: str
         required: false
@@ -21,8 +15,15 @@ argument_specs:
         type: list
         elements: int
         required: false
-        default: [25, 80, 443, 465, 587, 993]
+        default: [25, 465, 587, 993]
         description: TCP ports let in from outside and hairpinned from the LAN.
+      mail_retired_ext_ip:
+        type: str
+        required: false
+        default: 158.36.191.253
+        description: >-
+          mail1's former public address, whose alias is removed from the
+          external interface and rc.conf if present. Empty skips that.
       fw_int_if:
         type: str
         required: false

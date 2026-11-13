@@ -33,4 +33,4 @@ argument_specs:
             default: false
             description: >-
               With nat, also hook the anchor into the binat stage (1:1 NAT,
-              e.g. roles/util_fw_mail).
+              for an anchor that gives a LAN host its own public address).

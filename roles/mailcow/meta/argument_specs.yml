@@ -32,3 +32,33 @@ argument_specs:
         required: false
         default: Europe/Oslo
         description: Time zone written to mailcow.conf.
+      mailcow_relayhost:
+        type: str
+        required: false
+        default: ""
+        description: >-
+          Hostname of an SMTP relay all outbound mail from
+          mailcow_relayhost_domains is sent through. Empty disables the relay
+          and mailcow delivers directly.
+      mailcow_relayhost_port:
+        type: int
+        required: false
+        default: 587
+        description: Relay port (587 STARTTLS, or 465 implicit TLS).
+      mailcow_relayhost_username:
+        type: str
+        required: false
+        default: ""
+        description: SASL username at the relay.
+      mailcow_relayhost_password:
+        type: str
+        required: false
+        default: ""
+        no_log: true
+        description: SASL password at the relay; keep it in data/vault.yml.
+      mailcow_relayhost_domains:
+        type: list
+        elements: str
+        required: false
+        default: [frikanalen.tv]
+        description: Mailcow domains whose outbound mail goes through the relay.

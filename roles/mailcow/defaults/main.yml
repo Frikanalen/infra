@@ -7,3 +7,15 @@ mailcow_repo: https://github.com/mailcow/mailcow-dockerized
 mailcow_branch: master
 mailcow_hostname: mail.frikanalen.tv
 mailcow_tz: Europe/Oslo
+
+# Outbound relay ("smarthost"). Empty host = mailcow delivers directly to
+# recipients' MX, as before. When set, roles/mailcow/tasks/relayhost.yml
+# registers it as a mailcow sender-dependent transport and assigns it to
+# every domain in mailcow_relayhost_domains, so all mail sent from those
+# domains leaves through it. Inbound mail is unaffected.
+mailcow_relayhost: ""
+mailcow_relayhost_port: 587
+mailcow_relayhost_username: ""
+mailcow_relayhost_password: ""
+mailcow_relayhost_domains:
+  - frikanalen.tv

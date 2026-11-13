@@ -10,3 +10,10 @@ local_ssd_mount_path: /var/lib/docker
 # frikanalen_intern_zone; roles/alloy_journal needs it to reach the prod
 # cluster's Loki (same reasoning as group_vars/caspar_hw.yml).
 frikanalen_intern_zone: intern.frikanalen.tv
+
+# Outbound mail goes through NUUG's relay (roles/mailcow/tasks/relayhost.yml);
+# inbound arrives on the prod ingress address (roles/util_fw_mail).
+mailcow_relayhost: geekbay.nuug.no
+mailcow_relayhost_port: 587
+mailcow_relayhost_username: frikanalen-smtp
+mailcow_relayhost_password: "{{ vault_mailcow_relayhost_password }}"

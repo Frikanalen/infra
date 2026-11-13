@@ -71,6 +71,14 @@
       vars:
         traefik_tls_mode: cert-manager
         traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
+        # mail1 (mailcow) sits behind the prod ingress address: its web UI,
+        # webmail and autodiscover pass through by SNI and mailcow keeps
+        # its own certificate. The mail ports go straight to mail1 from
+        # util1 (roles/util_fw_mail).
+        traefik_tls_passthrough_routes:
+          - name: mail1
+            hosts: ["mail.{{ frikanalen_domain }}", "autodiscover.{{ frikanalen_domain }}", "autoconfig.{{ frikanalen_domain }}"]
+            address: "{{ host_config['mail1'].ip_cidr.split('/')[0] }}"
 
     - role: traefik
       tags: [traefik, ingress, internal_ingress]
