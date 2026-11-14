@@ -12,6 +12,10 @@ casparcg_user: "casparcg"
 casparcg_media_path: "/mnt/media/"
 # nodm settings
 nodm_enabled: true
+# Preload files/mallinfo_clamp.c into CasparCG, so its embedded Chromium
+# can't crash the server once the heap passes 2 GiB. Takes effect the next
+# time CasparCG starts (nodm doesn't restart it on a config change).
+casparcg_mallinfo_clamp: false
 
 # Channel/consumer configuration. Defaults reproduce caspar1's Decklink
 # output; caspar_sw hosts set casparcg_consumers to ["ffmpeg"] (see
