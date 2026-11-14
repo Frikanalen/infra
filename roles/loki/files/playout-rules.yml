@@ -1,0 +1,85 @@
+# LogQL alerting rules for playout, loaded by the ruler from the ConfigMap
+# roles/loki/tasks/main.yml creates. They match log lines playout writes
+# since the change that followed two outages on 2026-11-14 (Frikanalen/playout,
+# "re-cue after CasparCG restarts, and survive unreadable schedule items"):
+#
+# - 08:00-14:31 Oslo nothing new aired: playout could not read one schedule
+#   item, threw the whole schedule away and said so only in its own log.
+# - 14:50 CasparCG crashed and came back empty; playout never noticed and the
+#   channel was black until it was restarted by hand.
+groups:
+  - name: frikanalen-playout-logs
+    rules:
+      - alert: FrikanalenPlayoutSkippedScheduleItem
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "Skipping schedule item" [15m])
+          ) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: Playout can't read a schedule item, so it won't air
+          description: >-
+            {{ $labels.pod }} skipped a schedule item it could not parse and
+            airs the gap graphic in its slot instead. The log line names the
+            item. Most likely playout's pinned API schema (schema.yaml) is
+            behind django-api: update it and release playout.
+
+      - alert: FrikanalenPlayoutScheduleLoadFailing
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "Failed to load the schedule" [30m])
+          ) > 1
+        labels:
+          severity: critical
+        annotations:
+          summary: Playout keeps failing to load the schedule
+          description: >-
+            {{ $labels.pod }} could not load the schedule more than once in
+            30 minutes and keeps playing the copy it had. Changes to the
+            schedule are not reaching air. See the traceback in its log.
+
+      - alert: FrikanalenPlayoutLostCaspar
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "Lost the connection to CasparCG" [15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Playout lost CasparCG and restarted itself
+          description: >-
+            {{ $labels.pod }} lost its AMCP connection and restarted to cue
+            what should be on air. If CasparCG crashed, its log on the
+            playout host says why. Air may have been black for a few seconds.
+
+      - alert: FrikanalenPlayoutCantReachCaspar
+        # Playout logs the first failed attempt and then one a minute, so two
+        # lines mean CasparCG has refused connections for over a minute.
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "Can't connect to CasparCG" [3m])
+          ) > 1
+        labels:
+          severity: critical
+        annotations:
+          summary: Playout can't reach CasparCG
+          description: >-
+            {{ $labels.pod }} has been unable to connect to CasparCG for over
+            a minute, so nothing is being played out. Check that CasparCG is
+            running on the playout host (nodm restarts it after a crash).
+
+      - alert: FrikanalenPlayoutSchemaBehind
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "file variants playout doesn't know" [1h])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Playout's API schema is behind django-api
+          description: >-
+            {{ $labels.pod }} met video file variants its pinned schema does
+            not know. They are ignored and the programmes still air, but the
+            schema (schema.yaml in the playout repo) should be updated before
+            a change it can't ignore arrives.
