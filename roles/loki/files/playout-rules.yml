@@ -69,6 +69,34 @@ groups:
             a minute, so nothing is being played out. Check that CasparCG is
             running on the playout host (nodm restarts it after a crash).
 
+      - alert: FrikanalenPlayoutAirMismatch
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "Air doesn't match the plan" [15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: The programme layer went empty while a video should play
+          description: >-
+            {{ $labels.pod }}'s air watchdog found CasparCG's programme layer
+            empty mid-programme and restarted playout to re-cue it (at most
+            once per 10 minutes; a second time is only logged). Look at
+            CasparCG's log on the playout host for why the layer emptied.
+
+      - alert: FrikanalenPlayoutWatchdogBlind
+        expr: >-
+          sum by (namespace, pod) (
+            count_over_time({container="playout"} |= "air watchdog can't read" [15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Playout's air watchdog can't read CasparCG's channel state
+          description: >-
+            {{ $labels.pod }} can't parse AMCP INFO 1, so an empty programme
+            layer would go unnoticed. Air is unaffected otherwise.
+
       - alert: FrikanalenPlayoutSchemaBehind
         expr: >-
           sum by (namespace, pod) (
