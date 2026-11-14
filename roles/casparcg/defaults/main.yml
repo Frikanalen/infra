@@ -18,6 +18,9 @@ nodm_enabled: true
 casparcg_mallinfo_clamp: false
 # Keep CasparCG crash dumps with systemd-coredump (coredumpctl) instead of apport.
 casparcg_coredump: true
+# Let CEF (HTML producer) render on the GPU (<html><enable-gpu>). caspar1 has
+# run with it on since the GT 1030 went in.
+casparcg_html_enable_gpu: false
 
 # Channel/consumer configuration. Defaults reproduce caspar1's Decklink
 # output; caspar_sw hosts set casparcg_consumers to ["ffmpeg"] (see
