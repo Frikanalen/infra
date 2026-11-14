@@ -100,14 +100,16 @@ groups:
       - alert: FrikanalenPlayoutSchemaBehind
         expr: >-
           sum by (namespace, pod) (
-            count_over_time({container="playout"} |= "file variants playout doesn't know" [1h])
+            count_over_time({container="playout"} |= "pinned schema doesn't list" [1h])
           ) > 0
         labels:
           severity: warning
         annotations:
           summary: Playout's API schema is behind django-api
           description: >-
-            {{ $labels.pod }} met video file variants its pinned schema does
-            not know. They are ignored and the programmes still air, but the
-            schema (schema.yaml in the playout repo) should be updated before
-            a change it can't ignore arrives.
+            {{ $labels.pod }} read enum values (a file variant, a schedule
+            reason) its pinned schema does not list. Playout keeps them and the
+            programmes still air, but the schema (schema.yaml in the playout
+            repo) should be updated before a change it can't absorb arrives.
+            Each value is logged once per playout start, so this resolves
+            after an hour and comes back after the next restart.
