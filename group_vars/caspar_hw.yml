@@ -13,3 +13,12 @@ nfs_client_mounts:
 # needs it directly to reach the prod cluster's Loki (see
 # group_vars/prod.yml for the value this must match).
 frikanalen_intern_zone: intern.frikanalen.tv
+
+# The mallinfo clamp (roles/casparcg/files/mallinfo_clamp.c) keeps CasparCG's
+# embedded Chromium from crashing once the heap passes 2 GiB, which 4K clips
+# reach on caspar1. Tested on caspar_sw first.
+casparcg_mallinfo_clamp: true
+
+# CEF renders HTML graphics on caspar1's GT 1030 (was set by hand in
+# /etc/casparcg.config before this variable existed).
+casparcg_html_enable_gpu: true

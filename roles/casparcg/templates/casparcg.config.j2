@@ -8,6 +8,11 @@
     <font-path>font/</font-path>
   </paths>
   <lock-clear-phrase>secret</lock-clear-phrase>
+{% if casparcg_html_enable_gpu %}
+  <html>
+    <enable-gpu>true</enable-gpu>
+  </html>
+{% endif %}
   <channels>
      <channel>
 	     <video-mode>{{ casparcg_video_mode }}</video-mode>

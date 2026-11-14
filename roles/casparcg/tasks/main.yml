@@ -29,6 +29,68 @@
     install_recommends: false
   become: true
 
+# See files/mallinfo_clamp.c: CEF 142 traps (and takes CasparCG down) once
+# the server's heap passes 2 GiB, because it reads it through mallinfo()'s
+# 32-bit fields. The shim is preloaded through NODM_XSESSION below.
+- name: Install a compiler for the mallinfo clamp
+  ansible.builtin.apt:
+    name: gcc
+    state: present
+  become: true
+  when: casparcg_mallinfo_clamp
+
+- name: Copy the mallinfo clamp source
+  ansible.builtin.copy:
+    src: mallinfo_clamp.c
+    dest: /usr/local/src/mallinfo_clamp.c
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: casparcg_mallinfo_clamp_src
+  when: casparcg_mallinfo_clamp
+
+- name: Check for a built mallinfo clamp
+  ansible.builtin.stat:
+    path: /usr/local/lib/mallinfo_clamp.so
+  register: casparcg_mallinfo_clamp_so
+  when: casparcg_mallinfo_clamp
+
+- name: Build the mallinfo clamp
+  ansible.builtin.command:
+    cmd: gcc -O2 -shared -fPIC -o /usr/local/lib/mallinfo_clamp.so /usr/local/src/mallinfo_clamp.c
+  become: true
+  changed_when: true
+  when: >-
+    casparcg_mallinfo_clamp and
+    (casparcg_mallinfo_clamp_src.changed or not casparcg_mallinfo_clamp_so.stat.exists)
+
+# Keep every CasparCG crash dump. apport saves one report per program and
+# skips new ones while it is unread, and CEF's updater helpers (same binary)
+# crash about daily, so the server's own crash was never kept.
+- name: Install systemd-coredump
+  ansible.builtin.apt:
+    name: systemd-coredump
+    state: present
+  become: true
+  when: casparcg_coredump
+
+- name: Stop apport taking crash dumps
+  ansible.builtin.service:
+    name: apport
+    state: stopped
+    enabled: false
+  become: true
+  failed_when: false
+  when: casparcg_coredump
+
+- name: Hand crash dumps to systemd-coredump
+  ansible.builtin.command:
+    cmd: /usr/lib/systemd/systemd-sysctl /usr/lib/sysctl.d/50-coredump.conf
+  become: true
+  changed_when: false
+  when: casparcg_coredump
+
 - name: Configure nodm
   ansible.builtin.template:
     src: nodm.conf.j2
