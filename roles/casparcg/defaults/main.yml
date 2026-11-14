@@ -16,6 +16,8 @@ nodm_enabled: true
 # can't crash the server once the heap passes 2 GiB. Takes effect the next
 # time CasparCG starts (nodm doesn't restart it on a config change).
 casparcg_mallinfo_clamp: false
+# Keep CasparCG crash dumps with systemd-coredump (coredumpctl) instead of apport.
+casparcg_coredump: true
 
 # Channel/consumer configuration. Defaults reproduce caspar1's Decklink
 # output; caspar_sw hosts set casparcg_consumers to ["ffmpeg"] (see

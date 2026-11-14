@@ -65,6 +65,32 @@
     casparcg_mallinfo_clamp and
     (casparcg_mallinfo_clamp_src.changed or not casparcg_mallinfo_clamp_so.stat.exists)
 
+# Keep every CasparCG crash dump. apport saves one report per program and
+# skips new ones while it is unread, and CEF's updater helpers (same binary)
+# crash about daily, so the server's own crash was never kept.
+- name: Install systemd-coredump
+  ansible.builtin.apt:
+    name: systemd-coredump
+    state: present
+  become: true
+  when: casparcg_coredump
+
+- name: Stop apport taking crash dumps
+  ansible.builtin.service:
+    name: apport
+    state: stopped
+    enabled: false
+  become: true
+  failed_when: false
+  when: casparcg_coredump
+
+- name: Hand crash dumps to systemd-coredump
+  ansible.builtin.command:
+    cmd: /usr/lib/systemd/systemd-sysctl /usr/lib/sysctl.d/50-coredump.conf
+  become: true
+  changed_when: false
+  when: casparcg_coredump
+
 - name: Configure nodm
   ansible.builtin.template:
     src: nodm.conf.j2
