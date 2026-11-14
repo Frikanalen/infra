@@ -29,6 +29,42 @@
     install_recommends: false
   become: true
 
+# See files/mallinfo_clamp.c: CEF 142 traps (and takes CasparCG down) once
+# the server's heap passes 2 GiB, because it reads it through mallinfo()'s
+# 32-bit fields. The shim is preloaded through NODM_XSESSION below.
+- name: Install a compiler for the mallinfo clamp
+  ansible.builtin.apt:
+    name: gcc
+    state: present
+  become: true
+  when: casparcg_mallinfo_clamp
+
+- name: Copy the mallinfo clamp source
+  ansible.builtin.copy:
+    src: mallinfo_clamp.c
+    dest: /usr/local/src/mallinfo_clamp.c
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  register: casparcg_mallinfo_clamp_src
+  when: casparcg_mallinfo_clamp
+
+- name: Check for a built mallinfo clamp
+  ansible.builtin.stat:
+    path: /usr/local/lib/mallinfo_clamp.so
+  register: casparcg_mallinfo_clamp_so
+  when: casparcg_mallinfo_clamp
+
+- name: Build the mallinfo clamp
+  ansible.builtin.command:
+    cmd: gcc -O2 -shared -fPIC -o /usr/local/lib/mallinfo_clamp.so /usr/local/src/mallinfo_clamp.c
+  become: true
+  changed_when: true
+  when: >-
+    casparcg_mallinfo_clamp and
+    (casparcg_mallinfo_clamp_src.changed or not casparcg_mallinfo_clamp_so.stat.exists)
+
 - name: Configure nodm
   ansible.builtin.template:
     src: nodm.conf.j2

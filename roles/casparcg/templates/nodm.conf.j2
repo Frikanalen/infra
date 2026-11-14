@@ -1,6 +1,11 @@
 # /etc/default/nodm
 NODM_ENABLED={{ nodm_enabled | ternary('true','false') }}
 NODM_USER={{ casparcg_user }}
+{% if casparcg_mallinfo_clamp %}
+# LD_PRELOAD: see roles/casparcg/files/mallinfo_clamp.c.
+NODM_XSESSION="/usr/bin/systemd-cat -t casparcg -- /usr/bin/env LD_PRELOAD=/usr/local/lib/mallinfo_clamp.so {{ casparcg_exec }} /etc/casparcg.config"
+{% else %}
 NODM_XSESSION="/usr/bin/systemd-cat -t casparcg -- {{ casparcg_exec }} /etc/casparcg.config"
+{% endif %}
 # You can set a timeout in seconds; uncomment and adjust if needed
 # NODM_USER_TIMEOUT=30

@@ -20,3 +20,7 @@ nfs_client_mounts:
 # needs it directly to reach the dev cluster's Loki (see
 # group_vars/staging.yml for the value this must match).
 frikanalen_intern_zone: intern.dev.frikanalen.tv
+
+# Staging tries the mallinfo clamp first (roles/casparcg/files/mallinfo_clamp.c):
+# caspar-sw1 has the same CEF MemoryInfra crash as caspar1.
+casparcg_mallinfo_clamp: true
