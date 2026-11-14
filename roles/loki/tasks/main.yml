@@ -125,7 +125,7 @@
   become: true
   run_once: true
 
-- name: Provision Loki alerting rules for the live stream
+- name: Provision Loki alerting rules for the live stream and playout
   kubernetes.core.k8s:
     kubeconfig: "{{ k8s_kubeconfig }}"
     state: present
@@ -143,5 +143,6 @@
           k8s-sidecar-target-directory: /rules/fake
       data:
         stream.yaml: "{{ lookup('ansible.builtin.file', 'stream-rules.yml') }}"
+        playout.yaml: "{{ lookup('ansible.builtin.file', 'playout-rules.yml') }}"
   become: true
   run_once: true
