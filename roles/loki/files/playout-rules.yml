@@ -80,9 +80,9 @@ groups:
           summary: The programme layer went empty while a video should play
           description: >-
             {{ $labels.pod }}'s air watchdog found CasparCG's programme layer
-            empty mid-programme and restarted playout to re-cue it (at most
-            once per 10 minutes; a second time is only logged). Look at
-            CasparCG's log on the playout host for why the layer emptied.
+            empty mid-programme and restarted playout to re-cue it (backing
+            off from 30 s to 5 min between repeats). Look at CasparCG's log
+            on the playout host for why the layer emptied.
 
       - alert: FrikanalenPlayoutWatchdogBlind
         expr: >-
