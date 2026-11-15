@@ -1,0 +1,12 @@
+---
+#
+# Test-signal generators: small VMs with a Decklink passed through that put
+# a moving test pattern on SDI, for checking routing, monitors and capture
+# downstream without involving playout. See roles/decklink_test_pattern.
+- name: Provision SDI test-signal hosts
+  hosts: sdi_test
+  become: true
+  gather_facts: true
+  roles:
+    - blackmagic_desktopvideo
+    - decklink_test_pattern
