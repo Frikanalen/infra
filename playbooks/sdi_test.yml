@@ -11,13 +11,12 @@
     - blackmagic_desktopvideo
     - decklink_test_pattern
 
-# ttxd, the teletext inserter, on sdi-test1's OUT 2 ("DeckLink Duo (2)").
-# Runs after the test pattern, which sets the card's profile. See roles/ttxd.
-- name: Provision the teletext inserter
+# ttx-inject on sdi-test1's OUT 2 ("DeckLink Duo (2)"): teletext from ttxd, which
+# runs in the staging cluster (teletext chart), as OP-47. Runs after the test
+# pattern, which sets the card's profile. See roles/ttx_inject.
+- name: Provision the teletext injector
   hosts: sdi-test1
   become: true
   gather_facts: true
   roles:
-    - ttxd
-    # The studio page generator (index page 100) next to it. See roles/ttx_pages.
-    - ttx_pages
+    - ttx_inject

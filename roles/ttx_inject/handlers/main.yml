@@ -1,0 +1,10 @@
+---
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: Restart ttx-inject
+  ansible.builtin.systemd_service:
+    name: ttx-inject
+    state: restarted
+    daemon_reload: true

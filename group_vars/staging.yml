@@ -26,6 +26,9 @@ django_db_secret_name: django-postgres-passwords
 # Dedicated contribution endpoint; SRT shares the site's public IP via PF.
 mediamtx_loadbalancer_ip: "{{ host_config['ingress-dev-contribution'].ip_cidr.split('/')[0] }}"
 
+# ttxd's injector link (the teletext chart's ttxd-link Service).
+teletext_link_ip: "{{ host_config['ingress-dev-teletext'].ip_cidr.split('/')[0] }}"
+
 # Deliberately a separate account and directory from prod: staging uploads must
 # not reach the production archive, which roles/nfs_server exports to the
 # playout hosts. Still on file01, so staging exercises the real SSH path.
