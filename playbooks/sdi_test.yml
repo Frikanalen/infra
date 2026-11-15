@@ -12,8 +12,7 @@
     - decklink_test_pattern
 
 # ttxd, the teletext inserter, on sdi-test1's OUT 2 ("DeckLink Duo (2)").
-# Runs after the test pattern, which sets the card's profile and unpacks
-# the DeckLink SDK headers ttxd builds against. See roles/ttxd.
+# Runs after the test pattern, which sets the card's profile. See roles/ttxd.
 - name: Provision the teletext inserter
   hosts: sdi-test1
   become: true
