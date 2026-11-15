@@ -1,0 +1,99 @@
+---
+# See defaults/main.yml. argocd-server only speaks TLS (it is not run with
+# --insecure), with a certificate it signs itself, so Traefik reaches it over
+# https without verifying that hop: the ServersTransport below, which the
+# argocd role puts on the argocd-server Service when
+# argocd_github_webhook_enabled is set.
+
+- name: "Look for kv/{{ argocd_github_webhook_openbao_path }}"
+  ansible.builtin.uri:
+    url: >-
+      {{ argocd_github_webhook_openbao_api }}/v1/{{ argocd_github_webhook_kv_mount
+      }}/data/{{ argocd_github_webhook_openbao_path }}
+    method: GET
+    ca_path: "{{ argocd_github_webhook_openbao_ca_path }}"
+    headers:
+      X-Vault-Token: "{{ vault_openbao_root_token }}"
+    status_code: [200, 404]
+  delegate_to: "{{ argocd_github_webhook_openbao_host }}"
+  run_once: true
+  register: argocd_github_webhook_existing
+  no_log: true
+
+- name: Generate the webhook secret
+  # Never replaces an existing one: GitHub holds a copy. To rotate, put a new
+  # value in OpenBao and in the GitHub webhook together.
+  when: argocd_github_webhook_existing.status == 404
+  ansible.builtin.command: openssl rand -hex 32
+  delegate_to: "{{ argocd_github_webhook_openbao_host }}"
+  run_once: true
+  register: argocd_github_webhook_new
+  changed_when: false
+  no_log: true
+
+- name: Store the webhook secret in OpenBao
+  when: argocd_github_webhook_existing.status == 404
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+    apply:
+      run_once: true
+  vars:
+    openbao_kv_path: "{{ argocd_github_webhook_openbao_path }}"
+    openbao_kv_data:
+      secret: "{{ argocd_github_webhook_new.stdout | trim }}"
+
+- name: Route the webhook path to argocd-server
+  become: true
+  run_once: true
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition:
+      - apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: argocd-webhook
+          namespace: "{{ argocd_github_webhook_traefik_namespace }}"
+        spec:
+          replacePath:
+            path: /api/webhook
+      - apiVersion: traefik.io/v1alpha1
+        kind: ServersTransport
+        metadata:
+          name: argocd-server
+          namespace: "{{ argocd_github_webhook_traefik_namespace }}"
+        spec:
+          # In-cluster hop to argocd-server's self-signed certificate.
+          insecureSkipVerify: true
+      - apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: argocd-github-webhook
+          namespace: "{{ argocd_namespace }}"
+          annotations: >-
+            {{
+              {
+                'traefik.ingress.kubernetes.io/router.entrypoints': 'websecure',
+                'traefik.ingress.kubernetes.io/router.middlewares':
+                  argocd_github_webhook_traefik_namespace ~ '-argocd-webhook@kubernetescrd',
+              }
+              | combine(
+                  {'traefik.ingress.kubernetes.io/router.tls.certresolver': argocd_github_webhook_cert_resolver}
+                  if argocd_github_webhook_cert_resolver else {}
+                )
+            }}
+        spec:
+          ingressClassName: "{{ argocd_github_webhook_ingress_class }}"
+          tls:
+            - hosts: ["{{ argocd_github_webhook_host }}"]
+          rules:
+            - host: "{{ argocd_github_webhook_host }}"
+              http:
+                paths:
+                  - path: "{{ argocd_github_webhook_path }}"
+                    pathType: Exact
+                    backend:
+                      service:
+                        name: argocd-server
+                        port:
+                          name: https
