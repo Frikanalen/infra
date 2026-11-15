@@ -1,14 +1,19 @@
 #!/bin/sh
 # {{ ansible_managed }}
-# SMPTE bars with a label, a wall clock and a running timecode, teed to
-# every configured Decklink sub-device at {{ decklink_test_pattern_mode }}.
+# SMPTE bars with the host name, a wall clock and a running timecode,
+# teed to every configured Decklink sub-device at
+# {{ decklink_test_pattern_mode }}. Each branch then gets its own large
+# label (OUT 1 is sub-device 0, and so on) so the outputs can be told apart
+# downstream. Pango's point sizes come out large at 720p, hence the small
+# font sizes.
 exec gst-launch-1.0 -e \
   videotestsrc is-live=true pattern={{ decklink_test_pattern_pattern }} \
   ! video/x-raw,width={{ decklink_test_pattern_width }},height={{ decklink_test_pattern_height }},framerate={{ decklink_test_pattern_framerate }} \
-  ! textoverlay text="{{ decklink_test_pattern_label }}" valignment=top halignment=center font-desc="DejaVu Sans Bold 28" shaded-background=true \
-  ! clockoverlay time-format="%Y-%m-%d %H:%M:%S" valignment=bottom halignment=right font-desc="DejaVu Sans Mono 28" shaded-background=true \
-  ! timeoverlay valignment=bottom halignment=left font-desc="DejaVu Sans Mono 28" shaded-background=true \
-  ! videoconvert ! video/x-raw,format=UYVY ! tee name=t \
+  ! textoverlay text="{{ decklink_test_pattern_label }}" valignment=top halignment=center font-desc="DejaVu Sans Bold 16" shaded-background=true \
+  ! clockoverlay time-format="%Y-%m-%d %H:%M:%S" valignment=bottom halignment=left font-desc="DejaVu Sans Mono 16" shaded-background=true \
+  ! timeoverlay valignment=bottom halignment=right font-desc="DejaVu Sans Mono 16" shaded-background=true \
+  ! tee name=t \
 {% for dev in decklink_test_pattern_devices %}
-  t. ! queue ! decklinkvideosink device-number={{ dev }} mode={{ decklink_test_pattern_mode }}{{ ' \\' if not loop.last else '' }}
+  t. ! queue ! textoverlay text="OUT {{ dev + 1 }}" valignment=center halignment=center font-desc="DejaVu Sans Bold 60" shaded-background=true \
+  ! videoconvert ! video/x-raw,format=UYVY ! decklinkvideosink device-number={{ dev }} mode={{ decklink_test_pattern_mode }}{{ ' \\' if not loop.last else '' }}
 {% endfor %}

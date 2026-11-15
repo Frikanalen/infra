@@ -31,4 +31,4 @@ decklink_test_pattern_sdk_dir: /opt/decklink-sdk
 
 # videotestsrc pattern; see gst-inspect-1.0 videotestsrc.
 decklink_test_pattern_pattern: smpte
-decklink_test_pattern_label: "{{ inventory_hostname }} test signal"
+decklink_test_pattern_label: "{{ inventory_hostname }}"
