@@ -8,7 +8,7 @@
 
 ttxd_repo: https://github.com/Frikanalen/teletext.git
 # Commit or tag to build. d141668 = main after teletext#3 (DeckLink output).
-ttxd_version: d141668e6a7c9ef9bef3fe7da6cbf8e77e0c3f12
+ttxd_version: d141668edb5d24d26b742cb64585304dd5b15e7d
 ttxd_rust_toolchain: "1.97.0"
 ttxd_src_dir: /usr/local/src/teletext
 ttxd_rust_dir: /opt/rust
