@@ -1,0 +1,30 @@
+---
+# Lets GitHub tell Argo CD about pushes, so a merge to the clusters repo
+# syncs within seconds instead of at the next poll (up to 3 minutes).
+#
+# GitHub POSTs to https://<host><path>. Only that one exact path is routed,
+# rewritten to Argo CD's /api/webhook; the rest of argocd-server (UI, API)
+# stays unexposed. Argo CD drops any payload whose X-Hub-Signature-256 does
+# not match the shared secret.
+#
+# The secret is generated here, once, into OpenBao. The clusters repo's
+# ExternalSecret clusters/<env>/secrets/argocd-webhook-github.yaml merges it
+# into argocd-secret as webhook.github.secret. The same value goes into the
+# GitHub webhook's "Secret" field:
+#
+#   bao kv get -field=secret kv/<env>/argocd/argocd-webhook-github
+argocd_github_webhook_host: "{{ frikanalen_domain }}"
+argocd_github_webhook_path: /argocd/webhook
+argocd_github_webhook_ingress_class: "{{ frikanalen_public_ingress_class }}"
+# Where the public Traefik release lives and watches its CRDs; the
+# Middleware and ServersTransport this role makes have to be there.
+argocd_github_webhook_traefik_namespace: traefik
+# Empty: serve Traefik's default certificate (traefik_tls_mode cert-manager).
+# Set to the ACME resolver's name on a release still in acme mode.
+argocd_github_webhook_cert_resolver: ""
+
+argocd_github_webhook_openbao_path: "{{ openbao_env }}/argocd/argocd-webhook-github"
+argocd_github_webhook_kv_mount: kv
+argocd_github_webhook_openbao_host: "{{ groups['secrets'][0] }}"
+argocd_github_webhook_openbao_api: "https://127.0.0.1:8200"
+argocd_github_webhook_openbao_ca_path: /etc/openbao/tls/ca.crt

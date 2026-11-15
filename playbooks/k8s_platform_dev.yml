@@ -141,6 +141,14 @@
 
     - role: argocd
       tags: [argocd]
+      vars:
+        argocd_github_webhook_enabled: true
+
+    # Lets GitHub's push webhook for the clusters repo reach Argo CD, so a
+    # merge syncs at once instead of at the next poll. Only the one webhook
+    # path is public; see the role's defaults.
+    - role: argocd_github_webhook
+      tags: [argocd, argocd_github_webhook]
 
     # rook-ceph and local-path-provisioner used to have an app-of-apps each
     # here, over the old apps/rook-ceph and apps/local-path-provisioner. On
