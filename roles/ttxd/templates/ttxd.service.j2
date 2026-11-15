@@ -1,0 +1,23 @@
+# {{ ansible_managed }}
+[Unit]
+Description=ttxd teletext server (OP-47 on {{ ttxd_decklink_device }})
+# The test-pattern service sets the card's profile before it starts.
+After=network-online.target decklink-test-pattern.service
+Wants=network-online.target
+
+[Service]
+User=ttxd
+Group=ttxd
+SupplementaryGroups=video
+Environment=TZ={{ ttxd_timezone }}
+Environment=RUST_LOG=info
+ExecStart=/usr/local/bin/ttxd /etc/ttxd/ttxd.toml
+Restart=always
+RestartSec=2
+StateDirectory=ttxd
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

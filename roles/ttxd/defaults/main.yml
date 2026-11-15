@@ -1,0 +1,38 @@
+---
+# ttxd, Frikanalen's teletext server (github.com/Frikanalen/teletext): a page
+# store with an HTTP API that puts OP-47 teletext in the VANC of a DeckLink
+# SDI output. Built on the host from a pinned commit, because the DeckLink
+# output needs the Desktop Video SDK headers, which have no public download.
+# Needs roles/blackmagic_desktopvideo (driver) and the SDK headers that
+# roles/decklink_test_pattern unpacks.
+
+ttxd_repo: https://github.com/Frikanalen/teletext.git
+# Commit or tag to build. d141668 = main after teletext#3 (DeckLink output).
+ttxd_version: d141668e6a7c9ef9bef3fe7da6cbf8e77e0c3f12
+ttxd_rust_toolchain: "1.97.0"
+ttxd_src_dir: /usr/local/src/teletext
+ttxd_rust_dir: /opt/rust
+ttxd_decklink_sdk_include: "/opt/decklink-sdk/Blackmagic DeckLink SDK 16.0/Linux/include"
+
+# Output: DeckLink display name and the VANC line carrying the OP-47 packet.
+ttxd_decklink_device: "DeckLink Duo (2)"
+ttxd_vanc_line: 9
+ttxd_op47_lines: [7, 8, 9, 10, 11]
+
+ttxd_listen: "0.0.0.0:8080"
+# Raw T42 packets for debugging (nc 127.0.0.1 4242 > dump.t42).
+ttxd_t42_listen: "127.0.0.1:4242"
+ttxd_service_name: FRIKANALEN
+# The page header clock shows local time.
+ttxd_timezone: Europe/Oslo
+
+# Who may write which pages. Tokens live in group_vars/all/vault.yml.
+ttxd_publishers:
+  - name: pages
+    token: "{{ vault_ttxd_pages_token }}"
+    pages: ["100-7FF"]
+    flash_per_sec: 100
+  - name: subtitles
+    token: "{{ vault_ttxd_subtitles_token }}"
+    pages: ["888"]
+    subtitles: true
