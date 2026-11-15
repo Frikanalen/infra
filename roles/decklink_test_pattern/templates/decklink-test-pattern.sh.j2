@@ -8,7 +8,7 @@ exec gst-launch-1.0 -e \
   ! textoverlay text="{{ decklink_test_pattern_label }}" valignment=top halignment=center font-desc="DejaVu Sans Bold 28" shaded-background=true \
   ! clockoverlay time-format="%Y-%m-%d %H:%M:%S" valignment=bottom halignment=right font-desc="DejaVu Sans Mono 28" shaded-background=true \
   ! timeoverlay valignment=bottom halignment=left font-desc="DejaVu Sans Mono 28" shaded-background=true \
-  ! videoconvert ! tee name=t \
+  ! videoconvert ! video/x-raw,format=UYVY ! tee name=t \
 {% for dev in decklink_test_pattern_devices %}
   t. ! queue ! decklinkvideosink device-number={{ dev }} mode={{ decklink_test_pattern_mode }}{{ ' \\' if not loop.last else '' }}
 {% endfor %}

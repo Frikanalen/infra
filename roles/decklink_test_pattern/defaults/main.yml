@@ -11,9 +11,12 @@ decklink_test_pattern_width: 1280
 decklink_test_pattern_height: 720
 decklink_test_pattern_framerate: 50/1
 
-# Decklink sub-device numbers to drive. A DeckLink Duo 2 in its default
-# profile is four half-duplex sub-devices, one per SDI connector.
-decklink_test_pattern_devices: [0, 1, 2, 3]
+# Decklink sub-device numbers to drive. sdi-test1's DeckLink Duo 2 lists
+# four sub-devices, but 2 and 3 refuse EnableVideoOutput (E_FAIL), most
+# likely because the card is in its two-sub-device full-duplex profile,
+# where only 0 and 1 can play out. Add 2 and 3 back if the profile is
+# switched to four half-duplex sub-devices.
+decklink_test_pattern_devices: [0, 1]
 
 # videotestsrc pattern; see gst-inspect-1.0 videotestsrc.
 decklink_test_pattern_pattern: smpte
