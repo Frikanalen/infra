@@ -75,6 +75,7 @@
       vars:
         traefik_tls_mode: cert-manager
         traefik_tls_dns_names: ["{{ frikanalen_domain }}", "www.{{ frikanalen_domain }}"]
+        traefik_security_headers_enabled: true
 
     - role: traefik
       tags: [traefik, ingress, internal_ingress]

@@ -100,3 +100,13 @@ traefik_ingressroute_tls: "{{ {'certResolver': 'letsencrypt' if traefik_tls_mode
 # backend too. Created in traefik_namespace, the only one this release's CRD
 # provider watches.
 traefik_tls_passthrough_routes: []
+
+# Security headers on every response through the websecure entrypoint:
+# HSTS, nosniff, a referrer policy and no framing by any site. Applied at the
+# entrypoint so every app behind this release gets them, whatever its chart.
+# TLS passthrough routes are TCP and untouched. Meant for the public release;
+# the internal one serves tools (Grafana, Argo CD) that may frame themselves.
+traefik_security_headers_enabled: false
+# A year. includeSubDomains/preload stay off until every name under the
+# domain is known to be HTTPS-only: both are hard to take back.
+traefik_hsts_seconds: 31536000
