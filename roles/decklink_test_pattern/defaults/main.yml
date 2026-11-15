@@ -11,12 +11,23 @@ decklink_test_pattern_width: 1280
 decklink_test_pattern_height: 720
 decklink_test_pattern_framerate: 50/1
 
-# Decklink sub-device numbers to drive. sdi-test1's DeckLink Duo 2 lists
-# four sub-devices, but 2 and 3 refuse EnableVideoOutput (E_FAIL), most
-# likely because the card is in its two-sub-device full-duplex profile,
-# where only 0 and 1 can play out. Add 2 and 3 back if the profile is
-# switched to four half-duplex sub-devices.
-decklink_test_pattern_devices: [0, 1]
+# DeckLink profile (BMDProfileID fourcc) activated on every device that
+# offers it before the pipeline starts. Out of the box the Duo 2 runs each
+# connector pair as one full-duplex sub-device, so only sub-devices 0 and 1
+# can play out; '2dhd' splits each pair into two half-duplex sub-devices,
+# making all four connectors outputs. Empty to leave the profile alone.
+decklink_test_pattern_profile: 2dhd
+
+# Decklink sub-device numbers to drive.
+decklink_test_pattern_devices: [0, 1, 2, 3]
+
+# The DeckLink SDK supplies the headers for the profile helper
+# (files/decklink-set-profile.cpp). Like Desktop Video it has no stable
+# download URL, so it is expected on the Ansible control node, downloaded by
+# hand from https://www.blackmagicdesign.com/developer/products/capture-and-playback
+decklink_test_pattern_sdk_version: "16.0"
+decklink_test_pattern_sdk_archive: "{{ lookup('env', 'HOME') }}/Downloads/Blackmagic_DeckLink_SDK_{{ decklink_test_pattern_sdk_version }}.zip"
+decklink_test_pattern_sdk_dir: /opt/decklink-sdk
 
 # videotestsrc pattern; see gst-inspect-1.0 videotestsrc.
 decklink_test_pattern_pattern: smpte

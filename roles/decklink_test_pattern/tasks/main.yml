@@ -10,6 +10,64 @@
     update_cache: true
     cache_valid_time: 3600
 
+- name: Build the DeckLink profile helper
+  when: decklink_test_pattern_profile | length > 0
+  block:
+    - name: Install the compiler and unzip
+      ansible.builtin.apt:
+        name: [g++, unzip]
+
+    - name: Copy the DeckLink SDK to the host
+      ansible.builtin.copy:
+        src: "{{ decklink_test_pattern_sdk_archive }}"
+        dest: "/var/cache/blackmagic/Blackmagic_DeckLink_SDK_{{ decklink_test_pattern_sdk_version }}.zip"
+        mode: "0644"
+
+    - name: Ensure the SDK directory exists
+      ansible.builtin.file:
+        path: "{{ decklink_test_pattern_sdk_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Extract the SDK's Linux headers
+      ansible.builtin.unarchive:
+        src: "/var/cache/blackmagic/Blackmagic_DeckLink_SDK_{{ decklink_test_pattern_sdk_version }}.zip"
+        dest: "{{ decklink_test_pattern_sdk_dir }}"
+        remote_src: true
+        include: ["Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include/*"]
+        creates: "{{ decklink_test_pattern_sdk_dir }}/Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include/DeckLinkAPI.h"
+
+    - name: Install the profile helper source
+      ansible.builtin.copy:
+        src: decklink-set-profile.cpp
+        dest: /usr/local/src/decklink-set-profile.cpp
+        mode: "0644"
+      register: decklink_test_pattern_helper_src
+
+    - name: Check for a built profile helper
+      ansible.builtin.stat:
+        path: /usr/local/bin/decklink-set-profile
+      register: decklink_test_pattern_helper_bin
+
+    - name: Compile the profile helper
+      ansible.builtin.command:
+        argv:
+          - g++
+          - -std=c++11
+          - -Wno-multichar
+          - "-I{{ sdk_include }}"
+          - -o
+          - /usr/local/bin/decklink-set-profile
+          - /usr/local/src/decklink-set-profile.cpp
+          - "{{ sdk_include }}/DeckLinkAPIDispatch.cpp"
+          - -ldl
+          - -lpthread
+      vars:
+        sdk_include: "{{ decklink_test_pattern_sdk_dir }}/Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include"
+      when: decklink_test_pattern_helper_src is changed or not decklink_test_pattern_helper_bin.stat.exists
+      changed_when: true
+      notify: Restart decklink-test-pattern
+
 - name: Install the test-pattern pipeline
   ansible.builtin.template:
     src: decklink-test-pattern.sh.j2
