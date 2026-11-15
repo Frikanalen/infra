@@ -18,7 +18,7 @@ ttx_pages_refresh_secs: 120
 ttx_pages_ttl_secs: 600
 
 ttx_pages_index_page: "100"
-ttx_pages_index_tagline: Frivillige organisasjoners TV-kanal
+ttx_pages_index_tagline: Sivilsamfunnets kanal
 ttx_pages_index_footer: frikanalen.tv
 # Listed on the index while ttxd is sending the page, or always with always: true.
 ttx_pages_index_entries:
