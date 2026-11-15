@@ -1,0 +1,6 @@
+---
+- name: Restart decklink-test-pattern
+  ansible.builtin.systemd_service:
+    name: decklink-test-pattern
+    state: restarted
+    daemon_reload: true

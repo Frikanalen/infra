@@ -88,6 +88,11 @@ all:
           hosts:
             caspar-sw1:
 
+    # SDI test-signal generators; see playbooks/sdi_test.yml.
+    sdi_test:
+      hosts:
+        sdi-test1:
+
     storage:
       hosts:
         file01:
@@ -131,5 +136,6 @@ all:
         kubeprod:
         kubedev:
         caspar:
+        sdi_test:
         mail:
         secrets:

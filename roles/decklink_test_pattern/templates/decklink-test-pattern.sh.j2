@@ -1,0 +1,14 @@
+#!/bin/sh
+# {{ ansible_managed }}
+# SMPTE bars with a label, a wall clock and a running timecode, teed to
+# every configured Decklink sub-device at {{ decklink_test_pattern_mode }}.
+exec gst-launch-1.0 -e \
+  videotestsrc is-live=true pattern={{ decklink_test_pattern_pattern }} \
+  ! video/x-raw,width={{ decklink_test_pattern_width }},height={{ decklink_test_pattern_height }},framerate={{ decklink_test_pattern_framerate }} \
+  ! textoverlay text="{{ decklink_test_pattern_label }}" valignment=top halignment=center font-desc="DejaVu Sans Bold 28" shaded-background=true \
+  ! clockoverlay time-format="%Y-%m-%d %H:%M:%S" valignment=bottom halignment=right font-desc="DejaVu Sans Mono 28" shaded-background=true \
+  ! timeoverlay valignment=bottom halignment=left font-desc="DejaVu Sans Mono 28" shaded-background=true \
+  ! videoconvert ! tee name=t \
+{% for dev in decklink_test_pattern_devices %}
+  t. ! queue ! decklinkvideosink device-number={{ dev }} mode={{ decklink_test_pattern_mode }}{{ ' \\' if not loop.last else '' }}
+{% endfor %}

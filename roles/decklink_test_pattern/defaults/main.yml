@@ -1,0 +1,20 @@
+---
+# A GStreamer test signal on every SDI output of a passed-through Decklink:
+# SMPTE colour bars with a label, a wall clock and a running timecode. The
+# timecode changes every frame, so a frozen output can be told from a live
+# one at a glance. Needs roles/blackmagic_desktopvideo first, for the driver
+# and libDeckLinkAPI.so that GStreamer's decklink plugin loads.
+
+# GStreamer's decklinkvideosink mode name (720p50, 1080i50, 1080p25, ...).
+decklink_test_pattern_mode: 720p50
+decklink_test_pattern_width: 1280
+decklink_test_pattern_height: 720
+decklink_test_pattern_framerate: 50/1
+
+# Decklink sub-device numbers to drive. A DeckLink Duo 2 in its default
+# profile is four half-duplex sub-devices, one per SDI connector.
+decklink_test_pattern_devices: [0, 1, 2, 3]
+
+# videotestsrc pattern; see gst-inspect-1.0 videotestsrc.
+decklink_test_pattern_pattern: smpte
+decklink_test_pattern_label: "{{ inventory_hostname }} test signal"

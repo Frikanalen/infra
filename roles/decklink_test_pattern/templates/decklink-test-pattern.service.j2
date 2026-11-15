@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Decklink SDI test signal ({{ decklink_test_pattern_mode }})
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/decklink-test-pattern
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

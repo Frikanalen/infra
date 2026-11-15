@@ -1,0 +1,3 @@
+---
+# No entry in anyone's ~/.ssh/config yet; address it directly.
+ansible_host: 192.168.3.102
