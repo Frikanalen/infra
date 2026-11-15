@@ -7,8 +7,8 @@
 # roles/decklink_test_pattern unpacks.
 
 ttxd_repo: https://github.com/Frikanalen/teletext.git
-# Commit or tag to build. d141668 = main after teletext#3 (DeckLink output).
-ttxd_version: d141668edb5d24d26b742cb64585304dd5b15e7d
+# Commit or tag to build. 41077b9 = main after teletext#7 (packet 8/30, repeat_secs, Level 2.5 passthrough).
+ttxd_version: 41077b982d83ddbd39e8b391f21daa18a799696c
 ttxd_rust_toolchain: "1.97.0"
 ttxd_src_dir: /usr/local/src/teletext
 ttxd_rust_dir: /opt/rust
