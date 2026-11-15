@@ -1,81 +1,21 @@
 ---
-- name: Check for the DeckLink SDK headers
-  ansible.builtin.stat:
-    path: "{{ ttxd_decklink_sdk_include }}/DeckLinkAPI.h"
-  register: ttxd_sdk_header
-
-- name: Require the DeckLink SDK headers
-  ansible.builtin.assert:
-    that: ttxd_sdk_header.stat.exists
-    fail_msg: >-
-      {{ ttxd_decklink_sdk_include }}/DeckLinkAPI.h is missing. Run
-      roles/decklink_test_pattern first (it unpacks the SDK), or set
-      ttxd_decklink_sdk_include.
-
-- name: Install build dependencies
-  ansible.builtin.apt:
-    name: [build-essential, git]
-    update_cache: true
-    cache_valid_time: 3600
-
-- name: Download rustup-init
+- name: Install the ttxd release binary
   ansible.builtin.get_url:
-    url: https://static.rust-lang.org/rustup/dist/x86_64-unknown-linux-gnu/rustup-init
-    dest: /usr/local/src/rustup-init
-    mode: "0755"
-
-- name: Install the Rust toolchain
-  ansible.builtin.command:
-    argv:
-      - /usr/local/src/rustup-init
-      - -y
-      - --no-modify-path
-      - --profile
-      - minimal
-      - --default-toolchain
-      - "{{ ttxd_rust_toolchain }}"
-    creates: "{{ ttxd_rust_dir }}/rustup/toolchains/{{ ttxd_rust_toolchain }}-x86_64-unknown-linux-gnu"
-  environment:
-    RUSTUP_HOME: "{{ ttxd_rust_dir }}/rustup"
-    CARGO_HOME: "{{ ttxd_rust_dir }}/cargo"
-
-- name: Check out ttxd
-  ansible.builtin.git:
-    repo: "{{ ttxd_repo }}"
-    dest: "{{ ttxd_src_dir }}"
-    version: "{{ ttxd_version }}"
-  register: ttxd_checkout
-
-- name: Check for an installed ttxd
-  ansible.builtin.stat:
-    path: /usr/local/bin/ttxd
-  register: ttxd_bin
-
-- name: Build ttxd with DeckLink output
-  ansible.builtin.command:
-    argv:
-      - "{{ ttxd_rust_dir }}/cargo/bin/cargo"
-      - "+{{ ttxd_rust_toolchain }}"
-      - build
-      - --release
-      - --locked
-      - --features
-      - decklink
-    chdir: "{{ ttxd_src_dir }}"
-  environment:
-    RUSTUP_HOME: "{{ ttxd_rust_dir }}/rustup"
-    CARGO_HOME: "{{ ttxd_rust_dir }}/cargo"
-    DECKLINK_SDK_INCLUDE: "{{ ttxd_decklink_sdk_include }}"
-  when: ttxd_checkout is changed or not ttxd_bin.stat.exists
-  changed_when: true
-
-- name: Install the ttxd binary
-  ansible.builtin.copy:
-    src: "{{ ttxd_src_dir }}/target/release/ttxd"
+    url: "{{ ttxd_release_url }}/{{ ttxd_asset }}"
+    checksum: "sha256:{{ ttxd_release_url }}/{{ ttxd_asset }}.sha256"
     dest: /usr/local/bin/ttxd
-    remote_src: true
     mode: "0755"
   notify: Restart ttxd
+
+# ttxd used to be built on the host; remove what that left behind.
+- name: Remove the old on-host build
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/src/teletext
+    - /usr/local/src/rustup-init
+    - /opt/rust
 
 - name: Create the ttxd user
   ansible.builtin.user:
