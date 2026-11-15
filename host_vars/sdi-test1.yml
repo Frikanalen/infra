@@ -1,3 +1,7 @@
 ---
 # No entry in anyone's ~/.ssh/config yet; address it directly.
 ansible_host: 192.168.3.102
+
+# OUT 2 ("DeckLink Duo (2)", sub-device 1) belongs to the Teletext
+# inserter, so the test pattern stays off it.
+decklink_test_pattern_devices: [0, 2, 3]

@@ -4,6 +4,9 @@ Description=Decklink SDI test signal ({{ decklink_test_pattern_mode }})
 After=network.target
 
 [Service]
+{% if decklink_test_pattern_profile | length > 0 %}
+ExecStartPre=/usr/local/bin/decklink-set-profile {{ decklink_test_pattern_profile }}
+{% endif %}
 ExecStart=/usr/local/bin/decklink-test-pattern
 Restart=always
 RestartSec=5
