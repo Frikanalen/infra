@@ -1,20 +1,19 @@
 # {{ ansible_managed }}
 [Unit]
-Description=ttxd teletext server (OP-47 on {{ ttxd_decklink_device }})
+Description=ttx-inject: teletext from ttxd as OP-47 on {{ ttx_inject_decklink_device }}
 # The test-pattern service sets the card's profile before it starts.
 After=network-online.target decklink-test-pattern.service
 Wants=network-online.target
 
 [Service]
-User=ttxd
-Group=ttxd
+User=ttx-inject
+Group=ttx-inject
 SupplementaryGroups=video
-Environment=TZ={{ ttxd_timezone }}
+Environment=TZ={{ ttx_inject_timezone }}
 Environment=RUST_LOG=info
-ExecStart=/usr/local/bin/ttxd /etc/ttxd/ttxd.toml
+ExecStart=/usr/local/bin/ttx-inject /etc/ttx-inject/ttx-inject.toml
 Restart=always
 RestartSec=2
-StateDirectory=ttxd
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

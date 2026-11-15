@@ -1,0 +1,7 @@
+# {{ ansible_managed }}
+ttxd = "{{ ttx_inject_ttxd }}"
+decklink_device = "{{ ttx_inject_decklink_device }}"
+vanc_line = {{ ttx_inject_vanc_line }}
+op47_lines = {{ ttx_inject_op47_lines | to_json }}
+buffer_frames = {{ ttx_inject_buffer_frames }}
+replay_after_ms = {{ ttx_inject_replay_after_ms }}

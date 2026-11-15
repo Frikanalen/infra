@@ -1,0 +1,64 @@
+---
+# ttxd and the page generator used to run here; both moved to Kubernetes.
+- name: Stop the services that moved to Kubernetes
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: [ttxd, ttx-pages]
+  failed_when: false
+
+- name: Remove what they left behind
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/systemd/system/ttxd.service
+    - /etc/systemd/system/ttx-pages.service
+    - /usr/local/bin/ttxd
+    - /etc/ttxd
+    - /etc/ttx-pages
+    - /usr/local/src/teletext-pages
+  notify: Reload systemd
+
+- name: Install the ttx-inject release binary
+  ansible.builtin.get_url:
+    url: "{{ ttx_inject_release_url }}/{{ ttx_inject_asset }}"
+    checksum: "sha256:{{ ttx_inject_release_url }}/{{ ttx_inject_asset }}.sha256"
+    dest: /usr/local/bin/ttx-inject
+    mode: "0755"
+  notify: Restart ttx-inject
+
+- name: Create the ttx-inject user
+  ansible.builtin.user:
+    name: ttx-inject
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create the config directory
+  ansible.builtin.file:
+    path: /etc/ttx-inject
+    state: directory
+    mode: "0755"
+
+- name: Install the ttx-inject config
+  ansible.builtin.template:
+    src: ttx-inject.toml.j2
+    dest: /etc/ttx-inject/ttx-inject.toml
+    mode: "0644"
+  notify: Restart ttx-inject
+
+- name: Install the ttx-inject service
+  ansible.builtin.template:
+    src: ttx-inject.service.j2
+    dest: /etc/systemd/system/ttx-inject.service
+    mode: "0644"
+  notify: Restart ttx-inject
+
+- name: Enable and start ttx-inject
+  ansible.builtin.systemd_service:
+    name: ttx-inject
+    enabled: true
+    state: started
+    daemon_reload: true
