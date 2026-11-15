@@ -20,3 +20,5 @@
   gather_facts: true
   roles:
     - ttxd
+    # The studio page generator (index page 100) next to it. See roles/ttx_pages.
+    - ttx_pages

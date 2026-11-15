@@ -1,0 +1,6 @@
+---
+- name: Restart ttx-pages
+  ansible.builtin.systemd_service:
+    name: ttx-pages
+    state: restarted
+    daemon_reload: true

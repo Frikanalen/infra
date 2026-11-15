@@ -1,0 +1,52 @@
+---
+- name: Install git and Python
+  ansible.builtin.apt:
+    name: [git, python3]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check out the teletext repo for the generator
+  ansible.builtin.git:
+    repo: "{{ ttx_pages_repo }}"
+    dest: "{{ ttx_pages_src_dir }}"
+    version: "{{ ttx_pages_version }}"
+  notify: Restart ttx-pages
+
+- name: Create the config directory
+  ansible.builtin.file:
+    path: /etc/ttx-pages
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install the generator config
+  ansible.builtin.template:
+    src: pages.toml.j2
+    dest: /etc/ttx-pages/pages.toml
+    mode: "0644"
+  notify: Restart ttx-pages
+
+- name: Install the ttxd token
+  ansible.builtin.copy:
+    content: "TTXD_TOKEN={{ ttx_pages_token }}\n"
+    dest: /etc/ttx-pages/token.env
+    owner: root
+    group: root
+    mode: "0600"
+  diff: false
+  notify: Restart ttx-pages
+
+- name: Install the ttx-pages service
+  ansible.builtin.template:
+    src: ttx-pages.service.j2
+    dest: /etc/systemd/system/ttx-pages.service
+    mode: "0644"
+  notify: Restart ttx-pages
+
+- name: Enable and start ttx-pages
+  ansible.builtin.systemd_service:
+    name: ttx-pages
+    enabled: true
+    state: started
+    daemon_reload: true
