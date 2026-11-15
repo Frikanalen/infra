@@ -5,7 +5,7 @@
 
 # Frikanalen/teletext release to install. Its ttx-inject binary and checksum are
 # downloaded from the GitHub release.
-ttx_inject_version: "0.4.0"
+ttx_inject_version: "0.5.0"
 ttx_inject_release_url: "https://github.com/Frikanalen/teletext/releases/download/v{{ ttx_inject_version }}"
 ttx_inject_asset: ttx-inject-x86_64-linux-gnu
 
@@ -18,6 +18,9 @@ ttx_inject_vanc_line: 9
 # than 1 needs the encoding appliance in its multi-packet OP-47 mode first: in
 # single-packet mode it would drop the extra packets.
 ttx_inject_op47_packets: 3
+# Wrap each OP-47 packet in an ANC Multipacket (SDID 0x03). Must match the encoding
+# appliance: true for its "multi-packet" OP-47 mode, false for "single packet".
+ttx_inject_op47_multipacket: true
 # Descriptor lines, 5 per packet; empty = 7 upwards.
 ttx_inject_op47_lines: []
 # Frames asked for ahead of the card (20 ms each).
