@@ -5,8 +5,9 @@
 # standard library only, so it runs from a checkout with no build step.
 
 ttx_pages_repo: https://github.com/Frikanalen/teletext.git
-# Commit or tag to run. ab87a73 = teletext#4 (schedule URL fix).
-ttx_pages_version: ab87a73
+# Tag (or full commit SHA) of Frikanalen/teletext to run. Keep it in step with
+# ttxd_version: the generator sends Level 2.5 pages that older ttxd rejects.
+ttx_pages_version: v0.2.0
 ttx_pages_src_dir: /usr/local/src/teletext-pages
 
 ttx_pages_ttxd_url: "http://127.0.0.1:8080"
