@@ -5,7 +5,7 @@
 
 # Frikanalen/teletext release to install. Its ttx-inject binary and checksum are
 # downloaded from the GitHub release.
-ttx_inject_version: "0.3.0"
+ttx_inject_version: "0.4.0"
 ttx_inject_release_url: "https://github.com/Frikanalen/teletext/releases/download/v{{ ttx_inject_version }}"
 ttx_inject_asset: ttx-inject-x86_64-linux-gnu
 
@@ -14,7 +14,12 @@ ttx_inject_ttxd: "{{ host_config['ingress-dev-teletext'].ip_cidr.split('/')[0] }
 
 ttx_inject_decklink_device: "DeckLink Duo (2)"
 ttx_inject_vanc_line: 9
-ttx_inject_op47_lines: [7, 8, 9, 10, 11]
+# OP-47 packets per frame, 1-3, 5 teletext lines each (250 lines/s per packet). More
+# than 1 needs the encoding appliance in its multi-packet OP-47 mode first: in
+# single-packet mode it would drop the extra packets.
+ttx_inject_op47_packets: 1
+# Descriptor lines, 5 per packet; empty = 7 upwards.
+ttx_inject_op47_lines: []
 # Frames asked for ahead of the card (20 ms each).
 ttx_inject_buffer_frames: 2
 # Replay the last carousel cycle after this long without frames from ttxd.
