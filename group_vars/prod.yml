@@ -86,7 +86,10 @@ openbao_seed_secrets:
 
 helm_chart_versions:
   traefik: "41.6.0"
-  argocd: "10.9.2"
+  # What prod actually runs (Argo CD 3.2.1). Staging is on 10.9.2 (3.5.3)
+  # since 2026-11-15. Upgrade prod in its own change, with a rollback plan,
+  # not as a side effect of another --tags argocd run.
+  argocd: "9.1.7"
   argocd_image_updater: "1.2.4"
   external_dns: "1.19.0"
   metallb: "0.15.3"
