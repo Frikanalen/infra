@@ -102,7 +102,8 @@ traefik_ingressroute_tls: "{{ {'certResolver': 'letsencrypt' if traefik_tls_mode
 traefik_tls_passthrough_routes: []
 
 # Security headers on every response through the websecure entrypoint:
-# HSTS, nosniff, a referrer policy and no framing by any site. Applied at the
+# HSTS, nosniff, a referrer policy and no framing by other sites
+# (X-Frame-Options SAMEORIGIN; the site frames its own pages). Applied at the
 # entrypoint so every app behind this release gets them, whatever its chart.
 # TLS passthrough routes are TCP and untouched. Meant for the public release;
 # the internal one serves tools (Grafana, Argo CD) that may frame themselves.

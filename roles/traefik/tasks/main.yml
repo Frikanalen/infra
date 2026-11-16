@@ -207,7 +207,9 @@
           stsSeconds: "{{ traefik_hsts_seconds | int }}"
           contentTypeNosniff: true
           referrerPolicy: strict-origin-when-cross-origin
-          frameDeny: true
+          # SAMEORIGIN, not DENY: the site frames its own pages (the poster
+          # editor previews /graphics/ in an iframe). Other sites still can't.
+          customFrameOptionsValue: SAMEORIGIN
   become: true
   run_once: true
   when: traefik_security_headers_enabled
