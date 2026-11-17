@@ -26,3 +26,7 @@ casparcg_ffmpeg_args: >-
 # (roles/caspar_sdi_audio_watchdog). Acting, not dry run, at the owner's
 # request on 2026-11-17.
 caspar_sdi_audio_watchdog_dry_run: false
+# Air check and SDI meter from atemkontroll (roles/caspar_sdi_audio_watchdog).
+# caspar1 is the ATEM input named "caspar1" (short name VM1), input 1.
+caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
+caspar_sdi_audio_watchdog_atem_input_name: caspar1

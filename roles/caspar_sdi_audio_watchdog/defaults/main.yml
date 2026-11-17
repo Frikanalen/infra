@@ -28,6 +28,35 @@ caspar_sdi_audio_watchdog_window_seconds: 21600
 # The same restart as by hand; playout re-cues on reconnect in ~2 s.
 caspar_sdi_audio_watchdog_restart_command: "systemctl restart nodm"
 
+# Air check before a restart: atemkontroll (github.com/Frikanalen/atemkontroll),
+# GET <url>/state. Restart only if atem_input is on program on M/E atem_me;
+# another source, a transition or fade-to-black inhibits. Empty URL, an
+# unreachable API or an unclear state fall back to on_unknown_program:
+# "restart" (silent air is worse than a needless 2 s restart; the rate limits
+# still apply) or "inhibit".
+caspar_sdi_audio_watchdog_atem_url: ""
+caspar_sdi_audio_watchdog_atem_token: ""
+caspar_sdi_audio_watchdog_atem_input: 1
+caspar_sdi_audio_watchdog_atem_me: 0
+# Optional: find the input by its ATEM longName/shortName instead (falls back
+# to atem_input if no input has that name), so re-patching can't break it.
+caspar_sdi_audio_watchdog_atem_input_name: ""
+# After a cut to CasparCG, wait this long before a jam starts to count: the
+# program return lags the cut by a few seconds. Needs atem_url.
+caspar_sdi_audio_watchdog_program_grace_seconds: 15
+# The ATEM's own audio meter for CasparCG's input (atemkontroll /state
+# "audio", atemkontroll#3) is the preferred SDI signal: it measures caspar1's
+# SDI directly, whatever is on program. Silent = at or below this on both
+# channels (atemkontroll floors at -60). Levels older than levels_stale_seconds
+# count as unknown, and the watchdog falls back to the program return.
+caspar_sdi_audio_watchdog_atem_silent_dbfs: -58
+caspar_sdi_audio_watchdog_levels_stale_seconds: 3
+# With the ATEM meter, also restart when CasparCG is off program: harmless,
+# and it fixes the audio before CasparCG goes back on air. A transition
+# involving its input still inhibits.
+caspar_sdi_audio_watchdog_restart_off_program: true
+caspar_sdi_audio_watchdog_on_unknown_program: restart
+
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
 
