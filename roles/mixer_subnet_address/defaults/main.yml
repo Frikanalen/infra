@@ -1,0 +1,14 @@
+---
+# The studio's ATEM vision mixer ("billedmiks" in data/hosts.yml) sits on
+# 10.3.2.1 in the internal VLAN, the same L2 segment as 192.168.3.0/24.
+# Its network settings can only be changed over USB, so rather than move
+# it or give it a gateway, the hosts that talk to it get an address of
+# their own in its subnet. To the mixer they are then on-link and it
+# answers them directly. Pods on these hosts reach it too: their traffic
+# is masqueraded to the node address on the outgoing route, which is this
+# one.
+#
+# Each host takes 10.3.0.<last octet of its 192.168.3.x address>, so
+# prod-kube-1 (192.168.3.74) is 10.3.0.74.
+mixer_subnet_address: "10.3.0.{{ ansible_default_ipv4.address.split('.')[-1] }}/16"
+mixer_subnet_interface: "{{ ansible_default_ipv4.interface }}"
