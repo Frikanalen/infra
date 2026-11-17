@@ -14,6 +14,9 @@ locals {
         # We should probably remove this option as soon as vm1..vm4 are on SSDs.
         disk_cache   = try(h.vm.disk_cache, "none")
         cores        = try(h.vm.cores, 8)
+        # vCPUs online, up to cores; 0 = all of them. With cores set above
+        # vcores, CPU hotplug can raise vcores later without a reboot.
+        vcores = try(h.vm.vcores, 0)
         memory_max   = try(h.vm.memory_max, 16384)
         memory_min   = try(h.vm.memory_min, 8192)
         template     = try(h.vm.template, var.template)
@@ -51,6 +54,7 @@ resource "proxmox_vm_qemu" "kube" {
     type    = "host"
     sockets = 1
     cores   = each.value.cores
+    vcores  = each.value.vcores
     numa    = true
   }
 
