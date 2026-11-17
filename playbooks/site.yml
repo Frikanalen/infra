@@ -82,6 +82,16 @@
     - root_fs_trim
   tags:
     - root_fs_trim
+- name: Give the prod kube nodes an address in the vision mixer's subnet
+  # Prod only: the mixer is the one in the studio, and staging runs the
+  # vision-mixer API against a mock.
+  hosts: kubeprod
+  become: true
+  roles:
+    - mixer_subnet_address
+  tags:
+    - k8s
+    - mixer_subnet
 - name: Mount local SSD on kube nodes
   hosts: microk8s
   become: true

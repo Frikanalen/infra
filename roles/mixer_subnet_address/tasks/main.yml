@@ -1,0 +1,23 @@
+---
+- name: Persist the mixer-subnet address in netplan
+  ansible.builtin.template:
+    src: 60-mixer-subnet.yaml.j2
+    dest: /etc/netplan/60-mixer-subnet.yaml
+    owner: root
+    group: root
+    mode: "0600"
+
+# Add the address to the running interface directly instead of running
+# `netplan apply`, which would re-apply every interface on a live
+# Kubernetes node for the sake of one extra address.
+- name: Read the interface's addresses
+  ansible.builtin.command:
+    argv: [ip, -o, addr, show, dev, "{{ mixer_subnet_interface }}"]
+  register: mixer_subnet_ip_addr
+  changed_when: false
+
+- name: Add the mixer-subnet address to the running interface
+  ansible.builtin.command:
+    argv: [ip, addr, add, "{{ mixer_subnet_address }}", dev, "{{ mixer_subnet_interface }}"]
+  when: (' ' ~ mixer_subnet_address ~ ' ') not in mixer_subnet_ip_addr.stdout
+  changed_when: true
