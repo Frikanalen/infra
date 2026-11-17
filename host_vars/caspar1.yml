@@ -17,7 +17,7 @@ casparcg_ffmpeg_path: "udp://239.1.1.51:5004"
 # option needs its stream specifier. The format filter is required either
 # way: without it libx264 takes the mixer's 4:4:4 frames as-is.
 casparcg_ffmpeg_args: >-
-  -format mpegts -codec:v libx264 -preset:v faster
+  -format mpegts -codec:v libx264 -preset:v veryfast
   -filter:v format=yuv422p
   -b:v 20M -maxrate:v 25M -bufsize:v 10M -g:v 50 -bf:v 2
   -codec:a mp2 -b:a 256k -filter:a aformat=channel_layouts=stereo
