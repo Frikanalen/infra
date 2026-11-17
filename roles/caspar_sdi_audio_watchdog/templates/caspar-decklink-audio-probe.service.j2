@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=DeckLink consumer audio-state uprobes on CasparCG (bpftrace)
+After=nodm.service
+
+[Service]
+ExecStart=/bin/sh /usr/local/lib/caspar-sdi-audio-watchdog/caspar-decklink-audio-probe.sh {{ caspar_sdi_audio_probe_build_id }}
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

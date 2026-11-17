@@ -1,0 +1,70 @@
+---
+- name: Install ffmpeg (audio readers) and bpftrace (probe)
+  ansible.builtin.apt:
+    name:
+      - ffmpeg
+      - bpftrace
+    state: present
+
+- name: Create the program directory
+  ansible.builtin.file:
+    path: /usr/local/lib/caspar-sdi-audio-watchdog
+    state: directory
+    mode: "0755"
+
+- name: Install the watchdog
+  ansible.builtin.copy:
+    src: caspar-sdi-audio-watchdog.py
+    dest: /usr/local/lib/caspar-sdi-audio-watchdog/caspar-sdi-audio-watchdog.py
+    mode: "0755"
+  notify: Restart caspar-sdi-audio-watchdog
+
+- name: Install the watchdog service
+  ansible.builtin.template:
+    src: caspar-sdi-audio-watchdog.service.j2
+    dest: /etc/systemd/system/caspar-sdi-audio-watchdog.service
+    mode: "0644"
+  notify: Restart caspar-sdi-audio-watchdog
+
+- name: Enable and start the watchdog
+  ansible.builtin.systemd_service:
+    name: caspar-sdi-audio-watchdog
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Install the DeckLink audio probe and its wrapper
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/lib/caspar-sdi-audio-watchdog/{{ item }}"
+    mode: "0644"
+  loop:
+    - decklink-audio-probe.bt
+    - caspar-decklink-audio-probe.sh
+  notify: Restart caspar-decklink-audio-probe
+  when: caspar_sdi_audio_probe_enabled
+
+- name: Install the DeckLink audio probe service
+  ansible.builtin.template:
+    src: caspar-decklink-audio-probe.service.j2
+    dest: /etc/systemd/system/caspar-decklink-audio-probe.service
+    mode: "0644"
+  notify: Restart caspar-decklink-audio-probe
+  when: caspar_sdi_audio_probe_enabled
+
+# 2026-11-17 the probe was first attached by hand as the transient unit
+# caspar-probe-decklink-audio; the managed service replaces it.
+- name: Stop the hand-started transient probe unit
+  ansible.builtin.systemd_service:
+    name: caspar-probe-decklink-audio
+    state: stopped
+  failed_when: false
+  when: caspar_sdi_audio_probe_enabled
+
+- name: Enable and start the DeckLink audio probe
+  ansible.builtin.systemd_service:
+    name: caspar-decklink-audio-probe
+    enabled: "{{ caspar_sdi_audio_probe_enabled }}"
+    state: "{{ 'started' if caspar_sdi_audio_probe_enabled else 'stopped' }}"
+    daemon_reload: true
+  failed_when: false
