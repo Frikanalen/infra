@@ -18,7 +18,8 @@
     - blackmagic_desktopvideo
     - nfs_client
     - casparcg
-    - caspar_sdi_audio_watchdog
+    - role: caspar_sdi_audio_watchdog
+      tags: [caspar_sdi_watchdog]
 
 - name: Provision streaming-output CasparCG playout hosts
   hosts: caspar_sw
