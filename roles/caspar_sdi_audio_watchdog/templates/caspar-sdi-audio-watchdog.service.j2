@@ -1,0 +1,33 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Restart CasparCG when its DeckLink SDI audio is jammed
+After=network-online.target nodm.service
+Wants=network-online.target
+
+[Service]
+Environment=PRE_URL={{ caspar_sdi_audio_watchdog_pre_url }}
+Environment=POST_URL={{ caspar_sdi_audio_watchdog_post_url }}
+Environment=PRE_MIN_DBFS={{ caspar_sdi_audio_watchdog_pre_min_dbfs }}
+Environment=POST_MAX_DBFS={{ caspar_sdi_audio_watchdog_post_max_dbfs }}
+Environment=JAM_SECONDS={{ caspar_sdi_audio_watchdog_jam_seconds }}
+Environment=STALE_SECONDS={{ caspar_sdi_audio_watchdog_stale_seconds }}
+Environment=COOLDOWN_SECONDS={{ caspar_sdi_audio_watchdog_cooldown_seconds }}
+Environment=MAX_RESTARTS={{ caspar_sdi_audio_watchdog_max_restarts }}
+Environment=WINDOW_SECONDS={{ caspar_sdi_audio_watchdog_window_seconds }}
+Environment="RESTART_COMMAND={{ caspar_sdi_audio_watchdog_restart_command }}"
+Environment=DRY_RUN={{ caspar_sdi_audio_watchdog_dry_run | lower }}
+Environment=STATE_FILE=/var/lib/caspar-sdi-audio-watchdog/state.json
+Environment=METRICS_FILE={{ caspar_sdi_audio_watchdog_metrics_file }}
+ExecStart=/usr/bin/python3 -u /usr/local/lib/caspar-sdi-audio-watchdog/caspar-sdi-audio-watchdog.py
+StateDirectory=caspar-sdi-audio-watchdog
+Restart=always
+RestartSec=10
+# Root, because it restarts nodm. Kept away from everything else.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/caspar-sdi-audio-watchdog -/var/lib/prometheus/node-exporter
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

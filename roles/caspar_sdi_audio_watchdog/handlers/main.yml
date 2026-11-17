@@ -1,0 +1,15 @@
+---
+- name: Restart caspar-sdi-audio-watchdog
+  ansible.builtin.systemd_service:
+    name: caspar-sdi-audio-watchdog
+    state: restarted
+    daemon_reload: true
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Restart caspar-decklink-audio-probe
+  ansible.builtin.systemd_service:
+    name: caspar-decklink-audio-probe
+    state: restarted
+    daemon_reload: true
+  when: caspar_sdi_audio_probe_enabled
+  ignore_errors: "{{ ansible_check_mode }}"
