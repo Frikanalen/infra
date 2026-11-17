@@ -18,6 +18,12 @@ Environment="RESTART_COMMAND={{ caspar_sdi_audio_watchdog_restart_command }}"
 Environment=DRY_RUN={{ caspar_sdi_audio_watchdog_dry_run | lower }}
 Environment=STATE_FILE=/var/lib/caspar-sdi-audio-watchdog/state.json
 Environment=METRICS_FILE={{ caspar_sdi_audio_watchdog_metrics_file }}
+Environment=ATEM_URL={{ caspar_sdi_audio_watchdog_atem_url }}
+Environment=ATEM_INPUT={{ caspar_sdi_audio_watchdog_atem_input }}
+Environment=ATEM_ME={{ caspar_sdi_audio_watchdog_atem_me }}
+Environment=ON_UNKNOWN_PROGRAM={{ caspar_sdi_audio_watchdog_on_unknown_program }}
+# ATEM_TOKEN, kept out of the world-readable unit.
+EnvironmentFile=-/etc/caspar-sdi-audio-watchdog.env
 ExecStart=/usr/bin/python3 -u /usr/local/lib/caspar-sdi-audio-watchdog/caspar-sdi-audio-watchdog.py
 StateDirectory=caspar-sdi-audio-watchdog
 Restart=always

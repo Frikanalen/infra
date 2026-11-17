@@ -28,6 +28,18 @@ caspar_sdi_audio_watchdog_window_seconds: 21600
 # The same restart as by hand; playout re-cues on reconnect in ~2 s.
 caspar_sdi_audio_watchdog_restart_command: "systemctl restart nodm"
 
+# Air check before a restart: atemkontroll (github.com/Frikanalen/atemkontroll),
+# GET <url>/state. Restart only if atem_input is on program on M/E atem_me;
+# another source, a transition or fade-to-black inhibits. Empty URL, an
+# unreachable API or an unclear state fall back to on_unknown_program:
+# "restart" (silent air is worse than a needless 2 s restart; the rate limits
+# still apply) or "inhibit".
+caspar_sdi_audio_watchdog_atem_url: ""
+caspar_sdi_audio_watchdog_atem_token: ""
+caspar_sdi_audio_watchdog_atem_input: 1
+caspar_sdi_audio_watchdog_atem_me: 0
+caspar_sdi_audio_watchdog_on_unknown_program: restart
+
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
 

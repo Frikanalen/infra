@@ -13,6 +13,11 @@ POST_MAX_DBFS. If that holds for JAM_SECONDS, the watchdog restarts nodm
 (and with it CasparCG). Playout re-cues by itself on reconnect.
 
 Fail-safe: if either input has no fresh audio, nothing is done.
+Air check: before restarting it asks atemkontroll (the studio ATEM's HTTP
+API, GET /state) what is on program. It restarts only if CasparCG's ATEM
+input is on program; another source, a transition or fade-to-black
+inhibits. If atemkontroll is unset, unreachable or unclear, ON_UNKNOWN_PROGRAM
+decides (restart or inhibit).
 Rate-limited: COOLDOWN_SECONDS between restarts, at most MAX_RESTARTS per
 WINDOW_SECONDS (counted across watchdog restarts), then log only.
 
@@ -28,6 +33,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 
 CFG = {
     "PRE_URL": os.environ.get("PRE_URL", "udp://239.1.1.51:5004?overrun_nonfatal=1&fifo_size=1000000"),
@@ -43,6 +49,11 @@ CFG = {
     "DRY_RUN": os.environ.get("DRY_RUN", "true").lower() in ("1", "true", "yes"),
     "STATE_FILE": os.environ.get("STATE_FILE", "/var/lib/caspar-sdi-audio-watchdog/state.json"),
     "METRICS_FILE": os.environ.get("METRICS_FILE", ""),
+    "ATEM_URL": os.environ.get("ATEM_URL", "").rstrip("/"),
+    "ATEM_TOKEN": os.environ.get("ATEM_TOKEN", ""),
+    "ATEM_INPUT": int(os.environ.get("ATEM_INPUT", "1")),
+    "ATEM_ME": int(os.environ.get("ATEM_ME", "0")),
+    "ON_UNKNOWN_PROGRAM": os.environ.get("ON_UNKNOWN_PROGRAM", "restart"),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -107,6 +118,48 @@ class Level:
             backoff = min(backoff * 2, 60)
 
 
+def program_decision(state, input_id, me=0):
+    """Read an atemkontroll /state document.
+
+    Returns (verdict, detail), verdict one of:
+      "on_air"  - our input is on program, no transition: restarting is right
+      "inhibit" - another source is on program, or a transition or
+                  fade-to-black is under way
+      "unknown" - the mixer state can't be trusted
+    """
+    if not isinstance(state, dict) or not state.get("connected"):
+        return "unknown", "atemkontroll not connected to the mixer"
+    mes = [m for m in state.get("mixEffects") or [] if isinstance(m, dict) and m.get("index") == me]
+    if not mes:
+        return "unknown", f"no M/E {me} in state"
+    m = mes[0]
+    program = m.get("program")
+    if not isinstance(program, int):
+        return "unknown", f"program={program!r}"
+    ftb = m.get("fadeToBlack") or {}
+    if m.get("inTransition") or ftb.get("inTransition"):
+        return "inhibit", f"program={program} transition in progress"
+    if ftb.get("fullyBlack"):
+        return "inhibit", f"program={program} faded to black"
+    if program != input_id:
+        return "inhibit", f"program={program} (caspar is input {input_id})"
+    return "on_air", f"program={program}"
+
+
+def ask_atem():
+    if not CFG["ATEM_URL"]:
+        return "unknown", "atemkontroll URL not configured"
+    req = urllib.request.Request(CFG["ATEM_URL"] + "/state")
+    if CFG["ATEM_TOKEN"]:
+        req.add_header("Authorization", "Bearer " + CFG["ATEM_TOKEN"])
+    try:
+        with urllib.request.urlopen(req, timeout=3) as r:
+            state = json.load(r)
+    except Exception as e:
+        return "unknown", f"atemkontroll unreachable: {e!r}"
+    return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"])
+
+
 def load_state():
     try:
         with open(CFG["STATE_FILE"]) as f:
@@ -151,13 +204,15 @@ def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart):
 
 def main():
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    log("INFO", "starting", **{k.lower(): v for k, v in CFG.items() if not k.endswith("_URL")})
+    log("INFO", "starting", **{k.lower(): v for k, v in CFG.items()
+                               if not k.endswith("_URL") and k != "ATEM_TOKEN"}, atem_url=CFG["ATEM_URL"] or "unset")
     pre = Level("pre", CFG["PRE_URL"])
     post = Level("post", CFG["POST_URL"])
     state = load_state()
     jam_since = None
     last_status = 0.0
     last_limit_log = 0.0
+    last_inhibit_log = 0.0
 
     while True:
         time.sleep(1)
@@ -202,11 +257,20 @@ def main():
                     window_s=CFG["WINDOW_SECONDS"])
             continue
 
+        verdict, detail = ask_atem()
+        if verdict == "unknown":
+            verdict = "on_air" if CFG["ON_UNKNOWN_PROGRAM"] == "restart" else "inhibit"
+            detail = f"program unknown ({detail}); on_unknown_program={CFG['ON_UNKNOWN_PROGRAM']}"
+        if verdict == "inhibit":
+            if now - last_inhibit_log >= 300:
+                last_inhibit_log = now
+                log("WARN", "SDI audio jammed; restart inhibited", reason=repr(detail), jammed_s=jammed_for)
+            continue
         if CFG["DRY_RUN"]:
-            log("CRIT", "SDI audio jammed; DRY RUN, would restart", command=repr(CFG["RESTART_COMMAND"]),
+            log("CRIT", "SDI audio jammed; DRY RUN, would restart", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
                 jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}")
         else:
-            log("CRIT", "SDI audio jammed; restarting CasparCG", command=repr(CFG["RESTART_COMMAND"]),
+            log("CRIT", "SDI audio jammed; restarting CasparCG", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
                 jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}",
                 restarts_in_window=len(state["restarts"]) + 1)
             rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)

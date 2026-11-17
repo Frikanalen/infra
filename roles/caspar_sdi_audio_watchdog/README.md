@@ -16,6 +16,16 @@ restarting CasparCG brought the audio back.
   - A dead embedder measures about -83 dBFS on the return.
 - When jammed, it runs `systemctl restart nodm`, the same restart as by hand.
   Playout re-cues by itself.
+- Before restarting, asks atemkontroll (`GET <atem_url>/state`) what the
+  studio ATEM has on program.
+  - It restarts only if caspar1's input (1) is on program on M/E 0.
+  - Another source, a transition or fade-to-black inhibits the restart. It logs
+    `restart inhibited reason='program=3 ...'` every 5 min while jammed.
+  - An unset URL, an unreachable API or an unclear state follow
+    `caspar_sdi_audio_watchdog_on_unknown_program`: `restart` (the default) or
+    `inhibit`.
+  - `tests/` holds unit tests for the `/state` parsing:
+    `python3 -m unittest discover -s roles/caspar_sdi_audio_watchdog/tests`.
 - Fails safe: if either input has had no audio for 5 s, it does nothing.
 - Rate-limited:
   - 10 minutes between restarts.

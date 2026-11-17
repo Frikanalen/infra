@@ -20,6 +20,19 @@
     mode: "0755"
   notify: Restart caspar-sdi-audio-watchdog
 
+- name: Check the on-unknown-program policy
+  ansible.builtin.assert:
+    that: caspar_sdi_audio_watchdog_on_unknown_program in ["restart", "inhibit"]
+    fail_msg: caspar_sdi_audio_watchdog_on_unknown_program must be restart or inhibit
+
+- name: Install the atemkontroll token
+  ansible.builtin.copy:
+    content: "ATEM_TOKEN={{ caspar_sdi_audio_watchdog_atem_token }}\n"
+    dest: /etc/caspar-sdi-audio-watchdog.env
+    mode: "0600"
+  no_log: true
+  notify: Restart caspar-sdi-audio-watchdog
+
 - name: Install the watchdog service
   ansible.builtin.template:
     src: caspar-sdi-audio-watchdog.service.j2
