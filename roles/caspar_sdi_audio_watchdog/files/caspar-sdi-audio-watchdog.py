@@ -6,18 +6,23 @@ short output timing hiccup, while the mixer and the ffmpeg (multicast)
 consumer keep good audio. Only re-creating the consumer brings it back.
 
 This compares two audio levels once a second:
-  * pre:  the channel's own multicast (before the DeckLink card)
-  * post: the encoder appliance's program return (after SDI)
-The audio is "jammed" when pre is above PRE_MIN_DBFS while post is below
-POST_MAX_DBFS. If that holds for JAM_SECONDS, the watchdog restarts nodm
-(and with it CasparCG). Playout re-cues by itself on reconnect.
+  * pre: the channel's own multicast (before the DeckLink card)
+  * SDI: the studio ATEM's audio meter for CasparCG's input, from
+    atemkontroll's /state, when fresh; otherwise the encoder appliance's
+    program return
+The audio is "jammed" when pre is above PRE_MIN_DBFS while SDI is silent
+(ATEM meter at or below ATEM_SILENT_DBFS on both channels, or the return
+below POST_MAX_DBFS). If that holds for JAM_SECONDS, the watchdog restarts
+nodm (and with it CasparCG). Playout re-cues by itself on reconnect.
 
 Fail-safe: if either input has no fresh audio, nothing is done.
-Air check: before restarting it asks atemkontroll (the studio ATEM's HTTP
-API, GET /state) what is on program. It restarts only if CasparCG's ATEM
-input is on program; another source, a transition or fade-to-black
-inhibits. If atemkontroll is unset, unreachable or unclear, ON_UNKNOWN_PROGRAM
-decides (restart or inhibit).
+Air check before restarting, from atemkontroll (the studio ATEM's HTTP API):
+  * jam seen on the ATEM meter: restart whether or not CasparCG is on program
+    (RESTART_OFF_PROGRAM), except during a transition involving its input.
+  * jam seen on the program return: restart only if CasparCG's input is on
+    program; another source, a transition or fade-to-black inhibits.
+  * atemkontroll unset, unreachable or unclear: ON_UNKNOWN_PROGRAM decides.
+After a cut to CasparCG, a jam counts only after PROGRAM_GRACE_SECONDS.
 Rate-limited: COOLDOWN_SECONDS between restarts, at most MAX_RESTARTS per
 WINDOW_SECONDS (counted across watchdog restarts), then log only.
 
@@ -34,6 +39,7 @@ import sys
 import threading
 import time
 import urllib.request
+from datetime import datetime
 
 CFG = {
     "PRE_URL": os.environ.get("PRE_URL", "udp://239.1.1.51:5004?overrun_nonfatal=1&fifo_size=1000000"),
@@ -55,6 +61,9 @@ CFG = {
     "ATEM_ME": int(os.environ.get("ATEM_ME", "0")),
     "ATEM_INPUT_NAME": os.environ.get("ATEM_INPUT_NAME", ""),
     "PROGRAM_GRACE_SECONDS": int(os.environ.get("PROGRAM_GRACE_SECONDS", "15")),
+    "ATEM_SILENT_DBFS": float(os.environ.get("ATEM_SILENT_DBFS", "-58")),
+    "LEVELS_STALE_SECONDS": float(os.environ.get("LEVELS_STALE_SECONDS", "3")),
+    "RESTART_OFF_PROGRAM": os.environ.get("RESTART_OFF_PROGRAM", "true").lower() in ("1", "true", "yes"),
     "ON_UNKNOWN_PROGRAM": os.environ.get("ON_UNKNOWN_PROGRAM", "restart"),
 }
 
@@ -190,42 +199,116 @@ def ask_atem():
     return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"], CFG["ATEM_INPUT_NAME"])
 
 
-class ProgramWatch:
-    """Polls the program source so a jam right after a cut to CasparCG can
-    wait out PROGRAM_GRACE_SECONDS (the return lags the cut by a few s)."""
+def input_levels(state, input_id, now, stale_seconds):
+    """(left, right) dBFS of the ATEM audio input, or None if not fresh.
 
-    def __init__(self):
+    atemkontroll's /state "audio" block (atemkontroll#3): levels arrive ~10
+    times a second, floored at -60; an old updatedAt means unknown, not silent.
+    """
+    if not isinstance(state, dict) or not state.get("connected"):
+        return None
+    audio = state.get("audio") or {}
+    updated = audio.get("updatedAt")
+    if not updated:
+        return None
+    try:
+        t = datetime.fromisoformat(updated.replace("Z", "+00:00")).timestamp()
+    except (ValueError, AttributeError):
+        return None
+    if abs(now - t) > stale_seconds:
+        return None
+    for inp in audio.get("inputs") or []:
+        if isinstance(inp, dict) and inp.get("input") == input_id:
+            left, right = inp.get("leftDbfs"), inp.get("rightDbfs")
+            if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return float(left), float(right)
+    return None
+
+
+def atem_signal_decision(state, input_id, me, restart_off_program):
+    """Restart decision when the jam was seen on the ATEM's own input meter.
+
+    The meter measures caspar1's SDI directly, so it doesn't matter what is on
+    program: off program a restart is harmless and fixes it before it airs.
+    Only a transition involving the input inhibits (the grace after a cut is
+    applied to the jam timer).
+    """
+    m = next((m for m in state.get("mixEffects") or []
+              if isinstance(m, dict) and m.get("index") == me), None)
+    if m is None:
+        return "on_air", f"no M/E {me} in state; ATEM meter shows the jam"
+    program, preview = m.get("program"), m.get("preview")
+    if m.get("inTransition") and input_id in (program, preview):
+        return "inhibit", f"transition involving input {input_id} (program={program} preview={preview})"
+    if program == input_id:
+        return "on_air", f"program={program}"
+    if restart_off_program:
+        return "on_air", f"program={program}, input {input_id} off program (restart_off_program)"
+    return "inhibit", f"program={program} (caspar is input {input_id}; restart_off_program=false)"
+
+
+class AtemWatch:
+    """Polls atemkontroll's /state once a second in the background. Tracks the
+    program source (for the grace after a cut to CasparCG) and the ATEM's
+    audio meter for CasparCG's input."""
+
+    def __init__(self, every=1.0, start=True):
+        self.every = every
+        self.state = None
+        self.fetched = 0.0
         self.on_air_since = None  # when our input last went to program
-        self.last_poll = 0.0
         self.started = time.time()
+        if start and CFG["ATEM_URL"]:
+            threading.Thread(target=self._run, daemon=True, name="atem").start()
 
-    def poll(self, now, every=5):
-        if not CFG["ATEM_URL"] or now - self.last_poll < every:
-            return
-        self.last_poll = now
+    def _run(self):
+        while True:
+            self.poll(time.time())
+            time.sleep(self.every)
+
+    def poll(self, now):
         try:
             state = fetch_atem_state()
         except Exception:
-            return  # unknown: keep what we had
+            return  # unknown: keep what we had, it goes stale by itself
+        self.state, self.fetched = state, now
         program = program_of(state, CFG["ATEM_ME"])
         if program is None:
             return
-        ours = resolve_input(state, CFG["ATEM_INPUT_NAME"], CFG["ATEM_INPUT"])
-        if program != ours:
+        if program != self.ours():
             self.on_air_since = None
         elif self.on_air_since is None:
             # Already on program when we started: no grace needed.
-            first = now - self.started < every + 1
+            first = now - self.started < 6
             self.on_air_since = 0.0 if first else now
             if not first:
                 log("INFO", "CasparCG cut to program", program=program,
                     grace_s=CFG["PROGRAM_GRACE_SECONDS"])
+
+    def fresh_state(self, now):
+        return self.state if now - self.fetched < 3 else None
+
+    def ours(self):
+        return resolve_input(self.state, CFG["ATEM_INPUT_NAME"], CFG["ATEM_INPUT"])
+
+    def sdi_levels(self, now):
+        return input_levels(self.fresh_state(now), self.ours(), now, CFG["LEVELS_STALE_SECONDS"])
 
     def jam_start(self, jam_since):
         """When the jam starts to count: not before the grace after a cut."""
         if self.on_air_since:
             return max(jam_since, self.on_air_since + CFG["PROGRAM_GRACE_SECONDS"])
         return jam_since
+
+    def decide(self, signal, now):
+        if not CFG["ATEM_URL"]:
+            return "unknown", "atemkontroll URL not configured"
+        state = self.fresh_state(now)
+        if state is None:
+            return "unknown", "atemkontroll unreachable or stale"
+        if signal == "atem":
+            return atem_signal_decision(state, self.ours(), CFG["ATEM_ME"], CFG["RESTART_OFF_PROGRAM"])
+        return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"], CFG["ATEM_INPUT_NAME"])
 
 
 def load_state():
@@ -281,7 +364,8 @@ def main():
     last_status = 0.0
     last_limit_log = 0.0
     last_inhibit_log = 0.0
-    watch = ProgramWatch()
+    watch = AtemWatch()
+    jam_signal = None
 
     while True:
         time.sleep(1)
@@ -289,21 +373,32 @@ def main():
         state["restarts"] = [t for t in state["restarts"] if now - t < CFG["WINDOW_SECONDS"]]
         last_restart = max(state["restarts"], default=0)
 
-        if not (pre.fresh() and post.fresh()):
+        # The SDI signal: the ATEM's meter for CasparCG's input when fresh,
+        # else the encoder's program return.
+        levels = watch.sdi_levels(now)
+        if levels is not None:
+            sdi_src, sdi_silent = "atem", max(levels) <= CFG["ATEM_SILENT_DBFS"]
+            sdi_desc = f"{levels[0]:.1f}/{levels[1]:.1f}"
+        elif post.fresh():
+            sdi_src, sdi_silent = "return", post.dbfs < CFG["POST_MAX_DBFS"]
+            sdi_desc = f"{post.dbfs:.1f}"
+        else:
+            sdi_src, sdi_silent, sdi_desc = None, False, "stale"
+
+        if not pre.fresh() or sdi_src is None:
             if jam_since is not None:
-                log("INFO", "input lost, jam timer reset", pre_fresh=pre.fresh(), post_fresh=post.fresh())
+                log("INFO", "input lost, jam timer reset", pre_fresh=pre.fresh(), sdi_signal=sdi_src)
             jam_since = None
-        elif pre.dbfs > CFG["PRE_MIN_DBFS"] and post.dbfs < CFG["POST_MAX_DBFS"]:
-            if jam_since is None:
-                jam_since = now
-                log("WARN", "possible SDI audio jam", pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}")
+        elif pre.dbfs > CFG["PRE_MIN_DBFS"] and sdi_silent:
+            if jam_since is None or jam_signal != sdi_src:
+                jam_since, jam_signal = now, sdi_src
+                log("WARN", "possible SDI audio jam", signal=sdi_src, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
         else:
             if jam_since is not None and now - jam_since >= 5:
-                log("INFO", "condition cleared", after_s=int(now - jam_since),
-                    pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}")
+                log("INFO", "condition cleared", signal=sdi_src, after_s=int(now - jam_since),
+                    pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
             jam_since = None
 
-        watch.poll(now)
         jammed_for = max(0, int(now - watch.jam_start(jam_since))) if jam_since else 0
         write_metrics(pre, post, jammed_for, len(state["restarts"]), last_restart)
 
@@ -312,6 +407,7 @@ def main():
             log("INFO", "status",
                 pre_dbfs=f"{pre.dbfs:.1f}" if pre.fresh() else "stale",
                 post_dbfs=f"{post.dbfs:.1f}" if post.fresh() else "stale",
+                sdi_signal=sdi_src, sdi_dbfs=sdi_desc,
                 jammed_s=jammed_for, restarts_in_window=len(state["restarts"]))
 
         if jammed_for < CFG["JAM_SECONDS"]:
@@ -327,21 +423,22 @@ def main():
                     window_s=CFG["WINDOW_SECONDS"])
             continue
 
-        verdict, detail = ask_atem()
+        verdict, detail = watch.decide(jam_signal, now)
         if verdict == "unknown":
             verdict = "on_air" if CFG["ON_UNKNOWN_PROGRAM"] == "restart" else "inhibit"
             detail = f"program unknown ({detail}); on_unknown_program={CFG['ON_UNKNOWN_PROGRAM']}"
         if verdict == "inhibit":
             if now - last_inhibit_log >= 300:
                 last_inhibit_log = now
-                log("WARN", "SDI audio jammed; restart inhibited", reason=repr(detail), jammed_s=jammed_for)
+                log("WARN", "SDI audio jammed; restart inhibited", reason=repr(detail), signal=jam_signal,
+                    jammed_s=jammed_for)
             continue
         if CFG["DRY_RUN"]:
             log("CRIT", "SDI audio jammed; DRY RUN, would restart", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
-                jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}")
+                signal=jam_signal, jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
         else:
             log("CRIT", "SDI audio jammed; restarting CasparCG", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
-                jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}",
+                signal=jam_signal, jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc,
                 restarts_in_window=len(state["restarts"]) + 1)
             rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)
             log("INFO", "restart command finished", rc=rc)

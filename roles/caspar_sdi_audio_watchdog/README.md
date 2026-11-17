@@ -9,18 +9,30 @@ restarting CasparCG brought the audio back.
 ## What it runs
 
 **caspar-sdi-audio-watchdog**
-- Reads one-second audio RMS from two sources with the ffmpeg CLI:
-  - pre: the channel's own multicast, from before the DeckLink card.
-  - post: the encoder appliance's program return, from after SDI.
-- Counts as jammed when pre is above -50 dBFS while post is below -70 dBFS for 45 s.
-  - A dead embedder measures about -83 dBFS on the return.
+- Compares two audio levels once a second:
+  - pre: the channel's own multicast, from before the DeckLink card, read
+    with the ffmpeg CLI.
+  - SDI, from one of two sources, and every log line says which (`signal=`):
+    - `atem`: the studio ATEM's audio meter for caspar1's input, from
+      atemkontroll's `/state` `audio` block (atemkontroll#3), polled every
+      second. This is preferred: it measures caspar1's SDI directly,
+      whatever is on program.
+    - `return`: the encoder appliance's program return, read with ffmpeg.
+      Used whenever the ATEM levels are missing or older than 3 s.
+- Counts as jammed when pre is above -50 dBFS while SDI is silent, for 45 s:
+  - `atem`: at or below -58 dBFS on both channels (atemkontroll floors at -60).
+  - `return`: below -70 dBFS. A dead embedder measures about -83 dBFS there.
 - When jammed, it runs `systemctl restart nodm`, the same restart as by hand.
   Playout re-cues by itself.
-- Before restarting, asks atemkontroll (`GET <atem_url>/state`) what the
-  studio ATEM has on program.
-  - It restarts only if caspar1's input (1) is on program on M/E 0.
-  - Another source, a transition or fade-to-black inhibits the restart. It logs
-    `restart inhibited reason='program=3 ...'` every 5 min while jammed.
+- Before restarting, checks what the studio ATEM has on program (M/E 0;
+  caspar1 is input 1).
+  - Jam seen on the `atem` signal: it restarts whether or not caspar1 is on
+    program (`_restart_off_program`, default true), because off program a
+    restart is harmless and fixes the audio before it airs. A transition
+    involving input 1 inhibits.
+  - Jam seen on the `return` signal: it restarts only if input 1 is on
+    program. Another source, a transition or fade-to-black inhibits.
+  - While inhibited it logs `restart inhibited reason='...'` every 5 min.
   - An unset URL, an unreachable API or an unclear state follow
     `caspar_sdi_audio_watchdog_on_unknown_program`: `restart` (the default) or
     `inhibit`.

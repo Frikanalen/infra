@@ -7,6 +7,7 @@ import copy
 import importlib.util
 import os
 import unittest
+from datetime import datetime, timezone
 
 HERE = os.path.dirname(__file__)
 spec = importlib.util.spec_from_file_location(
@@ -86,6 +87,54 @@ class InputName(unittest.TestCase):
         self.assertEqual(watchdog.resolve_input(MOCK_STATE, "", 1), 1)
 
 
+def with_audio(left, right, age=0.0, now=1_800_000_000.0):
+    s = copy.deepcopy(MOCK_STATE)
+    t = datetime.fromtimestamp(now - age, timezone.utc).isoformat().replace("+00:00", "Z")
+    s["audio"] = {"system": "classic", "updatedAt": t, "master": None,
+                  "inputs": [{"input": 1, "leftDbfs": left, "rightDbfs": right,
+                              "leftPeakDbfs": left, "rightPeakDbfs": right}]}
+    return s
+
+
+NOW = 1_800_000_000.0
+
+
+class AtemLevels(unittest.TestCase):
+    def test_fresh_levels(self):
+        self.assertEqual(watchdog.input_levels(with_audio(-60, -60), 1, NOW, 3), (-60.0, -60.0))
+
+    def test_stale_or_missing_is_unknown(self):
+        self.assertIsNone(watchdog.input_levels(with_audio(-60, -60, age=10), 1, NOW, 3))
+        self.assertIsNone(watchdog.input_levels(with_audio(-60, -60), 2, NOW, 3))
+        self.assertIsNone(watchdog.input_levels(MOCK_STATE, 1, NOW, 3))
+        s = with_audio(-60, -60)
+        s["audio"]["updatedAt"] = None
+        self.assertIsNone(watchdog.input_levels(s, 1, NOW, 3))
+        s = with_audio(-60, -60)
+        s["connected"] = False
+        self.assertIsNone(watchdog.input_levels(s, 1, NOW, 3))
+
+
+class AtemSignalDecision(unittest.TestCase):
+    def test_on_program_restarts(self):
+        self.assertEqual(watchdog.atem_signal_decision(MOCK_STATE, 1, 0, True)[0], "on_air")
+
+    def test_off_program_restarts_unless_disabled(self):
+        s = with_me(program=3, preview=2)
+        self.assertEqual(watchdog.atem_signal_decision(s, 1, 0, True)[0], "on_air")
+        self.assertEqual(watchdog.atem_signal_decision(s, 1, 0, False)[0], "inhibit")
+
+    def test_transition_involving_input_inhibits(self):
+        s = with_me(program=3, preview=1, inTransition=True)
+        self.assertEqual(watchdog.atem_signal_decision(s, 1, 0, True)[0], "inhibit")
+        s = with_me(program=3, preview=2, inTransition=True)  # not ours
+        self.assertEqual(watchdog.atem_signal_decision(s, 1, 0, True)[0], "on_air")
+
+    def test_fade_to_black_does_not_matter(self):
+        s = with_me(fadeToBlack={"fullyBlack": True, "inTransition": False})
+        self.assertEqual(watchdog.atem_signal_decision(s, 1, 0, True)[0], "on_air")
+
+
 class Grace(unittest.TestCase):
     def setUp(self):
         watchdog.CFG["ATEM_URL"] = "http://atem.invalid"
@@ -100,7 +149,7 @@ class Grace(unittest.TestCase):
         watchdog.fetch_atem_state = self.real_fetch
 
     def test_cut_to_caspar_delays_the_jam(self):
-        w = watchdog.ProgramWatch()
+        w = watchdog.AtemWatch(start=False)
         w.started = 0
         self.states = [with_me(program=3), with_me(program=1)]
         w.poll(100)           # someone else on program
@@ -111,13 +160,13 @@ class Grace(unittest.TestCase):
         self.assertEqual(w.jam_start(200), 200)
 
     def test_on_program_at_start_has_no_grace(self):
-        w = watchdog.ProgramWatch()
+        w = watchdog.AtemWatch(start=False)
         self.states = [with_me(program=1)]
         w.poll(w.started + 1)
         self.assertEqual(w.jam_start(50), 50)
 
     def test_unreachable_keeps_previous(self):
-        w = watchdog.ProgramWatch()
+        w = watchdog.AtemWatch(start=False)
         w.started = 0
         w.on_air_since = 110
         def boom():
