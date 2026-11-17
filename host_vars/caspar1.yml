@@ -26,8 +26,7 @@ casparcg_ffmpeg_args: >-
 # (roles/caspar_sdi_audio_watchdog). Acting, not dry run, at the owner's
 # request on 2026-11-17.
 caspar_sdi_audio_watchdog_dry_run: false
-# caspar1 is input 1 on the studio ATEM (the role default). Set
-# caspar_sdi_audio_watchdog_atem_url once atemkontroll runs on prod (infra#123
-# and a clusters/prod entry) and is reachable from caspar1. Until then the
-# watchdog can't see the mixer and follows on_unknown_program (restart).
-caspar_sdi_audio_watchdog_atem_url: ""
+# Air check and SDI meter from atemkontroll (roles/caspar_sdi_audio_watchdog).
+# caspar1 is the ATEM input named "caspar1" (short name VM1), input 1.
+caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
+caspar_sdi_audio_watchdog_atem_input_name: caspar1

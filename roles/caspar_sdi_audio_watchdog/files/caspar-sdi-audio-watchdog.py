@@ -408,6 +408,7 @@ def main():
                 pre_dbfs=f"{pre.dbfs:.1f}" if pre.fresh() else "stale",
                 post_dbfs=f"{post.dbfs:.1f}" if post.fresh() else "stale",
                 sdi_signal=sdi_src, sdi_dbfs=sdi_desc,
+                program=program_of(watch.fresh_state(now), CFG["ATEM_ME"]) if CFG["ATEM_URL"] else "n/a",
                 jammed_s=jammed_for, restarts_in_window=len(state["restarts"]))
 
         if jammed_for < CFG["JAM_SECONDS"]:
