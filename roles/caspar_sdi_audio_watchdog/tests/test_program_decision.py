@@ -71,5 +71,61 @@ class ProgramDecision(unittest.TestCase):
         self.assertEqual(watchdog.ask_atem()[0], "unknown")
 
 
+class InputName(unittest.TestCase):
+    def test_resolves_by_long_or_short_name(self):
+        s = copy.deepcopy(MOCK_STATE)
+        s["inputs"].append({"id": 4, "shortName": "CCG1", "longName": "caspar1"})
+        self.assertEqual(watchdog.resolve_input(s, "caspar1", 1), 4)
+        self.assertEqual(watchdog.resolve_input(s, "ccg1", 1), 4)
+        s["mixEffects"][0]["program"] = 4
+        self.assertEqual(watchdog.program_decision(s, 1, input_name="caspar1")[0], "on_air")
+        self.assertEqual(watchdog.program_decision(s, 1)[0], "inhibit")
+
+    def test_unknown_name_falls_back(self):
+        self.assertEqual(watchdog.resolve_input(MOCK_STATE, "nope", 1), 1)
+        self.assertEqual(watchdog.resolve_input(MOCK_STATE, "", 1), 1)
+
+
+class Grace(unittest.TestCase):
+    def setUp(self):
+        watchdog.CFG["ATEM_URL"] = "http://atem.invalid"
+        watchdog.CFG["ATEM_INPUT"] = 1
+        watchdog.CFG["ATEM_INPUT_NAME"] = ""
+        watchdog.CFG["PROGRAM_GRACE_SECONDS"] = 15
+        self.states = []
+        self.real_fetch = watchdog.fetch_atem_state
+        watchdog.fetch_atem_state = lambda: self.states.pop(0)
+
+    def tearDown(self):
+        watchdog.fetch_atem_state = self.real_fetch
+
+    def test_cut_to_caspar_delays_the_jam(self):
+        w = watchdog.ProgramWatch()
+        w.started = 0
+        self.states = [with_me(program=3), with_me(program=1)]
+        w.poll(100)           # someone else on program
+        self.assertIsNone(w.on_air_since)
+        w.poll(110)           # cut to caspar at 110
+        self.assertEqual(w.on_air_since, 110)
+        self.assertEqual(w.jam_start(105), 125)  # jam seen at 105 counts from 110+15
+        self.assertEqual(w.jam_start(200), 200)
+
+    def test_on_program_at_start_has_no_grace(self):
+        w = watchdog.ProgramWatch()
+        self.states = [with_me(program=1)]
+        w.poll(w.started + 1)
+        self.assertEqual(w.jam_start(50), 50)
+
+    def test_unreachable_keeps_previous(self):
+        w = watchdog.ProgramWatch()
+        w.started = 0
+        w.on_air_since = 110
+        def boom():
+            raise OSError("down")
+        watchdog.fetch_atem_state = boom
+        w.poll(200)
+        self.assertEqual(w.on_air_since, 110)
+
+
 if __name__ == "__main__":
     unittest.main()

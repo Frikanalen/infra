@@ -24,6 +24,11 @@ restarting CasparCG brought the audio back.
   - An unset URL, an unreachable API or an unclear state follow
     `caspar_sdi_audio_watchdog_on_unknown_program`: `restart` (the default) or
     `inhibit`.
+  - `caspar_sdi_audio_watchdog_atem_input_name` (optional) finds the input by
+    its ATEM name instead of the number.
+  - It polls the program every 5 s. After a cut to CasparCG, a jam only starts
+    to count 15 s later (`_program_grace_seconds`), because the return lags
+    the cut.
   - `tests/` holds unit tests for the `/state` parsing:
     `python3 -m unittest discover -s roles/caspar_sdi_audio_watchdog/tests`.
 - Fails safe: if either input has had no audio for 5 s, it does nothing.

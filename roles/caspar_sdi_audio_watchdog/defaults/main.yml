@@ -38,6 +38,12 @@ caspar_sdi_audio_watchdog_atem_url: ""
 caspar_sdi_audio_watchdog_atem_token: ""
 caspar_sdi_audio_watchdog_atem_input: 1
 caspar_sdi_audio_watchdog_atem_me: 0
+# Optional: find the input by its ATEM longName/shortName instead (falls back
+# to atem_input if no input has that name), so re-patching can't break it.
+caspar_sdi_audio_watchdog_atem_input_name: ""
+# After a cut to CasparCG, wait this long before a jam starts to count: the
+# program return lags the cut by a few seconds. Needs atem_url.
+caspar_sdi_audio_watchdog_program_grace_seconds: 15
 caspar_sdi_audio_watchdog_on_unknown_program: restart
 
 # true: only log what it would do. host_vars set false where it should act.

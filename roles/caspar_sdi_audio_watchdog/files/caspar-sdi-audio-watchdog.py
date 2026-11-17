@@ -53,6 +53,8 @@ CFG = {
     "ATEM_TOKEN": os.environ.get("ATEM_TOKEN", ""),
     "ATEM_INPUT": int(os.environ.get("ATEM_INPUT", "1")),
     "ATEM_ME": int(os.environ.get("ATEM_ME", "0")),
+    "ATEM_INPUT_NAME": os.environ.get("ATEM_INPUT_NAME", ""),
+    "PROGRAM_GRACE_SECONDS": int(os.environ.get("PROGRAM_GRACE_SECONDS", "15")),
     "ON_UNKNOWN_PROGRAM": os.environ.get("ON_UNKNOWN_PROGRAM", "restart"),
 }
 
@@ -118,7 +120,29 @@ class Level:
             backoff = min(backoff * 2, 60)
 
 
-def program_decision(state, input_id, me=0):
+def resolve_input(state, name, fallback):
+    """The id of the ATEM input whose longName or shortName is name, else fallback."""
+    if name and isinstance(state, dict):
+        for inp in state.get("inputs") or []:
+            if not isinstance(inp, dict):
+                continue
+            names = {str(inp.get("longName", "")).lower(), str(inp.get("shortName", "")).lower()}
+            if name.lower() in names and isinstance(inp.get("id"), int):
+                return inp["id"]
+    return fallback
+
+
+def program_of(state, me=0):
+    """The program input on M/E me, or None if the state can't be trusted."""
+    if not isinstance(state, dict) or not state.get("connected"):
+        return None
+    for m in state.get("mixEffects") or []:
+        if isinstance(m, dict) and m.get("index") == me and isinstance(m.get("program"), int):
+            return m["program"]
+    return None
+
+
+def program_decision(state, input_id, me=0, input_name=""):
     """Read an atemkontroll /state document.
 
     Returns (verdict, detail), verdict one of:
@@ -129,6 +153,7 @@ def program_decision(state, input_id, me=0):
     """
     if not isinstance(state, dict) or not state.get("connected"):
         return "unknown", "atemkontroll not connected to the mixer"
+    input_id = resolve_input(state, input_name, input_id)
     mes = [m for m in state.get("mixEffects") or [] if isinstance(m, dict) and m.get("index") == me]
     if not mes:
         return "unknown", f"no M/E {me} in state"
@@ -146,18 +171,61 @@ def program_decision(state, input_id, me=0):
     return "on_air", f"program={program}"
 
 
-def ask_atem():
-    if not CFG["ATEM_URL"]:
-        return "unknown", "atemkontroll URL not configured"
+def fetch_atem_state():
+    """atemkontroll's /state, or raises."""
     req = urllib.request.Request(CFG["ATEM_URL"] + "/state")
     if CFG["ATEM_TOKEN"]:
         req.add_header("Authorization", "Bearer " + CFG["ATEM_TOKEN"])
+    with urllib.request.urlopen(req, timeout=3) as r:
+        return json.load(r)
+
+
+def ask_atem():
+    if not CFG["ATEM_URL"]:
+        return "unknown", "atemkontroll URL not configured"
     try:
-        with urllib.request.urlopen(req, timeout=3) as r:
-            state = json.load(r)
+        state = fetch_atem_state()
     except Exception as e:
         return "unknown", f"atemkontroll unreachable: {e!r}"
-    return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"])
+    return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"], CFG["ATEM_INPUT_NAME"])
+
+
+class ProgramWatch:
+    """Polls the program source so a jam right after a cut to CasparCG can
+    wait out PROGRAM_GRACE_SECONDS (the return lags the cut by a few s)."""
+
+    def __init__(self):
+        self.on_air_since = None  # when our input last went to program
+        self.last_poll = 0.0
+        self.started = time.time()
+
+    def poll(self, now, every=5):
+        if not CFG["ATEM_URL"] or now - self.last_poll < every:
+            return
+        self.last_poll = now
+        try:
+            state = fetch_atem_state()
+        except Exception:
+            return  # unknown: keep what we had
+        program = program_of(state, CFG["ATEM_ME"])
+        if program is None:
+            return
+        ours = resolve_input(state, CFG["ATEM_INPUT_NAME"], CFG["ATEM_INPUT"])
+        if program != ours:
+            self.on_air_since = None
+        elif self.on_air_since is None:
+            # Already on program when we started: no grace needed.
+            first = now - self.started < every + 1
+            self.on_air_since = 0.0 if first else now
+            if not first:
+                log("INFO", "CasparCG cut to program", program=program,
+                    grace_s=CFG["PROGRAM_GRACE_SECONDS"])
+
+    def jam_start(self, jam_since):
+        """When the jam starts to count: not before the grace after a cut."""
+        if self.on_air_since:
+            return max(jam_since, self.on_air_since + CFG["PROGRAM_GRACE_SECONDS"])
+        return jam_since
 
 
 def load_state():
@@ -213,6 +281,7 @@ def main():
     last_status = 0.0
     last_limit_log = 0.0
     last_inhibit_log = 0.0
+    watch = ProgramWatch()
 
     while True:
         time.sleep(1)
@@ -234,7 +303,8 @@ def main():
                     pre_dbfs=f"{pre.dbfs:.1f}", post_dbfs=f"{post.dbfs:.1f}")
             jam_since = None
 
-        jammed_for = int(now - jam_since) if jam_since else 0
+        watch.poll(now)
+        jammed_for = max(0, int(now - watch.jam_start(jam_since))) if jam_since else 0
         write_metrics(pre, post, jammed_for, len(state["restarts"]), last_restart)
 
         if now - last_status >= 60:
