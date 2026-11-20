@@ -62,3 +62,11 @@ node_exporter_zfs_timer_name: zfs-textfile-collector
 # roles/node_exporter_scrape -- running it faster only produces samples nothing
 # reads, and every run forks a handful of zpool/zfs commands.
 node_exporter_zfs_interval: 60s
+
+# NVIDIA GPU metrics from nvidia-smi, on hosts that have it (caspar1). See
+# files/nvidia-textfile-collector.sh. Every 15 s: a GPU fault on the air
+# machine is worth seeing at the resolution of the other node metrics.
+node_exporter_nvidia_collector: true
+node_exporter_nvidia_script_path: /usr/local/bin/nvidia-textfile-collector
+node_exporter_nvidia_timer_name: nvidia-textfile-collector
+node_exporter_nvidia_interval: 15s

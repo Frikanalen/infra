@@ -127,13 +127,12 @@
       vars:
         d9036_exporter_state: absent
 
-    # Scrapes the node_exporters that playbooks/site.yml installs on file01
-    # and the Proxmox hypervisors -- hosts this cluster does not run and
-    # cannot discover, so their addresses are written out as a selectorless
-    # Service's Endpoints. Also ships their dashboards and alerting rules,
-    # including the ZFS ones for the media archive on file01.
+    # Moved to prod with the rest of the production-hardware monitoring;
+    # absent removes staging's old copy.
     - role: node_exporter_scrape
       tags: [node_exporter, monitoring]
+      vars:
+        node_exporter_scrape_state: absent
 
     # CloudNativePG operator, for roles/cnpg_cluster's pgcluster; see
     # playbooks/k8s_apps_staging.yml.

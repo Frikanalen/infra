@@ -129,6 +129,14 @@
     - role: d9036_exporter
       tags: [d9036_exporter, monitoring]
 
+    # Scrapes the node_exporters that playbooks/site.yml installs on file01,
+    # the Proxmox hypervisors and caspar1 -- hosts this cluster does not run and
+    # cannot discover, so their addresses are written out as a selectorless
+    # Service's Endpoints. Also ships their dashboards and alerting rules,
+    # including the ZFS ones for the media archive on file01.
+    - role: node_exporter_scrape
+      tags: [node_exporter, monitoring]
+
     # Advertises the Arc A310 on prod-kube-4 as gpu.intel.com/i915 (or /xe),
     # which the ingest QSV worker pool requests. Needs the host prepared by
     # playbooks/k8s_cluster_prod.yml --tags gpu first.

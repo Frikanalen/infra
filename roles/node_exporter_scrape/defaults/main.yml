@@ -19,6 +19,11 @@ argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 # and role defaults are not in scope across roles.
 node_exporter_scrape_namespace: monitoring
 
+# present deploys the scrape targets, rules and dashboards; absent removes
+# them. Prod runs it; staging's playbook sets absent so the hosts are not
+# scraped, and alerted on, from two clusters.
+node_exporter_scrape_state: present
+
 # The inventory group whose members get scraped. One source of truth with
 # roles/node_exporter, which installs the exporter on the same group -- adding
 # a host to it in inventory.yaml is the whole change needed at both ends.
