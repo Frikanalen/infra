@@ -153,5 +153,8 @@ junos_exporter_enabled_features:
 # Scrape pacing. Slower than the 30s default: a scrape is a series of
 # synchronous CLI commands against the routing engine of a switch whose CPU
 # is a decade old, and interface counters do not move fast enough to care.
+# A scrape takes 32-38 s (measured 2026-11-20), so the timeout sits just
+# under the interval rather than at 45 s, where a busy moment on the switch
+# was enough to drop it. Prometheus requires timeout <= interval.
 junos_exporter_scrape_interval: 60s
-junos_exporter_scrape_timeout: 45s
+junos_exporter_scrape_timeout: 55s
