@@ -1,16 +1,12 @@
 ---
 #
-# Host-specific provisioning for dev-kube-1 (the staging cluster): a weekly
-# cron job that refreshes the staging Django database from production. See
-# roles/staging_db_sync.
-#
-# Kept separate from playbooks/k8s_apps_staging.yml and
-# playbooks/k8s_cluster_dev.yml since this isn't part of forming the cluster
-# or deploying an app -- it's a recurring maintenance job that happens to
-# also need read access to prod's cluster.
-- name: Provision the staging database refresh cron job
+# Takes down the old host cron job on dev-kube-1 that refreshed the staging
+# database from prod over kubectl port-forwards, and deletes the prod
+# cluster-admin kubeconfig it kept there. The refresh itself now runs in
+# Kubernetes: see roles/staging_db_sync/defaults/main.yml.
+- name: Retire the host-based staging database refresh
   hosts: kubedev_admin
   become: true
-  gather_facts: true
+  gather_facts: false
   roles:
     - staging_db_sync

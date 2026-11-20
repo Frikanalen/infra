@@ -81,24 +81,6 @@
         disabled:
           NodeMemoryHighUtilization: true
           NodeDiskIOSaturation: true
-      # Let the in-cluster node-exporter read textfile metrics from the
-      # node, as roles/node_exporter already does on the hosts outside the
-      # clusters. Host cron jobs on the kube nodes (roles/staging_db_sync)
-      # write their last-success timestamp there, so a job that stops
-      # succeeding raises an alert instead of failing into a log file.
-      # extraArgs replaces the chart's list, so its two filesystem excludes
-      # are repeated here verbatim (chart 91.4.1).
-      prometheus-node-exporter:
-        extraArgs:
-          - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
-          - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
-          - --collector.textfile.directory=/host/textfile
-        extraHostVolumeMounts:
-          - name: textfile
-            hostPath: "{{ kube_prometheus_stack_node_textfile_directory }}"
-            type: DirectoryOrCreate
-            mountPath: /host/textfile
-            readOnly: true
       # A file lookup, not a template, so the rules' own {{ $labels }} pass
       # through to Prometheus untouched.
       additionalPrometheusRulesMap:

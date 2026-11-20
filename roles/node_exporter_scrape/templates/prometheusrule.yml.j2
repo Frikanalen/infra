@@ -241,39 +241,23 @@ spec:
               unchanged.
 
     - name: staging-refresh
-      # Written by the weekly prod -> staging refresh jobs:
-      # roles/media_staging_reset on file01 (refresh="media") and
-      # roles/staging_db_sync on dev-kube-1 (refresh="db"). Both used to fail
-      # into a log file for three months (Aug-Nov 2026) without anyone
-      # knowing. Keyed on the last success rather than on failures, so a job
-      # that stops running at all fires too.
+      # Written by the weekly staging media reset on file01
+      # (roles/media_staging_reset). It used to fail into a log file for three
+      # months (Aug-Nov 2026) without anyone knowing. Keyed on the last
+      # success rather than on failures, so a job that stops running at all
+      # fires too. The staging database refresh is a Kubernetes CronJob and
+      # has its own rule in the clusters repo.
       rules:
-        - alert: StagingRefreshOverdue
+        - alert: StagingMediaResetOverdue
           expr: >-
-            time() - max by (refresh) (frikanalen_staging_refresh_last_success_timestamp_seconds)
+            time() - frikanalen_staging_refresh_last_success_timestamp_seconds{refresh="media"}
             > 8 * 86400
           for: 1h
           labels:
             severity: warning
           annotations:
-            summary: "Staging {{ '{{ $labels.refresh }}' }} has not been refreshed from prod for over a week"
+            summary: "Staging media has not been reset from prod for over a week"
             description: >-
-              The Monday refresh last succeeded
+              The Monday reset of archive/media-staging last succeeded
               {{ '{{ $value | humanizeDuration }}' }} ago. See
-              /var/log/staging-db-sync.log on dev-kube-1 (db) or
-              /var/log/reset-media-staging.log on file01 (media).
-
-        - alert: StagingRefreshNeverSucceeded
-          # The metric file only appears after a first successful run.
-          expr: >-
-            absent(frikanalen_staging_refresh_last_success_timestamp_seconds{refresh="db"})
-            or absent(frikanalen_staging_refresh_last_success_timestamp_seconds{refresh="media"})
-          for: 8d
-          labels:
-            severity: warning
-          annotations:
-            summary: "A staging refresh from prod has no recorded success"
-            description: >-
-              No last-success metric from one of the weekly refresh jobs for
-              eight days. Either it has never succeeded since the metric was
-              added, or node-exporter is not reading the textfile directory.
+              /var/log/reset-media-staging.log on file01.

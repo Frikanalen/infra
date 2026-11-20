@@ -239,17 +239,21 @@ sender-dependent transport through mailcow's API. Its password is
 `vault_mailcow_relayhost_password` in `data/vault.yml`. Inbound mail still
 arrives directly.
 
+The staging database is refreshed from production every week by two
+Kubernetes CronJobs rather than from a host: `staging-refresh-dump` on prod
+(Frikanalen/clusters `clusters/prod/jobs/`) writes a `pg_dump` to the
+`staging-refresh` bucket in Garage on file01 on Sunday night, and the
+django-api chart's `staging-db-refresh` (enabled on staging only) restores it
+and runs `migrate` on Monday at 00:15. The bucket and its two keys (prod
+write-only, staging read-only) are in `roles/garage`, which also writes the
+keys to OpenBao.
+
 ```sh
 ansible-playbook playbooks/staging_db_sync.yml
 ```
 
-Installs a weekly cron job on the staging cluster node (`dev-kube-1`) that
-refreshes the staging Django database from production: `pg_dump`/`pg_restore`
-over a `kubectl port-forward` into each cluster's `pgcluster-rw`, followed
-by `manage.py migrate` to bring the restored schema forward to whatever
-staging's tracked branch expects (Monday 00:15, see `roles/staging_db_sync`).
-This gives the staging node a cluster-admin kubeconfig for prod, fetched at
-provisioning time -- treat it as sensitive.
+Removes the old host cron job that did this from `dev-kube-1`, and the prod
+cluster-admin kubeconfig it kept there.
 
 ## Requirements
 
