@@ -22,9 +22,9 @@
 # profile without one -- the same group roles/fk_archive_utils gives the root.
 #
 # Without -e fk_archive_permissions_apply=true this only reports how many
-# entries would change. Staging's archive is a weekly ZFS clone of prod's
-# (roles/media_staging_reset), so it has the same problem and is the place to
-# try this first; the next reset undoes it there.
+# entries would change. Staging's archive is a weekly ZFS clone of prod's;
+# roles/media_staging_reset applies the same ownership to each fresh clone,
+# so staging needs this only between resets.
 #
 #   ansible-playbook playbooks/fk_archive_permissions.yml -e fk_archive_permissions_profile=staging
 #   ansible-playbook playbooks/fk_archive_permissions.yml -e fk_archive_permissions_profile=staging -e fk_archive_permissions_apply=true
