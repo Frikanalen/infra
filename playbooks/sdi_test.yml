@@ -3,10 +3,14 @@
 # Test-signal generators: small VMs with a Decklink passed through that put
 # a moving test pattern on SDI, for checking routing, monitors and capture
 # downstream without involving playout. See roles/decklink_test_pattern.
+#
+# Only the teletext injector (e.g. after a ttx-inject version bump):
+#   ansible-playbook playbooks/sdi_test.yml --tags teletext
 - name: Provision SDI test-signal hosts
   hosts: sdi_test
   become: true
   gather_facts: true
+  tags: [test_pattern]
   roles:
     - blackmagic_desktopvideo
     - decklink_test_pattern
@@ -17,6 +21,7 @@
 - name: Provision the teletext injector
   hosts: sdi-test1
   become: true
-  gather_facts: true
+  gather_facts: false
+  tags: [teletext]
   roles:
     - ttx_inject
