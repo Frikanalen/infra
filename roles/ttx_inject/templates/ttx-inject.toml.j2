@@ -4,6 +4,7 @@ decklink_device = "{{ ttx_inject_decklink_device }}"
 vanc_line = {{ ttx_inject_vanc_line }}
 op47_packets = {{ ttx_inject_op47_packets }}
 op47_multipacket = {{ ttx_inject_op47_multipacket | bool | lower }}
+op47_alternate_fields = {{ ttx_inject_op47_alternate_fields | bool | lower }}
 {% if ttx_inject_op47_lines %}
 op47_lines = {{ ttx_inject_op47_lines | to_json }}
 {% endif %}
