@@ -40,3 +40,7 @@ kube_prometheus_stack_storage_class: ceph-rbd
 kube_prometheus_stack_retention: 15d
 kube_prometheus_stack_prometheus_storage_size: 30Gi
 kube_prometheus_stack_alertmanager_storage_size: 1Gi
+
+# Host directory the in-cluster node-exporter reads *.prom files from (the
+# same path roles/node_exporter uses on the hosts outside the clusters).
+kube_prometheus_stack_node_textfile_directory: /var/lib/prometheus/node-exporter

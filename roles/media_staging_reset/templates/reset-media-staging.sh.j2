@@ -85,8 +85,8 @@ if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
   fi
 
   # Deliberately no -f. If something on file01 still holds the mount open --
-  # an in-flight staging SFTP upload, say -- failing here and mailing the
-  # cron output is better than yanking the filesystem out from under it. The
+  # an in-flight staging SFTP upload, say -- failing here (and raising
+  # StagingRefreshOverdue a week on) is better than yanking the filesystem out from under it. The
   # reset is a week late; the upload would be corrupt.
   for attempt in 1 2 3 4 5 6; do
     if zfs destroy -r "$TARGET"; then
@@ -149,5 +149,18 @@ zfs list -H -o name -t snapshot -r "$SOURCE" | while read -r snap; do
     "$SOURCE@{{ archive_media_staging_snapshot_prefix }}-"*) zfs destroy "$snap" ;;
   esac
 done
+
+# Only reached on success (set -e); see StagingRefreshOverdue in
+# roles/node_exporter_scrape. Renamed into place so node_exporter never reads
+# half a file.
+TEXTFILE_DIR="{{ archive_media_staging_textfile_directory }}"
+if [ -d "$TEXTFILE_DIR" ]; then
+  printf '%s\n' \
+    '# HELP frikanalen_staging_refresh_last_success_timestamp_seconds When this staging refresh last completed.' \
+    '# TYPE frikanalen_staging_refresh_last_success_timestamp_seconds gauge' \
+    "frikanalen_staging_refresh_last_success_timestamp_seconds{refresh=\"media\"} $(date +%s)" \
+    > "$TEXTFILE_DIR/staging_refresh_media.prom.$$"
+  mv "$TEXTFILE_DIR/staging_refresh_media.prom.$$" "$TEXTFILE_DIR/staging_refresh_media.prom"
+fi
 
 echo "$(date -Is) Reset complete"

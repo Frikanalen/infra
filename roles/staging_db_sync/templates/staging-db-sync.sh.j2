@@ -194,4 +194,16 @@ STAGING_PF_PID=""
 $KUBECTL -n "$NAMESPACE" exec "deploy/$DJANGO_DEPLOYMENT" -c "$DJANGO_CONTAINER" -- \
   python manage.py migrate --noinput
 
+# Only reached on success (set -e). Prometheus alerts when this timestamp is
+# more than eight days old, which covers a failing run and a cron job that
+# never runs alike. Written to a temp file and renamed so node-exporter
+# never reads half a file.
+TEXTFILE_DIR="{{ staging_db_sync_textfile_directory }}"
+printf '%s\n' \
+  '# HELP frikanalen_staging_refresh_last_success_timestamp_seconds When this staging refresh last completed.' \
+  '# TYPE frikanalen_staging_refresh_last_success_timestamp_seconds gauge' \
+  "frikanalen_staging_refresh_last_success_timestamp_seconds{refresh=\"db\"} $(date +%s)" \
+  > "$TEXTFILE_DIR/staging_refresh_db.prom.$$"
+mv "$TEXTFILE_DIR/staging_refresh_db.prom.$$" "$TEXTFILE_DIR/staging_refresh_db.prom"
+
 echo "$(date -Is) Staging database refresh complete"

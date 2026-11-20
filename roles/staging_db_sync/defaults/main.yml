@@ -35,6 +35,11 @@ staging_db_sync_db_user: fkweb
 staging_db_sync_django_deployment: django
 staging_db_sync_django_container: django
 
+# Where the last-success timestamp goes for the node-exporter DaemonSet to
+# pick up (roles/kube_prometheus_stack mounts this directory). The alert is
+# StagingRefreshOverdue in roles/node_exporter_scrape.
+staging_db_sync_textfile_directory: /var/lib/prometheus/node-exporter
+
 staging_db_sync_prod_local_port: 15432
 staging_db_sync_staging_local_port: 15433
 

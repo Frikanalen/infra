@@ -39,6 +39,15 @@
   become: true
   no_log: true
 
+- name: Ensure the node-exporter textfile directory exists
+  ansible.builtin.file:
+    path: "{{ staging_db_sync_textfile_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
 - name: Install the staging database refresh script
   ansible.builtin.template:
     src: staging-db-sync.sh.j2
