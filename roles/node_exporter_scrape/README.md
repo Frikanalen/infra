@@ -5,11 +5,11 @@ by `roles/kube_prometheus_stack` at the exporters that `roles/node_exporter`
 installs on `file01` and the Proxmox hypervisors, and ships the dashboards and
 alerting rules for them.
 
-Runs against the **dev** cluster, because that is where the only Prometheus in
-the estate lives. The hosts it scrapes are not dev hosts — `file01` and the
-hypervisors are production infrastructure. That asymmetry is a property of
-where the monitoring stack happens to be installed, not a statement about the
-hosts.
+Runs against the **prod** cluster (`playbooks/k8s_platform_prod.yml`): the
+hosts it scrapes, file01, the hypervisors, mail1, bao1 and caspar1, are
+production infrastructure. It used to run on the dev cluster only because that
+was where the first Prometheus lived; staging's playbook now runs it with
+`node_exporter_scrape_state: absent` to remove that copy.
 
 ## How the targets get in
 

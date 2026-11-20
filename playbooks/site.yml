@@ -28,7 +28,7 @@
   # file01 and the Proxmox hypervisors. The kube nodes are excluded from the
   # inventory group on purpose -- kube-prometheus-stack already runs a
   # node-exporter DaemonSet on those. The Prometheus side of this is
-  # roles/node_exporter_scrape, run by playbooks/k8s_cluster_dev.yml; an
+  # roles/node_exporter_scrape, run by playbooks/k8s_platform_prod.yml; an
   # exporter installed here is scraped by nothing until that has run.
   #
   # Its own play rather than another role on the "all" play above: the role

@@ -33,6 +33,7 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
+  when: junos_exporter_state == 'present'
   become: true
   kubernetes.core.k8s:
     api_version: v1
@@ -46,28 +47,28 @@
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'ssh-secret.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter config
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'configmap.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Deployment
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'deployment.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Service
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter Grafana dashboard
@@ -76,12 +77,12 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"
 
 - name: Deploy the junos_exporter ServiceMonitor
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
-    state: present
+    state: "{{ junos_exporter_state }}"
     kubeconfig: "{{ k8s_kubeconfig }}"

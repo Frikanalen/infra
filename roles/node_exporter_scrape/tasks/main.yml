@@ -25,6 +25,7 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
+  when: node_exporter_scrape_state == 'present'
   become: true
   kubernetes.core.k8s:
     api_version: v1
@@ -37,7 +38,7 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
-    state: present
+    state: "{{ node_exporter_scrape_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter Endpoints
@@ -48,7 +49,7 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'endpoints.yml.j2') }}"
-    state: present
+    state: "{{ node_exporter_scrape_state }}"
     # Endpoints is one of the few objects where a strategic merge would keep
     # addresses this role has removed -- a host taken out of the inventory
     # group has to disappear from the target list too.
@@ -59,14 +60,14 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
-    state: present
+    state: "{{ node_exporter_scrape_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter alerting rules
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'prometheusrule.yml.j2') }}"
-    state: present
+    state: "{{ node_exporter_scrape_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the node_exporter Grafana dashboards
@@ -75,5 +76,5 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
-    state: present
+    state: "{{ node_exporter_scrape_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"

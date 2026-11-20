@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Collect NVIDIA GPU metrics for node_exporter
+Documentation=file://{{ node_exporter_nvidia_script_path }}
+ConditionPathIsDirectory={{ node_exporter_textfile_directory }}
+
+[Service]
+Type=oneshot
+ExecStart={{ node_exporter_nvidia_script_path }} {{ node_exporter_textfile_directory }}
+# nvidia-smi can hang on a wedged GPU; the script bounds each call itself,
+# this bounds the whole run. A stale file is what surfaces it.
+TimeoutStartSec=60
+Nice=10
+
+# No [Install] section: started by the timer only, like the ZFS collector.
