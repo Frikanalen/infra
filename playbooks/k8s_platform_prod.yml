@@ -117,6 +117,18 @@
         external_dns_manage_ingress_class: true
         external_dns_sources: [ingress, traefik-proxy]
 
+    # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
+    # hands it to the Prometheus above. Needs a login user on the switch that
+    # only a human can configure -- see roles/junos_exporter/README.md.
+    - role: junos_exporter
+      tags: [junos_exporter, monitoring]
+
+    # Scrapes the secondary Cisco D9036, the encoder between playout and the
+    # transport stream. Needs the appliance's automation password in the
+    # vault -- see roles/d9036_exporter/README.md.
+    - role: d9036_exporter
+      tags: [d9036_exporter, monitoring]
+
     # Advertises the Arc A310 on prod-kube-4 as gpu.intel.com/i915 (or /xe),
     # which the ingest QSV worker pool requests. Needs the host prepared by
     # playbooks/k8s_cluster_prod.yml --tags gpu first.

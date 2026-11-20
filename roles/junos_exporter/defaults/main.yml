@@ -15,6 +15,12 @@
 # is another role's default, and role defaults are not in scope across roles.
 junos_exporter_namespace: monitoring
 
+# present deploys the exporter, its dashboard and its ServiceMonitor; absent
+# removes them again. Prod runs it; staging's playbook sets absent, since the
+# device is the same one and scraping it from two clusters only doubles the
+# load on it.
+junos_exporter_state: present
+
 junos_exporter_image_repository: czerwonk/junos_exporter
 # Pinned rather than :latest -- this reads a live switch, and an unreviewed
 # upstream change here is not something to discover via a broken dashboard.
