@@ -66,11 +66,39 @@ if zfs list -H -o name "$TARGET" >/dev/null 2>&1; then
     exit 1
   fi
 
+  # From here on the staging export is down. If anything below fails, put it
+  # back on the way out so a failed reset leaves staging on last week's media
+  # rather than on none.
+  trap 'exportfs -ra' EXIT
+
+  # Unexporting is not enough on its own: knfsd keeps NFSv4 state (opens,
+  # locks, delegations) for the clients that had files open, and that state
+  # pins the mount until the clients' leases run out. fuser on file01 shows
+  # only "kernel knfsd" holding it. unlock_filesystem is the kernel's
+  # interface for releasing exactly that state for one filesystem, and the
+  # retry covers the lease time (90 s by default) for anything it misses.
+  # This is what made every Monday reset from 2026-08-24 to 2026-11-16 fail
+  # with "dataset is busy" except one.
+  MOUNTED_AT="$(zfs get -H -o value mountpoint "$TARGET")"
+  if [ -w /proc/fs/nfsd/unlock_filesystem ]; then
+    echo "$MOUNTED_AT" > /proc/fs/nfsd/unlock_filesystem || true
+  fi
+
   # Deliberately no -f. If something on file01 still holds the mount open --
   # an in-flight staging SFTP upload, say -- failing here and mailing the
   # cron output is better than yanking the filesystem out from under it. The
   # reset is a week late; the upload would be corrupt.
-  zfs destroy -r "$TARGET"
+  for attempt in 1 2 3 4 5 6; do
+    if zfs destroy -r "$TARGET"; then
+      break
+    fi
+    if [ "$attempt" -eq 6 ]; then
+      echo "$(date -Is) ERROR: $TARGET still busy after $attempt attempts" >&2
+      exit 1
+    fi
+    echo "$(date -Is) $TARGET busy, retrying in 30 s (attempt $attempt)" >&2
+    sleep 30
+  done
 fi
 
 zfs clone "$SNAPSHOT" "$TARGET"
@@ -104,6 +132,7 @@ fi
 # alone. The pinned fsid (group_vars/storage.yml) is what lets caspar-sw1's
 # existing file handles keep resolving across the swap.
 exportfs -ra
+trap - EXIT
 
 # The old clone is gone, so every staging-sync snapshot except the one just
 # taken is now unreferenced. Drop them so they don't accumulate forever.

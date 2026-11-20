@@ -171,7 +171,14 @@ pg_restore -l "$DUMP_FILE" \
   # public, which fkweb cannot apply because it does not own the schema, and
   # they are not wanted anyway. Staging's grants belong to the Kubegres init
   # script, and fkweb owns every table it restores here regardless.
-  pg_restore -L "$TOC_FILE" --no-owner --no-acl -f - "$DUMP_FILE"
+  #
+  # pg_restore here is the host's (18 on Ubuntu 26.04) while both clusters run
+  # Postgres 16. pg_restore 17+ opens its script with
+  # `SET transaction_timeout = 0;`, which 16 rejects as an unrecognized
+  # parameter -- that is what failed the 2026-11-16 run. Drop that one line;
+  # everything else it emits follows the dumped server's version.
+  pg_restore -L "$TOC_FILE" --no-owner --no-acl -f - "$DUMP_FILE" \
+    | sed '/^SET transaction_timeout = /d'
 } | PGPASSWORD="$STAGING_PASSWORD" PGOPTIONS="-c lock_timeout={{ staging_db_sync_lock_timeout }}" \
   psql -h 127.0.0.1 -p "$STAGING_PORT" -U "$DB_USER" -d "$DB_NAME" \
     --single-transaction -v ON_ERROR_STOP=1 -q
