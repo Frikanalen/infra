@@ -245,7 +245,7 @@ Kubernetes CronJobs rather than from a host: `staging-refresh-dump` on prod
 `staging-refresh` bucket in Garage on file01 on Sunday night, and the
 django-api chart's `staging-db-refresh` (enabled on staging only) restores it
 and runs `migrate` on Monday at 00:15. The bucket and its two keys (prod
-write-only, staging read-only) are in `roles/garage`, which also writes the
+that bucket only, staging read-only) are in `roles/garage`, which also writes the
 keys to OpenBao.
 
 ```sh

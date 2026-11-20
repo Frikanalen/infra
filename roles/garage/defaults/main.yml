@@ -46,16 +46,16 @@ garage_buckets:
     key_name: cnpg-staging
     key_id: "{{ vault_dev_cnpg_s3_key_id }}"
     secret_key: "{{ vault_dev_cnpg_s3_secret_key }}"
-  # OpenBao's nightly raft snapshots (roles/openbao).
   # The weekly prod -> staging database copy: prod's CronJob writes
-  # fkweb.pgdump here, staging's reads it. Two keys, so staging can never
-  # write and nothing on prod can be reached from staging. Each key is also
-  # written to OpenBao at openbao_kv_path for External Secrets to deliver.
+  # fkweb.pgdump here, staging's reads it. Two keys: prod's reads and writes
+  # this bucket only (rclone checks the object before it uploads), staging's
+  # can only read it, so staging can never change what it restores.
+  # Each key is also written to OpenBao at openbao_kv_path, for External
+  # Secrets to deliver.
   - bucket: staging-refresh
     key_name: staging-refresh-prod
     key_id: "{{ vault_staging_refresh_prod_s3_key_id }}"
     secret_key: "{{ vault_staging_refresh_prod_s3_secret_key }}"
-    permissions: --write
     openbao_kv_path: prod/default/staging-refresh-s3
   - bucket: staging-refresh
     key_name: staging-refresh-staging
@@ -63,6 +63,7 @@ garage_buckets:
     secret_key: "{{ vault_staging_refresh_staging_s3_secret_key }}"
     permissions: --read
     openbao_kv_path: staging/default/staging-refresh-s3
+  # OpenBao's nightly raft snapshots (roles/openbao).
   - bucket: openbao
     key_name: openbao
     key_id: "{{ vault_openbao_s3_key_id }}"
