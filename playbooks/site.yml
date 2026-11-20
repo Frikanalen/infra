@@ -28,7 +28,7 @@
   # file01 and the Proxmox hypervisors. The kube nodes are excluded from the
   # inventory group on purpose -- kube-prometheus-stack already runs a
   # node-exporter DaemonSet on those. The Prometheus side of this is
-  # roles/node_exporter_scrape, run by playbooks/k8s_cluster_dev.yml; an
+  # roles/node_exporter_scrape, run by playbooks/k8s_platform_prod.yml; an
   # exporter installed here is scraped by nothing until that has run.
   #
   # Its own play rather than another role on the "all" play above: the role
@@ -82,6 +82,16 @@
     - root_fs_trim
   tags:
     - root_fs_trim
+- name: Give the prod kube nodes an address in the vision mixer's subnet
+  # Prod only: the mixer is the one in the studio, and staging runs the
+  # vision-mixer API against a mock.
+  hosts: kubeprod
+  become: true
+  roles:
+    - mixer_subnet_address
+  tags:
+    - k8s
+    - mixer_subnet
 - name: Mount local SSD on kube nodes
   hosts: microk8s
   become: true

@@ -133,22 +133,36 @@
   changed_when: false
 
 - name: Create each environment's bucket
-  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} bucket create {{ item.bucket }}"
-  loop: "{{ garage_buckets }}"
-  loop_control:
-    label: "{{ item.bucket }}"
-  when: item.bucket not in garage_bucket_list.stdout
+  # Unique: a bucket can be listed once per key that uses it.
+  ansible.builtin.command: "{{ garage_binary }} -c {{ garage_config_path }} bucket create {{ item }}"
+  loop: "{{ garage_buckets | map(attribute='bucket') | unique }}"
+  when: item not in garage_bucket_list.stdout
   become: true
   changed_when: true
 
-- name: Give each key read and write on its own bucket only
+- name: Give each key its permissions on its own bucket only
   # Idempotent on Garage's side; reported as unchanged since re-granting the
-  # same permissions changes nothing.
+  # same permissions changes nothing. Read and write unless the entry says
+  # otherwise (permissions: --read or --write).
   ansible.builtin.command: >-
     {{ garage_binary }} -c {{ garage_config_path }} bucket allow
-    --read --write {{ item.bucket }} --key {{ item.key_name }}
+    {{ item.permissions | default('--read --write') }} {{ item.bucket }} --key {{ item.key_name }}
   loop: "{{ garage_buckets }}"
   loop_control:
     label: "{{ item.bucket }}"
   become: true
   changed_when: false
+
+- name: Hand keys that the clusters use to OpenBao
+  # External Secrets copies kv/<env>/<namespace>/<name> into the cluster
+  # (the clusters repo's secrets/ ExternalSecrets).
+  ansible.builtin.include_role:
+    name: openbao_kv_put
+  vars:
+    openbao_kv_path: "{{ item.openbao_kv_path }}"
+    openbao_kv_data:
+      ACCESS_KEY_ID: "{{ item.key_id }}"
+      SECRET_ACCESS_KEY: "{{ item.secret_key }}"
+  loop: "{{ garage_buckets | selectattr('openbao_kv_path', 'defined') | list }}"
+  loop_control:
+    label: "{{ item.openbao_kv_path }}"

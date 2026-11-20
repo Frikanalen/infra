@@ -20,6 +20,28 @@
     name: zsh
   when: ansible_os_family == "Debian"
 
+# The nginx2root chain (CVE-2026-123007 and others, 2026-11-18) ends in a
+# Linux SCTP use-after-free for root, with no kernel fix yet. Nothing here
+# speaks SCTP (SRT, RTMP, RTSP, corosync and Ceph are TCP/UDP), so stop the
+# module from loading at all. Unprivileged code can otherwise autoload it by
+# opening an SCTP socket.
+- name: Block the SCTP kernel module
+  ansible.builtin.copy:
+    dest: /etc/modprobe.d/disable-sctp.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/common). See roles/common/tasks/main.yml.
+      install sctp /bin/false
+  when: ansible_system == "Linux"
+  tags: sctp
+
+- name: Unload SCTP if it is already loaded
+  community.general.modprobe:
+    name: sctp
+    state: absent
+  when: ansible_system == "Linux"
+  tags: sctp
+
 # FreeBSD-specific tasks
 - name: Ensure sudo group exists
   become: true

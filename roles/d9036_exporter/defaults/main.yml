@@ -19,6 +19,12 @@ argocd_kubeconfig: /var/snap/microk8s/current/credentials/client.config
 # roles.
 d9036_exporter_namespace: monitoring
 
+# present deploys the exporter, its dashboard and its ServiceMonitor; absent
+# removes them again. Prod runs it; staging's playbook sets absent, since the
+# device is the same one and scraping it from two clusters only doubles the
+# load on it.
+d9036_exporter_state: present
+
 d9036_exporter_image_repository: ghcr.io/frikanalen/d9036_exporter
 # Pinned to a commit build rather than :latest. There is no semver tag yet --
 # release-please's first release PR (0.1.0) is still open -- so this is the

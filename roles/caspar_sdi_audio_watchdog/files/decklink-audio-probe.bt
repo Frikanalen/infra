@@ -1,0 +1,59 @@
+#!/usr/bin/env bpftrace
+// DeckLink consumer audio-state probe for caspar1 (NOT YET CLEARED TO RUN ON AIR).
+//
+// Only valid for /usr/bin/casparcg-server-2.5 with
+// BuildID c2fb0fce8a3c1f68572ab8c05721a3a4f4e487f6 (CasparCG 2.5.0, stripped).
+// Check first:  file -L /usr/bin/casparcg-server-2.5 | grep -q c2fb0fce8a3c1f68
+// Offsets were found by disassembling that exact binary (2026-11-16):
+//   0x2896d0  decklink_consumer::ScheduledFrameCompleted entry
+//             (rdi=this, rsi=IDeckLinkVideoFrame*, edx=BMDOutputFrameCompletionResult;
+//              the function references the "buffered-audio" diag string)
+//   0x2899da  right after output_->GetBufferedVideoFrameCount(&buffered); buffered at [rbp-0x140]
+//   0x289a6d  right after output_->GetBufferedAudioSampleFrameCount(&buffered); buffered at [rbp-0x140]
+//   this+0x370 video_scheduled_ (int64), this+0x378 audio_scheduled_ (int64),
+//   this+0x274 decklink_format_desc_.duration (int32), frame+0xa4 nb_samples (int32)
+// 0x2899da and 0x289a6d are instruction boundaries (objdump), but not symbols, so bpftrace
+// needs --unsafe:   sudo bpftrace --unsafe probe-decklink-audio.bt
+//
+// Output: one line per second with the completion results, min/max buffered video frames
+// and audio sample frames, and the audio-vs-video schedule skew. Plus an immediate line for
+// every non-OK completion (late=1, dropped=2, flushed=3).
+// Expected cost: ~150 uprobe hits/s (3 per frame at 50 fps), a few microseconds each.
+
+uprobe:/usr/bin/casparcg-server-2.5:0x2896d0
+{
+  $this = arg0;
+  $r = (uint32)arg2;
+  if ($r == 0) { @ok = @ok + 1; } else if ($r == 1) { @late = @late + 1; } else if ($r == 2) { @dropped = @dropped + 1; } else { @flushed = @flushed + 1; }
+  $v = *(int64 *)($this + 0x370);
+  $a = *(int64 *)($this + 0x378);
+  $dur = *(int32 *)($this + 0x274);
+  // 720p50: duration 1000 per frame in a 50000 time scale, 960 samples per frame.
+  @skew = $a - ((uint64)$v / (uint64)$dur) * 960;
+  if ($r != 0) {
+    time("%H:%M:%S ");
+    printf("completion result=%u nb_samples=%d video_sched=%ld audio_sched=%ld skew=%ld\n",
+           $r, *(int32 *)(arg1 + 0xa4), $v, $a, @skew);
+  }
+}
+
+uprobe:/usr/bin/casparcg-server-2.5:0x2899da
+{
+  $b = *(uint32 *)(reg("bp") - 0x140);
+  @vmin = min($b); @vmax = max($b);
+}
+
+uprobe:/usr/bin/casparcg-server-2.5:0x289a6d
+{
+  $b = *(uint32 *)(reg("bp") - 0x140);
+  @amin = min($b); @amax = max($b);
+}
+
+interval:s:1
+{
+  time("%H:%M:%S ");
+  printf("ok=%d late=%d dropped=%d flushed=%d skew=%ld\n",
+         @ok, @late, @dropped, @flushed, @skew);
+  print(@vmin); print(@vmax); print(@amin); print(@amax);
+  @ok = 0; @late = 0; @dropped = 0; @flushed = 0; clear(@vmin); clear(@vmax); clear(@amin); clear(@amax);
+}

@@ -1,0 +1,9 @@
+# {{ ansible_managed }}
+# Address in the vision mixer's subnet, see roles/mixer_subnet_address.
+# netplan merges this into the interface cloud-init defines.
+network:
+  version: 2
+  ethernets:
+    {{ mixer_subnet_interface }}:
+      addresses:
+        - {{ mixer_subnet_address }}

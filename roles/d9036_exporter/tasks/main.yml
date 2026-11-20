@@ -16,6 +16,7 @@
 - name: Ensure the monitoring namespace exists
   # kube_prometheus_stack creates this, but this role does not depend on
   # having run after it in the same play.
+  when: d9036_exporter_state == 'present'
   become: true
   kubernetes.core.k8s:
     api_version: v1
@@ -29,21 +30,21 @@
   no_log: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'secret.yml.j2') }}"
-    state: present
+    state: "{{ d9036_exporter_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter Deployment
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'deployment.yml.j2') }}"
-    state: present
+    state: "{{ d9036_exporter_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter Service
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'service.yml.j2') }}"
-    state: present
+    state: "{{ d9036_exporter_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter Grafana dashboard
@@ -52,12 +53,12 @@
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'dashboard-configmap.yml.j2') }}"
-    state: present
+    state: "{{ d9036_exporter_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"
 
 - name: Deploy the d9036_exporter ServiceMonitor
   become: true
   kubernetes.core.k8s:
     definition: "{{ lookup('template', 'servicemonitor.yml.j2') }}"
-    state: present
+    state: "{{ d9036_exporter_state }}"
     kubeconfig: "{{ argocd_kubeconfig }}"

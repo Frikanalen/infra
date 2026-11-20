@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Refresh NVIDIA GPU metrics for node_exporter every {{ node_exporter_nvidia_interval }}
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ node_exporter_nvidia_interval }}
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

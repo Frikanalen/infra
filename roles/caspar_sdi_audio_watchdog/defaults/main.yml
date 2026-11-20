@@ -1,0 +1,70 @@
+---
+# caspar-sdi-audio-watchdog: restart CasparCG when its DeckLink SDI audio is
+# jammed (multicast has audio, the encoder appliance's program return is
+# silent). See README.md and files/caspar-sdi-audio-watchdog.py.
+
+# Before the DeckLink card: the channel's own multicast program out
+# (host_vars/caspar1.yml casparcg_ffmpeg_path). CasparCG sends it from this
+# host, so it is read back over multicast loopback.
+caspar_sdi_audio_watchdog_pre_url: "{{ casparcg_ffmpeg_path }}?overrun_nonfatal=1&fifo_size=1000000"
+# After SDI: the encoder appliance's program return, the same stream
+# stream-monitoring watches.
+caspar_sdi_audio_watchdog_post_url: "http://simula.frikanalen.tv:9094/frikanalen.ts"
+
+# Jammed = pre above pre_min_dbfs while post is below post_max_dbfs, held for
+# jam_seconds. A dead SDI embedder measures about -83 dBFS RMS on the return
+# (2026-11-16); normal programme sits around -20 to -30.
+caspar_sdi_audio_watchdog_pre_min_dbfs: -50
+caspar_sdi_audio_watchdog_post_max_dbfs: -70
+caspar_sdi_audio_watchdog_jam_seconds: 45
+# An input with no audio for this long counts as unreadable: do nothing.
+caspar_sdi_audio_watchdog_stale_seconds: 5
+
+# Rate limits. A dry run counts too, so it logs as often as it would act.
+caspar_sdi_audio_watchdog_cooldown_seconds: 600
+caspar_sdi_audio_watchdog_max_restarts: 3
+caspar_sdi_audio_watchdog_window_seconds: 21600
+
+# The same restart as by hand; playout re-cues on reconnect in ~2 s.
+caspar_sdi_audio_watchdog_restart_command: "systemctl restart nodm"
+
+# Air check before a restart: atemkontroll (github.com/Frikanalen/atemkontroll),
+# GET <url>/state. Restart only if atem_input is on program on M/E atem_me;
+# another source, a transition or fade-to-black inhibits. Empty URL, an
+# unreachable API or an unclear state fall back to on_unknown_program:
+# "restart" (silent air is worse than a needless 2 s restart; the rate limits
+# still apply) or "inhibit".
+caspar_sdi_audio_watchdog_atem_url: ""
+caspar_sdi_audio_watchdog_atem_token: ""
+caspar_sdi_audio_watchdog_atem_input: 1
+caspar_sdi_audio_watchdog_atem_me: 0
+# Optional: find the input by its ATEM longName/shortName instead (falls back
+# to atem_input if no input has that name), so re-patching can't break it.
+caspar_sdi_audio_watchdog_atem_input_name: ""
+# After a cut to CasparCG, wait this long before a jam starts to count: the
+# program return lags the cut by a few seconds. Needs atem_url.
+caspar_sdi_audio_watchdog_program_grace_seconds: 15
+# The ATEM's own audio meter for CasparCG's input (atemkontroll /state
+# "audio", atemkontroll#3) is the preferred SDI signal: it measures caspar1's
+# SDI directly, whatever is on program. Silent = at or below this on both
+# channels (atemkontroll floors at -60). Levels older than levels_stale_seconds
+# count as unknown, and the watchdog falls back to the program return.
+caspar_sdi_audio_watchdog_atem_silent_dbfs: -58
+caspar_sdi_audio_watchdog_levels_stale_seconds: 3
+# With the ATEM meter, also restart when CasparCG is off program: harmless,
+# and it fixes the audio before CasparCG goes back on air. A transition
+# involving its input still inhibits.
+caspar_sdi_audio_watchdog_restart_off_program: true
+caspar_sdi_audio_watchdog_on_unknown_program: restart
+
+# true: only log what it would do. host_vars set false where it should act.
+caspar_sdi_audio_watchdog_dry_run: true
+
+# node_exporter textfile collector file; skipped if the directory is missing.
+caspar_sdi_audio_watchdog_metrics_file: /var/lib/prometheus/node-exporter/caspar_sdi_audio.prom
+
+# Keep the DeckLink audio-state uprobes (files/decklink-audio-probe.bt)
+# attached, for evidence at the next jam. The offsets are for one CasparCG
+# build; the probe refuses to attach to any other.
+caspar_sdi_audio_probe_enabled: true
+caspar_sdi_audio_probe_build_id: c2fb0fce8a3c1f68572ab8c05721a3a4f4e487f6

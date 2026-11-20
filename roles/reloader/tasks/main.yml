@@ -23,5 +23,17 @@
         # exposes Deployment-level annotations, which is where
         # reloader.stakater.com/auto would otherwise have to go.
         autoReloadAll: true
+        # Except what prometheus-operator generates. It rewrites Prometheus'
+        # config Secret and rulefiles ConfigMap on every ServiceMonitor or
+        # PrometheusRule change, and Prometheus' config-reloader sidecar
+        # already hot-reloads them. Reloader also restarted the StatefulSet by
+        # adding a STAKATER_* env var to its pod template, which the operator
+        # then stripped again: each strip was another rollout, so one rule
+        # change cost prod Prometheus several restarts (2026-11-20, 17:48Z:
+        # four ControllerRevisions in 20 s). Alertmanager's generated config
+        # is covered the same way; alertmanager-telegram has no such label,
+        # so a bot token change still rolls Alertmanager.
+        # A != selector also matches every object that lacks the label.
+        resourceLabelSelector: "managed-by!=prometheus-operator"
   become: true
   run_once: true

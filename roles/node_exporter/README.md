@@ -11,7 +11,7 @@ way it is.
 
 This role only installs and configures the exporter. Nothing here talks to
 Prometheus — the scrape side is `roles/node_exporter_scrape`, which runs
-against the dev cluster from `playbooks/k8s_cluster_dev.yml`. Run one without
+against the prod cluster from `playbooks/k8s_platform_prod.yml`. Run one without
 the other and you get either an exporter nobody reads or a Prometheus target
 that refuses connections.
 
@@ -104,3 +104,12 @@ line that will not parse. If you change it, check the output before trusting it:
 `zpool` blocks indefinitely on a suspended pool — precisely the situation this
 is meant to report on — so the unit sets `TimeoutStartSec`. When that bites, the
 metrics go stale rather than wrong, and `ZfsMetricsStale` is what tells you.
+
+## NVIDIA GPU metrics
+
+On a host with `/usr/bin/nvidia-smi` (caspar1), a systemd timer runs
+`files/nvidia-textfile-collector.sh` every 15 s and writes `nvidia.prom`:
+temperature, GPU/memory/encoder/decoder utilization, memory used/total, fan,
+power and clocks as `nvidia_gpu_*`, plus `nvidia_smi_up`. Fields the card or
+driver does not report are left out rather than written as zero. DCGM is not
+an option here: it does not support GeForce cards.

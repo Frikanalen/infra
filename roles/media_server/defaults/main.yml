@@ -11,11 +11,17 @@
 media_server_namespace: "{{ frikanalen_app_namespace }}"
 media_server_replicas: 2
 
-# Plain, official, actively-maintained nginx -- byte-range support (needed
-# for video seeking) is built into its static file handling with no config,
-# and the "unprivileged" variant runs as a non-root user out of the box.
-media_server_image_repository: nginxinc/nginx-unprivileged
-media_server_image_tag: "1.27-alpine"
+# Plain, official nginx -- byte-range support (needed for video seeking) is
+# built into its static file handling with no config. The pod runs it as
+# uid 101 (the image's nginx user) on a read-only root filesystem; it listens
+# on 8080 and writes only to the emptyDirs in deployment.yml.j2, so it needs
+# no root. (It logs a harmless warning that the "user" directive is ignored.)
+# The official image, rather than nginxinc/nginx-unprivileged, because the
+# unprivileged build lags official releases by days to weeks: 1.30.7, which
+# fixes the nginx2root CVEs (CVE-2026-123007 and others), was not published
+# there when this was pinned.
+media_server_image_repository: nginx
+media_server_image_tag: "1.30.7-alpine"
 
 # NFS export this instance serves. ingest_archive_host/ingest_archive_dir
 # come from group_vars (prod.yml / staging.yml) -- the same archive ingest

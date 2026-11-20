@@ -239,3 +239,69 @@ spec:
               zfs-textfile-collector ran but zpool or zfs returned an error,
               so some of the metrics below are missing rather than merely
               unchanged.
+
+    - name: staging-refresh
+      # Written by the weekly staging media reset on file01
+      # (roles/media_staging_reset). It used to fail into a log file for three
+      # months (Aug-Nov 2026) without anyone knowing. Keyed on the last
+      # success rather than on failures, so a job that stops running at all
+      # fires too. The staging database refresh is a Kubernetes CronJob and
+      # has its own rule in the clusters repo.
+      rules:
+        - alert: StagingMediaResetOverdue
+          expr: >-
+            time() - frikanalen_staging_refresh_last_success_timestamp_seconds{refresh="media"}
+            > 8 * 86400
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Staging media has not been reset from prod for over a week"
+            description: >-
+              The Monday reset of archive/media-staging last succeeded
+              {{ '{{ $value | humanizeDuration }}' }} ago. See
+              /var/log/reset-media-staging.log on file01.
+
+    - name: nvidia-gpu
+      # From roles/node_exporter's NVIDIA textfile collector (caspar1).
+      rules:
+        - alert: NvidiaSmiFailing
+          # After an NVIDIA package upgrade without a module reload, nvidia-smi
+          # reports a driver/library version mismatch and CasparCG falls back
+          # to llvmpipe software rendering without saying so.
+          expr: nvidia_smi_up{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "nvidia-smi is failing on {{ '{{ $labels.instance }}' }}"
+            description: >-
+              The GPU driver is not answering on {{ '{{ $labels.instance }}' }}.
+              On caspar1 this usually means the NVIDIA module and userspace
+              versions differ after an upgrade, and CasparCG is rendering on
+              the CPU (llvmpipe). Reload the module (stop nodm) and restart
+              playout-0.
+
+        - alert: NvidiaMetricsStale
+          expr: >-
+            time() - nvidia_smi_last_run_timestamp_seconds{nodeclass="{{ node_exporter_scrape_nodeclass }}"} > 120
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU metrics on {{ '{{ $labels.instance }}' }} have stopped updating"
+            description: >-
+              nvidia-textfile-collector has not rewritten its metrics for
+              {{ '{{ $value | humanizeDuration }}' }}. nvidia-smi may be hung
+              on a wedged GPU; see systemctl status nvidia-textfile-collector.
+
+        - alert: NvidiaGpuHot
+          expr: nvidia_gpu_temperature_celsius{nodeclass="{{ node_exporter_scrape_nodeclass }}"} > 85
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU on {{ '{{ $labels.instance }}' }} is at {{ '{{ $value }}' }} °C"
+            description: >-
+              A passively cooled GT 1030 throttles near 95 °C. Check the
+              airflow in vmtx1.

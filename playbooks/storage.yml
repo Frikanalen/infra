@@ -9,7 +9,8 @@
   become: true
   gather_facts: true
   roles:
-    - media_staging_reset
+    - role: media_staging_reset
+      tags: [media_staging_reset]
     - db_backup_retention
     # S3 target for CloudNativePG's backups; see roles/garage.
     - role: garage

@@ -114,25 +114,25 @@
         external_dns_manage_ingress_class: true
         external_dns_sources: [ingress, traefik-proxy]
 
-    # Scrapes fksw, the switch the whole 192.168.3.0/24 estate hangs off, and
-    # hands it to the Prometheus above. Needs a login user on the switch that
-    # only a human can configure -- see roles/junos_exporter/README.md.
+    # fksw and the D9036 are production hardware, so prod's Prometheus scrapes
+    # them (playbooks/k8s_platform_prod.yml). These two entries only remove
+    # what staging used to run, so the devices are not scraped twice.
     - role: junos_exporter
       tags: [junos_exporter, monitoring]
+      vars:
+        junos_exporter_state: absent
 
-    # Scrapes the secondary Cisco D9036, the encoder between playout and the
-    # transport stream. Needs the appliance's automation password in the
-    # vault -- see roles/d9036_exporter/README.md.
     - role: d9036_exporter
       tags: [d9036_exporter, monitoring]
+      vars:
+        d9036_exporter_state: absent
 
-    # Scrapes the node_exporters that playbooks/site.yml installs on file01
-    # and the Proxmox hypervisors -- hosts this cluster does not run and
-    # cannot discover, so their addresses are written out as a selectorless
-    # Service's Endpoints. Also ships their dashboards and alerting rules,
-    # including the ZFS ones for the media archive on file01.
+    # Moved to prod with the rest of the production-hardware monitoring;
+    # absent removes staging's old copy.
     - role: node_exporter_scrape
       tags: [node_exporter, monitoring]
+      vars:
+        node_exporter_scrape_state: absent
 
     # CloudNativePG operator, for roles/cnpg_cluster's pgcluster; see
     # playbooks/k8s_apps_staging.yml.

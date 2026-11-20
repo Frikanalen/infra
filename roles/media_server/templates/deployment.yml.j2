@@ -60,7 +60,7 @@ spec:
               mountPath: /etc/nginx/conf.d/default.conf
               subPath: default.conf
               readOnly: true
-            # nginx-unprivileged needs to write here even when it isn't
+            # nginx needs to write here even when it isn't
             # asked to cache or proxy anything -- see the read-only rootfs
             # note below.
             - name: cache
