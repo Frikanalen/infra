@@ -31,6 +31,16 @@ time_sync_allow:
   - 192.168.3.0/24
 
 # --- PTP between the physical hosts (inventory group ptp_hosts) ----------
+# Off for now. Every ptp_host carries its traffic on an LACP (802.3ad) bond
+# with VLANs on top (vmbr0 <- vlan3 <- bond0 <- eno1+eno2; file01 is on
+# bond0.5, a different VLAN from the Proxmox hosts). Linux only passes
+# hardware timestamps through an active-backup bond, and with LACP the
+# switch may hash PTP frames to either member, so ptp4l on one member port
+# is not reliable. Until that is worked out (a dedicated port or an
+# active-backup bond), ptp_hosts get chrony on NTP like everyone else; the
+# rest of this section only applies with this set to true.
+time_sync_ptp_enabled: false
+#
 # fksw is an EX4200-class switch with no PTP support, so PTP crosses it as
 # ordinary layer-2 multicast (no transparent clock): expect a few us of
 # agreement between hosts, not tens of ns.
