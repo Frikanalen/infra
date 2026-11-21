@@ -2,8 +2,8 @@
 - name: Work out this host's place in the time hierarchy
   ansible.builtin.set_fact:
     time_sync_is_server: "{{ inventory_hostname in groups['time_servers'] | default([]) }}"
-    time_sync_is_ptp: "{{ inventory_hostname in groups['ptp_hosts'] | default([]) }}"
-    time_sync_is_grandmaster: "{{ inventory_hostname == time_sync_ptp_grandmaster }}"
+    time_sync_is_ptp: "{{ time_sync_ptp_enabled | bool and inventory_hostname in groups['ptp_hosts'] | default([]) }}"
+    time_sync_is_grandmaster: "{{ time_sync_ptp_enabled | bool and inventory_hostname == time_sync_ptp_grandmaster }}"
     time_sync_is_guest: "{{ time_sync_ptp_kvm and inventory_hostname in groups['qemu_guest'] | default([]) }}"
     time_sync_local_servers: >-
       {{ groups['time_servers'] | default([])

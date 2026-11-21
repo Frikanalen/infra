@@ -25,7 +25,10 @@ Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
   to `time_sync_allow`.
 - `ptp_hosts` (Proxmox hosts + file01): physical hosts whose NIC has a hardware
   clock (Intel I350/I210, Broadcom BCM57800). `time_sync_ptp_grandmaster`
-  picks the master; the rest are `slaveOnly`.
+  picks the master; the rest are `slaveOnly`. Only with
+  `time_sync_ptp_enabled: true`, which is off: these hosts sit on LACP bonds
+  with VLANs on top, and Linux gives no hardware timestamps through an
+  802.3ad bond (see defaults/main.yml). Until then they run chrony on NTP.
 - `qemu_guest`: Linux VMs load `ptp_kvm` and prefer their host's clock.
 
 ## Expected accuracy
