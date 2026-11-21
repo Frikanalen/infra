@@ -1,0 +1,8 @@
+---
+- name: Linux hosts run chrony
+  ansible.builtin.include_tasks: linux.yml
+  when: ansible_system == "Linux"
+
+- name: FreeBSD hosts (util1) keep base ntpd with fixed servers
+  ansible.builtin.include_tasks: freebsd.yml
+  when: ansible_os_family == "FreeBSD"

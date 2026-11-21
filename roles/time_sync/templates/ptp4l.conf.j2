@@ -1,0 +1,23 @@
+# Managed by Ansible (roles/time_sync). PTP over layer 2 on {{ time_sync_ptp_iface }}.
+# fksw has no PTP support, so this is end-to-end delay measurement through
+# an ordinary switch.
+[global]
+domainNumber            {{ time_sync_ptp_domain }}
+network_transport       L2
+time_stamping           hardware
+delay_mechanism         E2E
+logSyncInterval         {{ time_sync_ptp_log_sync_interval }}
+logMinDelayReqInterval  {{ time_sync_ptp_log_sync_interval }}
+logAnnounceInterval     1
+summary_interval        6
+{% if time_sync_is_grandmaster | bool %}
+# Grandmaster: its NIC clock follows its NTP-disciplined system clock
+# (phc2sys-grandmaster). clockClass 248 = not traceable on its own.
+priority1               64
+clockClass              248
+utc_offset              37
+{% else %}
+slaveOnly               1
+{% endif %}
+
+[{{ time_sync_ptp_iface }}]

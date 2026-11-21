@@ -1,0 +1,31 @@
+---
+# util1 is a FreeBSD VM: no ptp_kvm there, so it keeps base ntpd, pointed at
+# the local time servers by address. Its old pool line needed DNS at boot;
+# on 2026-11-17 the lookup failed, ntpd never retried, and util1 ran 20 s
+# fast until 2026-11-21.
+- name: Configure ntpd with fixed servers
+  ansible.builtin.template:
+    src: ntp.conf.j2
+    dest: /etc/ntp.conf
+    mode: "0644"
+  vars:
+    time_sync_ntpd_servers: >-
+      {{ groups['time_servers'] | default([])
+         | map('extract', host_config) | map(attribute='ip_cidr')
+         | map('split', '/') | map('first') | list }}
+  notify: Restart ntpd
+
+# ntpd_sync_on_start runs ntpd -g -q first, so a clock that is far off is
+# stepped once at start instead of being slewed for hours.
+- name: Enable ntpd and let it step the clock at start
+  community.general.sysrc:
+    name: "{{ item }}"
+    value: "YES"
+  loop: [ntpd_enable, ntpd_sync_on_start]
+  notify: Restart ntpd
+
+- name: Run ntpd
+  ansible.builtin.service:
+    name: ntpd
+    state: started
+    enabled: true

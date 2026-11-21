@@ -24,6 +24,18 @@
   tags:
     - common
     - qemu_guest
+- name: Keep every host on one clock
+  # roles/time_sync: chrony everywhere on Linux, PTP between the physical
+  # hosts, ptp_kvm in the VMs, fixed ntpd servers on util1. Not tagged
+  # common on purpose: roll it out with --tags time_sync --limit.
+  hosts: time_servers:ptp_hosts:tx:qemu_guest:util
+  become: true
+  gather_facts: true
+  roles:
+    - time_sync
+  tags:
+    - time_sync
+
 - name: Install node_exporter on the hosts outside the Kubernetes clusters
   # file01 and the Proxmox hypervisors. The kube nodes are excluded from the
   # inventory group on purpose -- kube-prometheus-stack already runs a

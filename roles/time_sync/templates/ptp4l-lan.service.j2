@@ -1,0 +1,13 @@
+# Managed by Ansible (roles/time_sync).
+[Unit]
+Description=PTP on {{ time_sync_ptp_iface }} ({{ 'grandmaster' if time_sync_is_grandmaster | bool else 'slave' }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/sbin/ptp4l -f /etc/linuxptp/ptp4l-lan.conf
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

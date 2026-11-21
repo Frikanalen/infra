@@ -79,6 +79,18 @@ all:
         vm3:
         vm4:
 
+    # Clock hierarchy, see roles/time_sync. The Proxmox hosts serve NTP to
+    # everything else; ptp_hosts are the physical machines whose NICs have a
+    # hardware clock (tx3's 82575EB has none) and run PTP among themselves.
+    time_servers:
+      children:
+        proxmox:
+
+    ptp_hosts:
+      children:
+        proxmox:
+        storage:
+
     caspar:
       children:
         caspar_hw:
