@@ -1,0 +1,83 @@
+---
+- name: Install linuxptp
+  ansible.builtin.apt:
+    name: linuxptp
+    state: present
+
+# The port to run PTP on: the PTP-capable physical NIC behind the interface
+# that carries the default route. On a Proxmox host that is a member of
+# vmbr0 (through an active-backup bond if there is one); on file01 it is
+# the interface itself. Prints "<iface> <phc index>".
+- name: Find the PTP port and its hardware clock
+  ansible.builtin.shell: |
+    set -euo pipefail
+    want='{{ time_sync_ptp_interface }}'
+    if [ -n "$want" ]; then
+      candidates="$want"
+    else
+      dev=$(ip -o -4 route show default | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)
+      if [ -d "/sys/class/net/$dev/brif" ]; then
+        candidates=$(ls "/sys/class/net/$dev/brif")
+      else
+        candidates="$dev"
+      fi
+    fi
+    for i in $candidates; do
+      if [ -d "/sys/class/net/$i/bonding" ]; then
+        i=$(cat "/sys/class/net/$i/bonding/active_slave")
+      fi
+      for p in /sys/class/net/"$i"/device/ptp/ptp*; do
+        [ -e "$p" ] || continue
+        echo "$i ${p##*/ptp}"
+        exit 0
+      done
+    done
+    echo "no PTP-capable port among: $candidates" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  register: time_sync_ptp_port
+  changed_when: false
+  check_mode: false
+
+- name: Remember the PTP port
+  ansible.builtin.set_fact:
+    time_sync_ptp_iface: "{{ time_sync_ptp_port.stdout.split()[0] }}"
+    time_sync_ptp_phc: "{{ time_sync_ptp_port.stdout.split()[1] }}"
+
+- name: Configure ptp4l
+  ansible.builtin.template:
+    src: ptp4l.conf.j2
+    dest: /etc/linuxptp/ptp4l-lan.conf
+    mode: "0644"
+  notify: Restart ptp4l
+
+- name: Install the ptp4l unit
+  ansible.builtin.template:
+    src: ptp4l-lan.service.j2
+    dest: /etc/systemd/system/ptp4l-lan.service
+    mode: "0644"
+  notify: Restart ptp4l
+
+- name: Run ptp4l
+  ansible.builtin.systemd:
+    name: ptp4l-lan
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: Install the phc2sys unit on the grandmaster
+  ansible.builtin.template:
+    src: phc2sys-grandmaster.service.j2
+    dest: /etc/systemd/system/phc2sys-grandmaster.service
+    mode: "0644"
+  notify: Restart phc2sys
+  when: time_sync_is_grandmaster | bool
+
+- name: Run phc2sys on the grandmaster
+  ansible.builtin.systemd:
+    name: phc2sys-grandmaster
+    state: "{{ 'started' if time_sync_is_grandmaster | bool else 'stopped' }}"
+    enabled: "{{ time_sync_is_grandmaster | bool }}"
+    daemon_reload: true
+  failed_when: false

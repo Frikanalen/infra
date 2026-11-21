@@ -1,0 +1,58 @@
+---
+# roles/time_sync: one clock for the whole fleet. See README.md.
+#
+# Before this role nothing in the repo managed time. Every host ran its OS
+# default against public pools: chrony on the Proxmox hosts, openntpd on
+# file01, systemd-timesyncd (one server, 24-100 ms away, polled every half
+# hour) on the Ubuntu VMs, ntpd on util1. The VMs wandered 3-9 ms on prod and
+# up to 29 ms on staging, and util1 sat 20 s fast for four days after its
+# pool lookup failed at boot (2026-11-17 to 2026-11-21).
+
+# Where the time servers (inventory group time_servers, the Proxmox hosts)
+# get their time. Addresses rather than names on purpose: a DNS failure at
+# boot is exactly what left util1 unsynced.
+#   77.40.226.121  Meinberg stratum 1 (refid MBGh), 1.4 ms away
+#   192.168.3.1    simula's NTP server, stratum 2 from the Meinberg above
+# The pool lines only add votes so one bad server can be outvoted.
+time_sync_upstream_servers:
+  - 77.40.226.121
+  - 192.168.3.1
+time_sync_upstream_pools:
+  - no.pool.ntp.org
+
+# Polling of the local time servers by everyone else. Short, because the
+# servers are on the same LAN and few. On a VM these are only the fallback
+# behind ptp_kvm.
+time_sync_client_minpoll: 4
+time_sync_client_maxpoll: 6
+
+# Networks the time servers answer NTP for.
+time_sync_allow:
+  - 192.168.3.0/24
+
+# --- PTP between the physical hosts (inventory group ptp_hosts) ----------
+# fksw is an EX4200-class switch with no PTP support, so PTP crosses it as
+# ordinary layer-2 multicast (no transparent clock): expect a few us of
+# agreement between hosts, not tens of ns.
+#
+# The grandmaster disciplines its NIC clock from its system clock (itself
+# NTP-synced to the servers above) with phc2sys; every other ptp_host runs
+# ptp4l slave-only and chrony reads the NIC clock as a refclock. When a
+# PPS source (the cesium clock) is wired to a host, make that host the
+# grandmaster and give it time_sync_pps_refclock.
+time_sync_ptp_grandmaster: vm4
+time_sync_ptp_domain: 0
+# 2^-2 s: four Sync messages a second. Cheap, and it lets chrony average.
+time_sync_ptp_log_sync_interval: -2
+# Interface ptp4l runs on. Empty means: the PTP-capable physical port behind
+# the interface that carries the default route (looking through a Linux
+# bridge and an active-backup bond). Set it in host_vars to override.
+time_sync_ptp_interface: ""
+
+# chrony refclock line for a PPS input on this host, e.g.
+#   "PPS /dev/pps0 lock PHC0 refid CS"
+# Empty: none. Reserved for the cesium clock; nothing uses it yet.
+time_sync_pps_refclock: ""
+
+# Read the host's clock straight through ptp_kvm on Linux VMs.
+time_sync_ptp_kvm: true

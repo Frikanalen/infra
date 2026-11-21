@@ -1,0 +1,92 @@
+---
+- name: Work out this host's place in the time hierarchy
+  ansible.builtin.set_fact:
+    time_sync_is_server: "{{ inventory_hostname in groups['time_servers'] | default([]) }}"
+    time_sync_is_ptp: "{{ inventory_hostname in groups['ptp_hosts'] | default([]) }}"
+    time_sync_is_grandmaster: "{{ inventory_hostname == time_sync_ptp_grandmaster }}"
+    time_sync_is_guest: "{{ time_sync_ptp_kvm and inventory_hostname in groups['qemu_guest'] | default([]) }}"
+    time_sync_local_servers: >-
+      {{ groups['time_servers'] | default([])
+         | difference([inventory_hostname])
+         | map('extract', host_config) | map(attribute='ip_cidr')
+         | map('split', '/') | map('first') | list }}
+
+# chrony replaces whatever the OS shipped. openntpd (file01) and ntpd
+# (tx3's leftover ntp.conf) would fight it for the clock; timesyncd is
+# masked rather than removed because Ubuntu's systemd pulls it back.
+- name: Remove other NTP daemons
+  ansible.builtin.apt:
+    name: [openntpd, ntp, ntpsec]
+    state: absent
+
+- name: Mask systemd-timesyncd
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+    masked: true
+  failed_when: false
+
+- name: Install chrony
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# A PHC slaved by ptp4l runs on TAI. chrony converts it with the right/UTC
+# leap table, which Debian 13 and Ubuntu 24.04+ moved to tzdata-legacy.
+- name: Check for the right/UTC leap-second table
+  ansible.builtin.stat:
+    path: /usr/share/zoneinfo/right/UTC
+  register: time_sync_right_utc
+  when: time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool
+
+- name: Install the leap-second table for TAI refclocks
+  ansible.builtin.apt:
+    name: tzdata-legacy
+    state: present
+  when:
+    - time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool
+    - not time_sync_right_utc.stat.exists
+
+- name: Load ptp_kvm at boot on VMs
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/ptp_kvm.conf
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/time_sync): the host's clock as /dev/ptp_kvm.
+      ptp_kvm
+  when: time_sync_is_guest | bool
+
+- name: Load ptp_kvm now
+  community.general.modprobe:
+    name: ptp_kvm
+    state: present
+  register: time_sync_ptp_kvm_loaded
+  failed_when: false
+  when: time_sync_is_guest | bool
+
+# systemd's 50-udev-default.rules links the KVM PHC to /dev/ptp_kvm.
+- name: Check for /dev/ptp_kvm
+  ansible.builtin.stat:
+    path: /dev/ptp_kvm
+  register: time_sync_ptp_kvm_dev
+  when: time_sync_is_guest | bool
+
+- name: Set up PTP
+  ansible.builtin.include_tasks: ptp.yml
+  when: time_sync_is_ptp | bool
+
+- name: Configure chrony
+  ansible.builtin.template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    mode: "0644"
+  notify: Restart chrony
+
+- name: Run chrony
+  ansible.builtin.systemd:
+    name: chrony
+    state: started
+    enabled: true

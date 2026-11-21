@@ -1,0 +1,46 @@
+# Managed by Ansible (roles/time_sync). Do not edit by hand.
+{% if time_sync_is_server | bool %}
+# Time server: upstream by address, so a DNS failure at boot can't strand us.
+{% for s in time_sync_upstream_servers %}
+server {{ s }} iburst
+{% endfor %}
+{% for p in time_sync_upstream_pools %}
+pool {{ p }} iburst maxsources 2
+{% endfor %}
+{% endif %}
+{% if not time_sync_is_grandmaster | bool %}
+# The other local time servers.
+{% for s in time_sync_local_servers %}
+server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}
+{% endfor %}
+{% endif %}
+{% if time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool %}
+
+# The NIC clock, slaved to the grandmaster by ptp4l-lan. It runs on TAI.
+refclock PHC /dev/ptp{{ time_sync_ptp_phc }} poll 0 dpoll -2 tai refid PTP prefer
+leapsectz right/UTC
+{% endif %}
+{% if time_sync_is_guest | bool and time_sync_ptp_kvm_dev.stat.exists | default(false) %}
+
+# This VM's host clock, read through ptp_kvm with no network in between.
+refclock PHC /dev/ptp_kvm poll 2 refid HOST prefer
+{% endif %}
+{% if time_sync_pps_refclock %}
+
+refclock {{ time_sync_pps_refclock }}
+{% endif %}
+{% if time_sync_is_server | bool %}
+
+{% for net in time_sync_allow %}
+allow {{ net }}
+{% endfor %}
+{% endif %}
+
+driftfile /var/lib/chrony/chrony.drift
+ntsdumpdir /var/lib/chrony
+logdir /var/log/chrony
+maxupdateskew 100.0
+# Step only in the first three updates after start, and only if over 1 s;
+# otherwise always slew. Keeps playout from seeing time jump.
+makestep 1 3
+rtcsync

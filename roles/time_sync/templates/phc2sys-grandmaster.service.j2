@@ -1,0 +1,15 @@
+# Managed by Ansible (roles/time_sync). Drives {{ time_sync_ptp_iface }}'s
+# hardware clock from the system clock, so the grandmaster serves the time
+# chrony keeps. -w takes the UTC/TAI offset from ptp4l.
+[Unit]
+Description=Discipline {{ time_sync_ptp_iface }} PHC from the system clock
+After=ptp4l-lan.service chrony.service
+Requires=ptp4l-lan.service
+
+[Service]
+ExecStart=/usr/sbin/phc2sys -s CLOCK_REALTIME -c {{ time_sync_ptp_iface }} -w -R 8
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
