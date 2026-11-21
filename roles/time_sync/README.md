@@ -51,3 +51,12 @@ chronyc tracking
 pmc -u -b 0 'GET CURRENT_DATA_SET'   # on ptp_hosts: offsetFromMaster in ns
 journalctl -u ptp4l-lan -f
 ```
+
+## NTP hardware timestamps
+
+While PTP is off, the `ptp_hosts` (Proxmox hosts and file01) run chrony with
+`hwtimestamp *` and `xleave` to each other. Since Linux 4.13 chrony maps a
+packet on a bond, VLAN or bridge to the physical port it used, so the LACP
+bonds don't get in the way. igb (I350/I210) gives hardware RX and TX
+timestamps; vmtx1's bnx2x only timestamps PTP frames on RX, so it gets
+hardware TX and kernel RX. Expect single-digit µs between hosts across fksw.
