@@ -60,3 +60,15 @@ packet on a bond, VLAN or bridge to the physical port it used, so the LACP
 bonds don't get in the way. igb (I350/I210) gives hardware RX and TX
 timestamps; vmtx1's bnx2x only timestamps PTP frames on RX, so it gets
 hardware TX and kernel RX. Expect single-digit µs between hosts across fksw.
+
+### Incident 2026-11-22: why it is off
+
+`hwtimestamp *` sets the I350 (igb) ports on vm1-4 to rx_filter ALL. With
+MTU 9000 on the LACP bond, every full-size received frame then arrived 32
+bytes short (`total length 9000 > length 8968`) and was dropped. Small
+packets (pings, heartbeats, handshakes) still passed, so Ceph's OSD-to-OSD
+traffic stalled silently: degraded from 09:58Z, fully down 10:20-11:32Z.
+Removing the line and restarting chrony does not reset the NIC; it takes a
+SIOCSHWTSTAMP ioctl (rx_filter NONE, tx OFF) or a driver reload. Don't turn
+`time_sync_ntp_hwtimestamp` on for jumbo-frame NICs without first testing a
+sender MTU below ~8960 on a non-Ceph host.
