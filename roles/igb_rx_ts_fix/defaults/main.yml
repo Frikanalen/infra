@@ -21,6 +21,14 @@ igb_rx_ts_fix_headers_package: >-
   {{ 'proxmox-default-headers' if inventory_hostname in groups['proxmox'] | default([])
      else 'linux-headers-amd64' }}
 
+# Headers for the kernel the host runs now. The meta package above follows
+# the default series (proxmox-default-headers = the 7.0 headers on
+# 2026-11-23), not necessarily the kernel that is booted (6.14.8-2-pve on
+# vm1-4), so without this the running kernel gets no build.
+igb_rx_ts_fix_running_headers_package: >-
+  {{ ('proxmox-headers-' if inventory_hostname in groups['proxmox'] | default([])
+      else 'linux-headers-') ~ ansible_kernel }}
+
 # Where the per-kernel verdict is written for roles/time_sync's guard:
 # /etc/igb-rx-ts-fix/<uname -r> holds "dkms" or "intree-fixed".
 igb_rx_ts_fix_state_dir: /etc/igb-rx-ts-fix

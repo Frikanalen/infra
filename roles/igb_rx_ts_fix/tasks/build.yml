@@ -7,6 +7,7 @@
       - patch
       - linuxptp  # hwstamp_ctl, used by roles/time_sync's guard
       - "{{ igb_rx_ts_fix_headers_package }}"
+      - "{{ igb_rx_ts_fix_running_headers_package }}"
     state: present
     update_cache: true
     cache_valid_time: 3600
