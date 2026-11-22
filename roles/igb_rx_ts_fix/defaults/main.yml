@@ -1,0 +1,26 @@
+---
+# roles/igb_rx_ts_fix: DKMS-built igb with the upstream fix for Rx hardware
+# timestamping on multi-buffer (jumbo) frames. See README.md for the bug and
+# for when to delete this role.
+
+# Bump when the patches or the build change, so DKMS sees a new version.
+igb_rx_ts_fix_revision: 1
+
+# The patch that matters. The others in files/patches (1/3 and 3/3 of the
+# same series, for XDP/AF_XDP) are applied where they apply and skipped
+# where they don't (6.12 lacks the XDP rework they touch).
+igb_rx_ts_fix_key_patch: 0002-igb-only-strip-Rx-timestamp-header-on-the-first-buffer.patch
+
+# For the mainline check (files/check_upstream.py, run on the controller).
+igb_rx_ts_fix_upstream_subject: "igb: only strip Rx timestamp header on the first buffer of a frame"
+igb_rx_ts_fix_upstream_repo: torvalds/linux
+
+# Header packages that follow every kernel the host installs, so that DKMS
+# rebuilds by itself after a kernel update in the same stable version.
+igb_rx_ts_fix_headers_package: >-
+  {{ 'proxmox-default-headers' if inventory_hostname in groups['proxmox'] | default([])
+     else 'linux-headers-amd64' }}
+
+# Where the per-kernel verdict is written for roles/time_sync's guard:
+# /etc/igb-rx-ts-fix/<uname -r> holds "dkms" or "intree-fixed".
+igb_rx_ts_fix_state_dir: /etc/igb-rx-ts-fix

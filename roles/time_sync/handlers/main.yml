@@ -3,6 +3,7 @@
   ansible.builtin.systemd:
     name: chrony
     state: restarted
+    daemon_reload: true
 
 - name: Restart ptp4l
   ansible.builtin.systemd:

@@ -1,0 +1,75 @@
+---
+# One kernel, igb_rx_ts_fix_kernel: a /lib/modules name such as
+# 6.14.8-2-pve or 6.12.117+deb13-amd64.
+- name: Work out the versions for {{ igb_rx_ts_fix_kernel }}
+  ansible.builtin.set_fact:
+    igb_rx_ts_fix_stable: "{{ igb_rx_ts_fix_kernel | regex_search('^\\d+\\.\\d+\\.\\d+') }}"
+
+- name: Set the DKMS version and source directory
+  ansible.builtin.set_fact:
+    igb_rx_ts_fix_dkms_version: "{{ igb_rx_ts_fix_stable }}-fk{{ igb_rx_ts_fix_revision }}"
+    igb_rx_ts_fix_src: /usr/src/igb-fk-{{ igb_rx_ts_fix_stable }}-fk{{ igb_rx_ts_fix_revision }}
+
+# Downloads igb from the stable tree at v<stable>, checks whether the stock
+# code already has the fix, and patches it. The status file is written last,
+# so its presence means the tree is done.
+- name: Download and patch igb v{{ igb_rx_ts_fix_stable }}
+  ansible.builtin.command:
+    argv:
+      - python3
+      - /usr/local/libexec/prepare_igb_src.py
+      - "{{ igb_rx_ts_fix_stable }}"
+      - "{{ igb_rx_ts_fix_src }}"
+      - /usr/src/igb-fk-patches-{{ igb_rx_ts_fix_revision }}
+      - "{{ igb_rx_ts_fix_key_patch }}"
+    creates: "{{ igb_rx_ts_fix_src }}/fk-status.json"
+
+- name: Read what was found and applied
+  ansible.builtin.slurp:
+    src: "{{ igb_rx_ts_fix_src }}/fk-status.json"
+  register: igb_rx_ts_fix_status_raw
+
+- name: Remember it
+  ansible.builtin.set_fact:
+    igb_rx_ts_fix_status: "{{ igb_rx_ts_fix_status_raw.content | b64decode | from_json }}"
+
+- name: Report it
+  ansible.builtin.debug:
+    msg: >-
+      {{ igb_rx_ts_fix_kernel }}: stock igb v{{ igb_rx_ts_fix_stable }} is
+      {{ igb_rx_ts_fix_status.stock }};
+      {{ 'no DKMS module needed' if igb_rx_ts_fix_status.intree_fixed
+         else 'patched with ' ~ (igb_rx_ts_fix_status.applied | join(', ')) }}
+
+- name: Write dkms.conf
+  ansible.builtin.template:
+    src: dkms.conf.j2
+    dest: "{{ igb_rx_ts_fix_src }}/dkms.conf"
+    mode: "0644"
+  when: not igb_rx_ts_fix_status.intree_fixed
+
+# dkms install builds if needed, puts the module in updates/dkms, runs
+# depmod. The initramfs is rebuilt explicitly: it carries igb, and a stock
+# igb loaded from it would win over updates/dkms at boot.
+- name: Build and install the DKMS module for {{ igb_rx_ts_fix_kernel }}
+  ansible.builtin.shell: |
+    set -euo pipefail
+    v={{ igb_rx_ts_fix_dkms_version }}
+    k={{ igb_rx_ts_fix_kernel }}
+    if dkms status -m igb-fk -v "$v" -k "$k" | grep -q installed; then
+      echo unchanged; exit 0
+    fi
+    dkms status -m igb-fk -v "$v" | grep -q . || dkms add -m igb-fk -v "$v"
+    dkms install -m igb-fk -v "$v" -k "$k"
+    update-initramfs -u -k "$k"
+  args:
+    executable: /bin/bash
+  register: igb_rx_ts_fix_dkms
+  changed_when: "'unchanged' not in igb_rx_ts_fix_dkms.stdout"
+  when: not igb_rx_ts_fix_status.intree_fixed
+
+- name: Record the verdict for {{ igb_rx_ts_fix_kernel }}
+  ansible.builtin.copy:
+    dest: "{{ igb_rx_ts_fix_state_dir }}/{{ igb_rx_ts_fix_kernel }}"
+    mode: "0644"
+    content: "{{ 'intree-fixed' if igb_rx_ts_fix_status.intree_fixed else 'dkms' }}\n"

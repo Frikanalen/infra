@@ -20,7 +20,12 @@ server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_syn
 # bond/VLAN/bridge to the physical port they used, so the LACP bonds that
 # rule out ptp4l don't matter here. xleave (above) lets the far end send
 # its hardware transmit timestamp too.
-hwtimestamp *
+#
+# "hwtimestamp *" is NOT written here. chrony-hwts-guard (ExecStartPre)
+# writes it into this directory at every chrony start, and only when the
+# loaded igb carries the jumbo-frame fix (roles/igb_rx_ts_fix). Stock igb
+# plus RX timestamping truncates 9000-byte frames: the 2026-11-22 Ceph outage.
+confdir /run/chrony-hwts.d
 {% endif %}
 {% if time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool %}
 

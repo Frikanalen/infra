@@ -1,0 +1,76 @@
+---
+- name: Install DKMS, the build tools and kernel headers
+  ansible.builtin.apt:
+    name:
+      - dkms
+      - dwarves   # pahole, for BTF; Debian kernels fail modfinal without it
+      - patch
+      - linuxptp  # hwstamp_ctl, used by roles/time_sync's guard
+      - "{{ igb_rx_ts_fix_headers_package }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Copy the source preparer and the fix detector
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /usr/local/libexec/{{ item }}
+    mode: "0755"
+  loop: [prepare_igb_src.py, igb_fix_present.py]
+
+- name: Copy the patches
+  ansible.builtin.copy:
+    src: patches/
+    dest: /usr/src/igb-fk-patches-{{ igb_rx_ts_fix_revision }}/
+    mode: "0644"
+
+- name: Create the state directory
+  ansible.builtin.file:
+    path: "{{ igb_rx_ts_fix_state_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Find the installed kernels that have headers
+  ansible.builtin.shell: |
+    set -eu
+    for d in /lib/modules/*/; do
+      [ -e "$d/build/Makefile" ] && basename "$d"
+    done
+    true
+  args:
+    executable: /bin/bash
+  register: igb_rx_ts_fix_kernels
+  changed_when: false
+  check_mode: false
+
+- name: Build the patched igb for each kernel
+  ansible.builtin.include_tasks: kernel.yml
+  loop: "{{ igb_rx_ts_fix_kernels.stdout_lines }}"
+  loop_control:
+    loop_var: igb_rx_ts_fix_kernel
+
+- name: Check whether the running kernel has the fixed igb loaded
+  ansible.builtin.shell: |
+    set -u
+    k=$(uname -r)
+    state=$(cat {{ igb_rx_ts_fix_state_dir }}/$k 2>/dev/null || echo none)
+    loaded=$(cat /sys/module/igb/srcversion 2>/dev/null || echo not-loaded)
+    built=$(modinfo -F srcversion /lib/modules/$k/updates/dkms/igb.ko* 2>/dev/null || echo none)
+    if [ "$state" = intree-fixed ]; then
+      echo "running kernel's own igb has the fix"
+    elif [ "$state" = dkms ] && [ "$loaded" = "$built" ]; then
+      echo "patched igb is loaded"
+    elif [ "$state" = dkms ]; then
+      echo "patched igb built; REBOOT (or reload igb) to load it"
+    else
+      echo "no patched igb for the running kernel; NIC timestamping stays off"
+    fi
+  args:
+    executable: /bin/bash
+  register: igb_rx_ts_fix_loaded
+  changed_when: false
+  check_mode: false
+
+- name: Report the loaded igb
+  ansible.builtin.debug:
+    msg: "{{ igb_rx_ts_fix_loaded.stdout }}"

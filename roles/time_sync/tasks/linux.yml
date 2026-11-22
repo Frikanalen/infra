@@ -106,6 +106,46 @@
   ansible.builtin.include_tasks: ptp.yml
   when: time_sync_is_ptp | bool
 
+# NIC timestamping goes through a guard that re-checks igb at every chrony
+# start (see files/chrony-hwts-guard and roles/igb_rx_ts_fix).
+- name: Install hwstamp_ctl for the timestamping guard
+  ansible.builtin.apt:
+    name: linuxptp
+    state: present
+  when: time_sync_hwtimestamp | bool
+
+- name: Install the timestamping guard
+  ansible.builtin.copy:
+    src: chrony-hwts-guard
+    dest: /usr/local/libexec/chrony-hwts-guard
+    mode: "0755"
+  when: time_sync_hwtimestamp | bool
+
+- name: Create chrony's systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/chrony.service.d
+    state: directory
+    mode: "0755"
+  when: time_sync_hwtimestamp | bool
+
+- name: Run the guard before chrony starts
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/chrony.service.d/hwts-guard.conf
+    content: |
+      # Managed by Ansible (roles/time_sync)
+      [Service]
+      ExecStartPre=/usr/local/libexec/chrony-hwts-guard
+    mode: "0644"
+  when: time_sync_hwtimestamp | bool
+  notify: Restart chrony
+
+- name: Remove the guard drop-in where NIC timestamping is off
+  ansible.builtin.file:
+    path: /etc/systemd/system/chrony.service.d/hwts-guard.conf
+    state: absent
+  when: not time_sync_hwtimestamp | bool
+  notify: Restart chrony
+
 - name: Configure chrony
   ansible.builtin.template:
     src: chrony.conf.j2
