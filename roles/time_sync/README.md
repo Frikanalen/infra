@@ -52,7 +52,7 @@ pmc -u -b 0 'GET CURRENT_DATA_SET'   # on ptp_hosts: offsetFromMaster in ns
 journalctl -u ptp4l-lan -f
 ```
 
-## NTP hardware timestamps
+## NTP hardware timestamps (off: see time_sync_ntp_hwtimestamp)
 
 While PTP is off, the `ptp_hosts` (Proxmox hosts and file01) run chrony with
 `hwtimestamp *` and `xleave` to each other. Since Linux 4.13 chrony maps a

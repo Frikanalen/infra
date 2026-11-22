@@ -64,5 +64,13 @@ time_sync_ptp_interface: ""
 # Empty: none. Reserved for the cesium clock; nothing uses it yet.
 time_sync_pps_refclock: ""
 
+# NIC hardware timestamps for NTP on the ptp_hosts (chrony `hwtimestamp *`).
+# OFF: turning it on on vm2 (2026-11-22 09:58Z) was followed within seconds
+# by Ceph SLOW_OPS and laggy PGs ("waiting for readable") on all three OSDs,
+# with clocks, links, MTU and retransmits all fine. With I350 (igb) and RX
+# filter "all", every received packet is timestamped, on a 9000-MTU Ceph
+# network. Leave off until that is understood.
+time_sync_ntp_hwtimestamp: false
+
 # Read the host's clock straight through ptp_kvm on Linux VMs.
 time_sync_ptp_kvm: true

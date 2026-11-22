@@ -6,7 +6,7 @@
     time_sync_is_grandmaster: "{{ time_sync_ptp_enabled | bool and inventory_hostname == time_sync_ptp_grandmaster }}"
     # Physical hosts with PHC-capable NICs (ptp_hosts) use NIC timestamps for
     # NTP while PTP is off (ptp4l would fight chrony over the NIC's filter).
-    time_sync_hwtimestamp: "{{ not time_sync_ptp_enabled | bool and inventory_hostname in groups['ptp_hosts'] | default([]) }}"
+    time_sync_hwtimestamp: "{{ time_sync_ntp_hwtimestamp | bool and not time_sync_ptp_enabled | bool and inventory_hostname in groups['ptp_hosts'] | default([]) }}"
     time_sync_is_guest: "{{ time_sync_ptp_kvm and inventory_hostname in groups['qemu_guest'] | default([]) }}"
     time_sync_local_servers: >-
       {{ groups['time_servers'] | default([])
