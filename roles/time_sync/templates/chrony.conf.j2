@@ -11,8 +11,16 @@ pool {{ p }} iburst maxsources 2
 {% if not time_sync_is_grandmaster | bool %}
 # The other local time servers.
 {% for s in time_sync_local_servers %}
-server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}
+server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}
 {% endfor %}
+{% endif %}
+{% if time_sync_hwtimestamp | bool %}
+
+# NIC timestamps for NTP. Since Linux 4.13 chrony resolves packets on a
+# bond/VLAN/bridge to the physical port they used, so the LACP bonds that
+# rule out ptp4l don't matter here. xleave (above) lets the far end send
+# its hardware transmit timestamp too.
+hwtimestamp *
 {% endif %}
 {% if time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool %}
 

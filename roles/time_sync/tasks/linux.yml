@@ -2,8 +2,11 @@
 - name: Work out this host's place in the time hierarchy
   ansible.builtin.set_fact:
     time_sync_is_server: "{{ inventory_hostname in groups['time_servers'] | default([]) }}"
-    time_sync_is_ptp: "{{ inventory_hostname in groups['ptp_hosts'] | default([]) }}"
-    time_sync_is_grandmaster: "{{ inventory_hostname == time_sync_ptp_grandmaster }}"
+    time_sync_is_ptp: "{{ time_sync_ptp_enabled | bool and inventory_hostname in groups['ptp_hosts'] | default([]) }}"
+    time_sync_is_grandmaster: "{{ time_sync_ptp_enabled | bool and inventory_hostname == time_sync_ptp_grandmaster }}"
+    # Physical hosts with PHC-capable NICs (ptp_hosts) use NIC timestamps for
+    # NTP while PTP is off (ptp4l would fight chrony over the NIC's filter).
+    time_sync_hwtimestamp: "{{ not time_sync_ptp_enabled | bool and inventory_hostname in groups['ptp_hosts'] | default([]) }}"
     time_sync_is_guest: "{{ time_sync_ptp_kvm and inventory_hostname in groups['qemu_guest'] | default([]) }}"
     time_sync_local_servers: >-
       {{ groups['time_servers'] | default([])
@@ -58,6 +61,29 @@
       # Managed by Ansible (roles/time_sync): the host's clock as /dev/ptp_kvm.
       ptp_kvm
   when: time_sync_is_guest | bool
+
+# Ubuntu's 6.8 kernels keep ptp_kvm in linux-modules-extra (caspar-sw1 had
+# none installed); the 7.0 kernels on the 26.04 nodes have it in the base
+# modules. Look before installing anything.
+- name: Check whether this kernel ships ptp_kvm
+  ansible.builtin.command:
+    argv: [modinfo, -n, ptp_kvm]
+  register: time_sync_ptp_kvm_modinfo
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: time_sync_is_guest | bool
+
+- name: Install the extra kernel modules that carry ptp_kvm
+  ansible.builtin.apt:
+    name: "linux-modules-extra-{{ ansible_kernel }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when:
+    - time_sync_is_guest | bool
+    - time_sync_ptp_kvm_modinfo.rc != 0
+    - ansible_distribution == "Ubuntu"
 
 - name: Load ptp_kvm now
   community.general.modprobe:

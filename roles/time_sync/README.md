@@ -25,7 +25,10 @@ Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
   to `time_sync_allow`.
 - `ptp_hosts` (Proxmox hosts + file01): physical hosts whose NIC has a hardware
   clock (Intel I350/I210, Broadcom BCM57800). `time_sync_ptp_grandmaster`
-  picks the master; the rest are `slaveOnly`.
+  picks the master; the rest are `slaveOnly`. Only with
+  `time_sync_ptp_enabled: true`, which is off: these hosts sit on LACP bonds
+  with VLANs on top, and Linux gives no hardware timestamps through an
+  802.3ad bond (see defaults/main.yml). Until then they run chrony on NTP.
 - `qemu_guest`: Linux VMs load `ptp_kvm` and prefer their host's clock.
 
 ## Expected accuracy
@@ -48,3 +51,12 @@ chronyc tracking
 pmc -u -b 0 'GET CURRENT_DATA_SET'   # on ptp_hosts: offsetFromMaster in ns
 journalctl -u ptp4l-lan -f
 ```
+
+## NTP hardware timestamps
+
+While PTP is off, the `ptp_hosts` (Proxmox hosts and file01) run chrony with
+`hwtimestamp *` and `xleave` to each other. Since Linux 4.13 chrony maps a
+packet on a bond, VLAN or bridge to the physical port it used, so the LACP
+bonds don't get in the way. igb (I350/I210) gives hardware RX and TX
+timestamps; vmtx1's bnx2x only timestamps PTP frames on RX, so it gets
+hardware TX and kernel RX. Expect single-digit µs between hosts across fksw.
