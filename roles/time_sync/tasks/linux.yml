@@ -30,6 +30,15 @@
     name: [openntpd, ntp, ntpsec]
     state: absent
 
+- name: Install chrony
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# Only after chrony is installed: if the install fails (a held apt lock on
+# mail1, 2026-11-23), timesyncd keeps the clock instead of nothing at all.
 - name: Mask systemd-timesyncd
   ansible.builtin.systemd:
     name: systemd-timesyncd
@@ -37,13 +46,6 @@
     enabled: false
     masked: true
   failed_when: false
-
-- name: Install chrony
-  ansible.builtin.apt:
-    name: chrony
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
 
 # A PHC slaved by ptp4l runs on TAI. chrony converts it with the right/UTC
 # leap table, which Debian 13 and Ubuntu 24.04+ moved to tzdata-legacy.
