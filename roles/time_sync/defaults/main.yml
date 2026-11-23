@@ -9,23 +9,20 @@
 # pool lookup failed at boot (2026-11-17 to 2026-11-21).
 
 # Where the time servers (inventory group time_servers, the Proxmox hosts)
-# get their time.
-#   ntp.justervesenet.no  Justervesenet, Norway's national metrology
-#                         service: the official Norwegian time reference
-#   ntp.uio.no            UiO's ntp1 and ntp2, on the network the servers
-#                         sit in: a short, symmetric path, which matters
-#                         more for UTC accuracy than stratum
-#   192.168.3.1           simula's NTP server, by address, so the hosts
-#                         have a source even when DNS fails at boot
-#   no.pool.ntp.org       extra votes so one bad server can be outvoted
-# chrony keeps retrying a pool name that failed to resolve, so a DNS failure
-# at boot only delays those sources (util1's ntpd gave up for four days).
-# Replaces the Meinberg at 77.40.226.121 (2026-11-21 to 2026-11-23).
+# get their time. Addresses, so a DNS failure at boot can't strand them
+# (util1's ntpd sat 20 s fast for four days after one). Independent of
+# simula's 192.168.3.1 on purpose.
+#   77.40.226.121  ntp.justervesenet.no: Justervesenet, Norway's national
+#                  metrology service (stratum 1, Meinberg, refid MBGh)
+#   129.240.2.42   ntp.uio.no (ntp1/ntp2): UiO, on the network the
+#   129.240.2.6    servers sit in, so a short, symmetric path
+# The pool only adds votes so one bad server can be outvoted. Re-check the
+# UiO addresses with `dig ntp.uio.no` if they stop answering.
 time_sync_upstream_servers:
-  - 192.168.3.1
+  - 77.40.226.121
+  - 129.240.2.42
+  - 129.240.2.6
 time_sync_upstream_pools:
-  - ntp.justervesenet.no
-  - ntp.uio.no
   - no.pool.ntp.org
 
 # Polling of the local time servers by everyone else. Short, because the
