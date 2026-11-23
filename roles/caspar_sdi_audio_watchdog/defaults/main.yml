@@ -38,10 +38,15 @@ caspar_sdi_audio_watchdog_window_seconds: 21600
 
 # The same restart as by hand; playout re-cues on reconnect in ~2 s.
 caspar_sdi_audio_watchdog_restart_command: "systemctl restart nodm"
-# Optional cheaper first remedy, e.g. re-creating the DeckLink consumer over
-# AMCP (REMOVE + ADD). If it doesn't clear the jam within verify_seconds, the
-# restart follows at once. Empty: always restart.
-caspar_sdi_audio_watchdog_soft_remedy_command: ""
+# Cheaper first remedy: re-create the DeckLink consumer over AMCP
+# (files/caspar-recreate-decklink.py: REMOVE 1-301, wait until it's gone,
+# ADD 1-301 DECKLINK 1 EMBEDDED_AUDIO INTERNAL_KEY, check INFO 1). About a
+# 1-2 s SDI break instead of a CasparCG restart and re-cue. If the script
+# fails, or the jam isn't cleared within verify_seconds, the restart follows
+# at once. Note: the re-added consumer gets the default buffer-depth (3);
+# a configured casparcg_decklink_buffer_depth only comes back with a restart.
+# Empty: always restart.
+caspar_sdi_audio_watchdog_soft_remedy_command: "/usr/bin/python3 /usr/local/lib/caspar-sdi-audio-watchdog/caspar-recreate-decklink.py"
 
 # Air check before a restart: atemkontroll (github.com/Frikanalen/atemkontroll),
 # GET <url>/state. Restart only if atem_input is on program on M/E atem_me;

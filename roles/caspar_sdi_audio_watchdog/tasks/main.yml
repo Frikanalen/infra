@@ -20,6 +20,12 @@
     mode: "0755"
   notify: Restart caspar-sdi-audio-watchdog
 
+- name: Install the DeckLink consumer re-create script (soft remedy)
+  ansible.builtin.copy:
+    src: caspar-recreate-decklink.py
+    dest: /usr/local/lib/caspar-sdi-audio-watchdog/caspar-recreate-decklink.py
+    mode: "0755"
+
 - name: Check the on-unknown-program policy
   ansible.builtin.assert:
     that: caspar_sdi_audio_watchdog_on_unknown_program in ["restart", "inhibit"]

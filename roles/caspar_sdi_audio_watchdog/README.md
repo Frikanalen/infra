@@ -33,10 +33,17 @@ consumer is re-created.
     between -59.5 and -57) neither counts nor clears.
   - `return` (fallback): pre above -50 dBFS while the return is below -70 dBFS.
     A dead embedder measures about -83 dBFS there.
-- When jammed it acts: `_soft_remedy_command` first if set (e.g. re-creating
-  the DeckLink consumer over AMCP), else, or if that didn't clear it within
-  60 s, `systemctl restart nodm`, the same restart as by hand. Playout
-  re-cues by itself.
+- When jammed it acts in two steps:
+  1. The soft remedy (default): `files/caspar-recreate-decklink.py`
+     re-creates the DeckLink consumer over AMCP. It sends `REMOVE 1-301`,
+     waits until port 301 is gone from `INFO 1` (5 s at most), then
+     `ADD 1-301 DECKLINK 1 EMBEDDED_AUDIO INTERNAL_KEY`. It checks within 5 s
+     that the port is back as a decklink with the internal keyer and embedded
+     audio. This is about a 1-2 s SDI break, with no re-cue. The re-added
+     consumer gets the default buffer-depth (3) until the next restart.
+  2. If the script fails, or the jam isn't cleared within 60 s:
+     `systemctl restart nodm`, the same restart as by hand. Playout re-cues
+     by itself.
 - Before restarting, checks what the studio ATEM has on program (M/E 0;
   caspar1 is input 1).
   - Jam seen on the `atem` signal: it restarts whether or not caspar1 is on

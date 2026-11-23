@@ -584,6 +584,14 @@ def main():
                 failures=policy.state["failures"], remedies_24h=len(policy.state["restarts"]) + 1)
             rc = subprocess.call(command, shell=True)
             log("INFO", "remedy command finished", kind=kind, rc=rc)
+            if kind == "soft" and rc != 0:
+                # The consumer couldn't be re-created cleanly: restart now.
+                log("CRIT", "soft remedy failed; restarting CasparCG", rc=rc,
+                    command=repr(CFG["RESTART_COMMAND"]))
+                policy.acted("soft", now)
+                kind = "restart"
+                rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)
+                log("INFO", "remedy command finished", kind=kind, rc=rc)
         # A dry run also counts, so it logs at the same rate a real run would act.
         policy.acted(kind, now)
         save_state(policy.state)
