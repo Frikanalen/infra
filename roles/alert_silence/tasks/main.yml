@@ -1,0 +1,45 @@
+---
+- name: Silence the alerts this work is expected to trigger
+  ansible.builtin.command:
+    argv:
+      - "{{ alert_silence_microk8s }}"
+      - kubectl
+      - create
+      - --raw
+      - "{{ alert_silence_api }}/silences"
+      - -f
+      - "-"
+    stdin: "{{ alert_silence_payload | to_json }}"
+  vars:
+    alert_silence_payload:
+      matchers: >-
+        {{ [{'name': 'environment', 'value': alert_silence_environment, 'isRegex': false, 'isEqual': true}]
+           + (alert_silence_presets[alert_silence_preset] if alert_silence_preset else [])
+           + alert_silence_matchers }}
+      # now() is naive local time, so its timestamp() is the real epoch.
+      startsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=now().timestamp() | int, utc=true) }}"
+      endsAt: "{{ '%Y-%m-%dT%H:%M:%SZ' | strftime(second=(now().timestamp() | int) + (alert_silence_minutes | int) * 60, utc=true) }}"
+      createdBy: "{{ alert_silence_created_by }}"
+      comment: "{{ alert_silence_comment }}"
+  delegate_to: "{{ alert_silence_admin_node }}"
+  become: true
+  register: alert_silence_result
+  changed_when: true
+  # A silence is a courtesy to whoever reads the alerts; failing to set
+  # one must not stop the work.
+  failed_when: false
+  when: k8s_monitoring_enabled | default(true) | bool
+
+- name: Remember the silence so the play can lift it when the work is done
+  ansible.builtin.set_fact:
+    alert_silence_id: "{{ (alert_silence_result.stdout | from_json).silenceID }}"
+  when:
+    - alert_silence_result.rc | default(1) == 0
+    - alert_silence_result.stdout | default('') | length > 0
+
+- name: Say so when no silence could be set
+  ansible.builtin.debug:
+    msg: >-
+      Could not silence alerts ({{ alert_silence_result.stderr | default('skipped') }}).
+      Carrying on; expect the usual alerts from this work.
+  when: alert_silence_id is not defined

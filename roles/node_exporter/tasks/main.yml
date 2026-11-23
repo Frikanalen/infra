@@ -15,6 +15,39 @@
     update_cache: true
   become: true
 
+- name: Read the installed services
+  ansible.builtin.service_facts:
+
+# prometheus-node-exporter recommends -collectors, which recommends
+# ipmitool, which recommends openipmi. On a machine without a BMC (every VM:
+# bao1, mail1, caspar1) openipmi's init script finds no /dev/ipmi* and
+# fails at every boot, which NodeSystemdServiceFailed then reports forever.
+# Mask it where there is no IPMI device; hosts with a BMC keep it.
+- name: Look for an IPMI device
+  ansible.builtin.stat:
+    path: /dev/ipmi0
+  register: node_exporter_ipmi_device
+
+- name: Mask openipmi where there is no IPMI device
+  ansible.builtin.systemd_service:
+    name: openipmi.service
+    enabled: false
+    masked: true
+    state: stopped
+  become: true
+  when:
+    - not node_exporter_ipmi_device.stat.exists
+    - "'openipmi.service' in ansible_facts.services | default({})"
+
+- name: Clear openipmi's old failed state
+  ansible.builtin.command: systemctl reset-failed openipmi.service
+  become: true
+  changed_when: false
+  failed_when: false
+  when:
+    - not node_exporter_ipmi_device.stat.exists
+    - "'openipmi.service' in ansible_facts.services | default({})"
+
 - name: Configure node_exporter flags
   ansible.builtin.template:
     src: default.j2

@@ -1,0 +1,16 @@
+---
+# Lifts the silence set by tasks/main.yml once the work is done, rather
+# than waiting for it to run out, so problems the work caused show up.
+- name: Lift the silence for this work
+  ansible.builtin.command:
+    argv:
+      - "{{ alert_silence_microk8s }}"
+      - kubectl
+      - delete
+      - --raw
+      - "{{ alert_silence_api }}/silence/{{ alert_silence_id }}"
+  delegate_to: "{{ alert_silence_admin_node }}"
+  become: true
+  changed_when: true
+  failed_when: false
+  when: alert_silence_id is defined

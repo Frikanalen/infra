@@ -62,3 +62,12 @@
     definition: "{{ lookup('template', 'scheduled-backup.yml.j2') }}"
     state: present
     kubeconfig: "{{ k8s_kubeconfig }}"
+
+- name: Alert on the database losing its primary, a replica, WAL archiving or backups
+  when: k8s_monitoring_enabled | default(false) | bool
+  kubernetes.core.k8s:
+    kubeconfig: "{{ k8s_kubeconfig }}"
+    state: present
+    definition: "{{ lookup('template', 'prometheusrule.yml.j2') }}"
+  become: true
+  run_once: true

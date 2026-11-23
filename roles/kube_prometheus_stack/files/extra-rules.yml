@@ -67,34 +67,100 @@ groups:
             workloads there (the live stream packager, playout) may be
             starved; look for batch work such as ingest transcodes.
 
+      - alert: NodeSystemdServiceFailed
+        # The mixin's rule, minus apport's per-crash coredump hook units
+        # (apport-coredump-hook@<n>-<pid>-<n>.service). One of those fails
+        # whenever a process crashes and stays failed until reset, so on
+        # caspar1 every CasparCG crash turned into a days-long warning about
+        # the crash *handler*. Crashes themselves are better caught by the
+        # thing that crashed (playout, the SDI watchdog).
+        expr: >-
+          node_systemd_unit_state{job="node-exporter", state="failed",
+            name!~"apport-coredump-hook@.*"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: A systemd service has failed.
+          description: >-
+            {{ $labels.name }} on {{ $labels.instance }} is in the failed
+            state. If it is expected, fix it in Ansible (disable or mask the
+            unit) rather than letting it sit here.
+
   - name: frikanalen-cronjobs
     rules:
       # KubeJobFailed only says that one run failed, and goes quiet once the
-      # failed Job is cleaned up. These say how long it has been since a
-      # run last worked, which is what matters for backups. Every CronJob on
-      # both clusters runs daily, hence 26 hours.
-      - alert: KubeCronJobNoRecentSuccess
+      # failed Job is cleaned up. These say whether the latest scheduled run
+      # worked, whatever the schedule: daily backups and the weekly staging
+      # refresh alike. (A fixed "no success for 26 h" fired every week for
+      # the weekly jobs.)
+      #
+      # Severity: "high" for anything prod depends on (backups); jobs whose
+      # only purpose is feeding staging (staging-*) are a "warning", even
+      # when they run on the prod cluster.
+      - alert: KubeCronJobLastRunFailed
         expr: >-
-          (time() - kube_cronjob_status_last_successful_time) > 26 * 3600
+          (
+            kube_cronjob_status_last_schedule_time{cronjob!~"staging-.*"}
+              > on(namespace, cronjob) (kube_cronjob_status_last_successful_time or kube_cronjob_status_last_schedule_time * 0)
+          )
+          and on(namespace, cronjob) (time() - kube_cronjob_status_last_schedule_time) > 3 * 3600
           and on(namespace, cronjob) kube_cronjob_spec_suspend == 0
-        for: 15m
+          unless on(namespace, cronjob) kube_cronjob_status_active > 0
         labels:
-          severity: critical
+          severity: high
         annotations:
-          summary: CronJob has not succeeded for over a day.
+          summary: The latest run of a CronJob has not succeeded.
           description: >-
-            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} last
-            succeeded {{ $value | humanizeDuration }} ago.
+            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} was last
+            scheduled over 3 hours ago and that run has not succeeded. Check
+            the Job's pod logs.
 
-      - alert: KubeCronJobNeverSucceeded
+      - alert: KubeCronJobLastRunFailed
         expr: >-
-          kube_cronjob_status_last_schedule_time > 0
-          unless on(namespace, cronjob) kube_cronjob_status_last_successful_time > 0
-        for: 2h
+          (
+            kube_cronjob_status_last_schedule_time{cronjob=~"staging-.*"}
+              > on(namespace, cronjob) (kube_cronjob_status_last_successful_time or kube_cronjob_status_last_schedule_time * 0)
+          )
+          and on(namespace, cronjob) (time() - kube_cronjob_status_last_schedule_time) > 3 * 3600
+          and on(namespace, cronjob) kube_cronjob_spec_suspend == 0
+          unless on(namespace, cronjob) kube_cronjob_status_active > 0
         labels:
-          severity: critical
+          severity: warning
         annotations:
-          summary: CronJob has run but never succeeded.
+          summary: The latest run of a staging refresh job has not succeeded.
           description: >-
-            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} has been
-            scheduled but has no successful run on record.
+            CronJob {{ $labels.namespace }}/{{ $labels.cronjob }} only feeds
+            staging; its last run, over 3 hours ago, has not succeeded.
+
+  - name: frikanalen-kubernetes
+    rules:
+      - alert: KubeAPIWatchStale
+        # On 2026-11-23 the kine watch loop on prod-kube-1 and -2 stalled
+        # for about an hour after repeated dqlite leader loss. Their API
+        # servers kept answering requests (up, apiserver_request_total all
+        # normal) but delivered no watch events, so controllers and CSI on
+        # those nodes acted on a frozen picture of the cluster, and nothing
+        # alerted. Every node renews its Lease every ~10 s, so each API
+        # server normally receives ~5 lease events a second from storage;
+        # zero (or the series vanishing while the scrape is up) while the
+        # cluster as a whole still sees them means that node's watch is
+        # stuck. Restarting kubelite on that node clears it.
+        expr: >-
+          (
+            sum by (instance) (rate(apiserver_storage_events_received_total{job="apiserver", resource="leases"}[5m]))
+            or on(instance) (0 * up{job="apiserver"} == 0)
+          ) == 0
+          and on() sum(rate(apiserver_storage_events_received_total{job="apiserver", resource="leases"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: An API server has stopped receiving watch events.
+          description: >-
+            The API server at {{ $labels.instance }} has received no Lease
+            events from storage for 5 minutes while the others still do: its
+            watch feed (kine/dqlite) is stuck, so controllers, CSI and
+            kubelets talking to it see stale state. Restart kubelite on that
+            node (sudo snap restart microk8s.daemon-kubelite) after checking
+            dqlite has a leader.

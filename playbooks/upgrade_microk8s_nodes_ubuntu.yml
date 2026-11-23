@@ -75,6 +75,17 @@
         upgrade_nodes_ready.rc != 0
         or upgrade_nodes_ready.stdout_lines | reject('search', '=True$') | list | length > 0
 
+    # The drain and reboot set off pod, replica, DaemonSet and node alerts
+    # all over the cluster; silence those (and only those) for the length
+    # of one node's upgrade. Stream and playout alerts stay live.
+    - name: Silence the alerts a drain and reboot set off
+      ansible.builtin.include_role:
+        name: alert_silence
+      vars:
+        alert_silence_preset: drain
+        alert_silence_minutes: 90
+        alert_silence_comment: "Ubuntu release upgrade of {{ inventory_hostname }} (playbooks/upgrade_microk8s_nodes_ubuntu.yml)"
+
     # MetalLB stops announcing service IPs from a node with this label, so the
     # traefik and cubemap IPs move before the drain rather than during it.
     - name: Move the external load-balancer IPs off the node
@@ -136,3 +147,8 @@
         node.kubernetes.io/exclude-from-external-load-balancers-
       delegate_to: "{{ upgrade_admin_node }}"
       changed_when: true
+
+    - name: Lift the alert silence now the node is back
+      ansible.builtin.include_role:
+        name: alert_silence
+        tasks_from: expire

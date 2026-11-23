@@ -28,6 +28,19 @@ kube_prometheus_stack_alertmanager_hostname: "alertmanager.{{ frikanalen_intern_
 kube_prometheus_stack_telegram_secret_name: alertmanager-telegram
 kube_prometheus_stack_telegram_bot_token: "{{ vault_alertmanager_telegram_bot_token | default('') }}"
 kube_prometheus_stack_telegram_chat_id: "{{ vault_alertmanager_telegram_chat_id | default('') }}"
+# Optional second chat for warnings and staging (sent without a
+# notification sound either way). Empty means the alarm chat above.
+kube_prometheus_stack_telegram_quiet_chat_id: >-
+  {{ vault_alertmanager_telegram_quiet_chat_id | default('', true)
+     or kube_prometheus_stack_telegram_chat_id }}
+
+# The alerts allowed to stay "critical": the channel or the web stream is
+# broken now, or about to be. Matched against "<severity>;<alertname>";
+# every other critical alert reaches Alertmanager as "high". See
+# docs/alerting.md before adding to it.
+kube_prometheus_stack_critical_alerts: >-
+  Frikanalen.*|PostgresPrimaryDown|KubeAPIDown|NvidiaSmiFailing|CasparHostDown
+kube_prometheus_stack_critical_alerts_regex: "critical;({{ kube_prometheus_stack_critical_alerts }})"
 
 # Added to every alert by Prometheus, making alerts from the two clusters easy
 # to distinguish when they share a Telegram channel.

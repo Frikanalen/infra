@@ -1,0 +1,94 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: "{{ cnpg_cluster_name }}-alerts"
+  namespace: "{{ cnpg_cluster_namespace }}"
+  labels:
+    # kube-prometheus-stack's Prometheus only loads PrometheusRules with
+    # this label (see roles/node_exporter_scrape's rule for the details).
+    release: kube-prometheus-stack
+spec:
+  groups:
+    # The database behind the site, the API and playout's schedule. Tiers as
+    # in docs/alerting.md: "critical" when there is no primary at all (the
+    # site and schedule changes are down), "high" when it still works but
+    # has lost its safety net (a replica, WAL archiving, backups), so it
+    # gets fixed the same day instead of drowning among warnings.
+    - name: {{ cnpg_cluster_name }}
+      rules:
+        - alert: PostgresPrimaryDown
+          expr: >-
+            absent(
+              (cnpg_collector_up{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"} == 1)
+              and on(namespace, pod)
+              (cnpg_pg_replication_in_recovery{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"} == 0)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            cluster: "{{ cnpg_cluster_name }}"
+          annotations:
+            summary: "Postgres {{ cnpg_cluster_name }} has no working primary"
+            description: >-
+              No instance of {{ cnpg_cluster_namespace }}/{{ cnpg_cluster_name }} has
+              reported itself as a running primary for 2 minutes. The site,
+              the API and schedule changes are down. Check
+              `kubectl cnpg status {{ cnpg_cluster_name }}` (or the Cluster
+              resource's status) and the operator's log.
+
+        - alert: PostgresReplicaMissing
+          expr: >-
+            max(
+              cnpg_pg_replication_streaming_replicas{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"}
+              and on(namespace, pod)
+              (cnpg_pg_replication_in_recovery{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"} == 0)
+            ) < {{ cnpg_cluster_instances | int - 1 }}
+          for: 10m
+          labels:
+            severity: high
+            cluster: "{{ cnpg_cluster_name }}"
+          annotations:
+            summary: "Postgres {{ cnpg_cluster_name }} is missing a replica"
+            description: >-
+              The primary of {{ cnpg_cluster_namespace }}/{{ cnpg_cluster_name }} has
+              {{ '{{ $value }}' }} streaming replicas instead of
+              {{ cnpg_cluster_instances | int - 1 }}. The database still works, but a
+              failover now has fewer (or no) places to go. Look for a
+              pending or crashlooping {{ cnpg_cluster_name }} pod.
+
+        - alert: PostgresWalArchivingStale
+          # archive_timeout makes even an idle primary archive a segment
+          # every few minutes, so half an hour without one means archiving
+          # to Garage is failing and point-in-time recovery is falling behind.
+          expr: >-
+            (cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"} > 1800)
+            and on(namespace, pod)
+            (cnpg_pg_replication_in_recovery{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"} == 0)
+          for: 10m
+          labels:
+            severity: high
+            cluster: "{{ cnpg_cluster_name }}"
+          annotations:
+            summary: "Postgres {{ cnpg_cluster_name }} has stopped archiving WAL"
+            description: >-
+              The primary ({{ '{{ $labels.pod }}' }}) last archived a WAL segment
+              {{ '{{ $value | humanizeDuration }}' }} ago. Check the
+              plugin-barman-cloud sidecar's log and Garage on file01.
+{% if cnpg_cluster_backup_enabled %}
+
+        - alert: PostgresBackupStale
+          # Daily base backups ({{ cnpg_cluster_backup_schedule }}); 26 h
+          # leaves room for one slow run.
+          expr: >-
+            time() - max({{ cnpg_cluster_backup_timestamp_metric }}{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"}) > 26 * 3600
+          for: 30m
+          labels:
+            severity: high
+            cluster: "{{ cnpg_cluster_name }}"
+          annotations:
+            summary: "Postgres {{ cnpg_cluster_name }} has no recent base backup"
+            description: >-
+              The newest base backup of {{ cnpg_cluster_namespace }}/{{ cnpg_cluster_name }}
+              is {{ '{{ $value | humanizeDuration }}' }} old. Check the
+              Backup resources (`kubectl get backups -n {{ cnpg_cluster_namespace }}`).
+{% endif %}
