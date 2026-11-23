@@ -30,6 +30,15 @@
     name: [openntpd, ntp, ntpsec]
     state: absent
 
+- name: Install chrony
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# Only after chrony is installed: if the install fails (a held apt lock on
+# mail1, 2026-11-23), timesyncd keeps the clock instead of nothing at all.
 - name: Mask systemd-timesyncd
   ansible.builtin.systemd:
     name: systemd-timesyncd
@@ -37,13 +46,6 @@
     enabled: false
     masked: true
   failed_when: false
-
-- name: Install chrony
-  ansible.builtin.apt:
-    name: chrony
-    state: present
-    update_cache: true
-    cache_valid_time: 3600
 
 # A PHC slaved by ptp4l runs on TAI. chrony converts it with the right/UTC
 # leap table, which Debian 13 and Ubuntu 24.04+ moved to tzdata-legacy.
@@ -82,16 +84,53 @@
   check_mode: false
   when: time_sync_is_guest | bool
 
-- name: Install the extra kernel modules that carry ptp_kvm
+# Ubuntu drops a kernel's extra-modules package from the archive once a newer
+# kernel is out, so a VM still running an old kernel (pending reboot) may have
+# none to install (mail1/bao1 on 6.8.0-88, 2026-11-23). Then skip it: chrony
+# runs on the local time servers over NTP, and a run after the reboot
+# installs the package for the new kernel.
+- name: Refresh the package lists before looking for the extra modules
   ansible.builtin.apt:
-    name: "linux-modules-extra-{{ ansible_kernel }}"
-    state: present
     update_cache: true
     cache_valid_time: 3600
+  check_mode: false
   when:
     - time_sync_is_guest | bool
     - time_sync_ptp_kvm_modinfo.rc != 0
     - ansible_distribution == "Ubuntu"
+
+- name: See whether the extra modules exist for the running kernel
+  ansible.builtin.command:
+    argv: [apt-cache, policy, "linux-modules-extra-{{ ansible_kernel }}"]
+  register: time_sync_extra_policy
+  changed_when: false
+  check_mode: false
+  when:
+    - time_sync_is_guest | bool
+    - time_sync_ptp_kvm_modinfo.rc != 0
+    - ansible_distribution == "Ubuntu"
+
+- name: Install the extra kernel modules that carry ptp_kvm
+  ansible.builtin.apt:
+    name: "linux-modules-extra-{{ ansible_kernel }}"
+    state: present
+  when:
+    - time_sync_is_guest | bool
+    - time_sync_ptp_kvm_modinfo.rc != 0
+    - ansible_distribution == "Ubuntu"
+    - "'Candidate: (none)' not in time_sync_extra_policy.stdout"
+
+- name: Say why ptp_kvm is missing
+  ansible.builtin.debug:
+    msg: >-
+      linux-modules-extra-{{ ansible_kernel }} is no longer in the archive
+      (a newer kernel is installed; reboot into it). Until then this VM uses
+      the local time servers over NTP instead of ptp_kvm.
+  when:
+    - time_sync_is_guest | bool
+    - time_sync_ptp_kvm_modinfo.rc != 0
+    - ansible_distribution == "Ubuntu"
+    - "'Candidate: (none)' in time_sync_extra_policy.stdout"
 
 - name: Load ptp_kvm now
   community.general.modprobe:
