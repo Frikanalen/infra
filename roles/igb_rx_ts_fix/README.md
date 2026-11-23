@@ -47,8 +47,10 @@ that has no patched build yet just runs without NIC timestamps.
 
 ## Maintenance
 
-- Kernel updates within the same stable version (e.g. 6.14.8-2 → 6.14.8-3):
-  DKMS rebuilds on its own (AUTOINSTALL plus the headers metapackage).
+- The role installs headers per installed kernel and never the headers meta
+  packages, which would drag in a new kernel series. A kernel installed by
+  apt gets its headers and build at the next run of this role; boot it before
+  that and the guard simply keeps NIC timestamping off.
 - A new stable version (6.14.8 → 6.14.11, or a new PVE series): rerun the
   role. Until then the guard keeps timestamping off; nothing breaks.
 - Patch no longer applies to a new stable version: the run fails for that
