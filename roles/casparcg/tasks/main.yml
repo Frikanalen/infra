@@ -13,6 +13,14 @@
     update_cache: true
   become: true
 
+- name: Create the directory for locally built packages
+  ansible.builtin.file:
+    path: /var/local/casparcg-debs
+    state: directory
+    mode: "0755"
+  become: true
+  when: casparcg_server_deb_src | length > 0
+
 - name: Install CasparCG CEF package from URL
   ansible.builtin.apt:
     deb: "{{ casparcg_cef_url }}"
@@ -27,7 +35,59 @@
     state: present
     update_cache: false
     install_recommends: false
+    allow_downgrade: true
   become: true
+  when: not casparcg_server_deb_src
+
+- name: Copy the locally built CasparCG Server package
+  ansible.builtin.copy:
+    src: "{{ casparcg_server_deb_src }}"
+    dest: "/var/local/casparcg-debs/{{ casparcg_server_deb_src | basename }}"
+    mode: "0644"
+  become: true
+  when: casparcg_server_deb_src | length > 0
+
+- name: Install the locally built CasparCG Server package
+  ansible.builtin.apt:
+    deb: "/var/local/casparcg-debs/{{ casparcg_server_deb_src | basename }}"
+    state: present
+    update_cache: false
+    install_recommends: false
+    allow_downgrade: true
+  become: true
+  when: casparcg_server_deb_src | length > 0
+  # In --check the copy above didn't happen, so there is nothing to install.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Create the diagnostic log directory
+  ansible.builtin.file:
+    path: "{{ casparcg_diag_log_dir }}"
+    state: directory
+    owner: "{{ casparcg_user }}"
+    group: "{{ casparcg_user }}"
+    mode: "0755"
+  become: true
+  when: casparcg_diag_log_dir | length > 0
+
+- name: Rotate the diagnostic logs
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/casparcg-diag
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/casparcg).
+      # CasparCG keeps its diagnostic log open: copytruncate, not create.
+      {{ casparcg_diag_log_dir }}/*.log {{ casparcg_diag_log_dir }}/*.csv {
+          daily
+          maxsize 200M
+          rotate 14
+          compress
+          delaycompress
+          missingok
+          notifempty
+          copytruncate
+      }
+  become: true
+  when: casparcg_diag_log_dir | length > 0
 
 # See files/mallinfo_clamp.c: CEF 142 traps (and takes CasparCG down) once
 # the server's heap passes 2 GiB, because it reads it through mallinfo()'s
