@@ -162,3 +162,5 @@
     name: chrony
     state: started
     enabled: true
+    # Picks up a new or removed guard drop-in before (re)starting chrony.
+    daemon_reload: true
