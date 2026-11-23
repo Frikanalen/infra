@@ -48,3 +48,12 @@ proxmox_backup_jobs:
     mode: snapshot
     compress: zstd
     prune_backups: keep-daily=7,keep-weekly=4
+
+# NIC hardware timestamps for chrony (roles/time_sync). Safe on vm1-4 only
+# because roles/igb_rx_ts_fix loads an igb with the jumbo-frame timestamp fix;
+# chrony-hwts-guard re-checks that at every chrony start and leaves
+# timestamping off on a kernel without the patched build. vmtx1 (bnx2x) only
+# does TX timestamps. Verified on vm1-4 2026-11-23: 2 GiB of zeros over the
+# 9000-MTU bond with rx_filter ALL, no truncation. file01 (storage group)
+# stays off until it runs the patched igb too.
+time_sync_ntp_hwtimestamp: true
