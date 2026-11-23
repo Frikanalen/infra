@@ -3,21 +3,21 @@
 Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
 
 ```
- Meinberg stratum 1 (77.40.226.121) ─┐
- simula 192.168.3.1 (stratum 2) ─────┼─ NTP ─> vm4  (PTP grandmaster: chrony + phc2sys
- no.pool.ntp.org ────────────────────┘               drives the I350's hardware clock)
-                                                    │
-                          PTP, layer 2 through fksw │ (no transparent clock)
-                                                    ▼
-                    vm1, vm2, vm3, vmtx1, file01  (ptp4l slave-only; chrony reads the
-                                                    NIC clock as refclock "PTP")
+ Justervesenet 77.40.226.121 (stratum 1) ─┐
+ UiO 129.240.2.42 / 129.240.2.6 ──────────┼─ NTP ─> vm1, vm2, vm3, vm4, vmtx1
+ no.pool.ntp.org (votes only) ────────────┘        (chrony servers; they also poll
+                                                    each other with NIC hardware
+                                                    timestamps, see below)
                                                     │
                                 ptp_kvm, per host   ▼
              every Linux VM on that host  (chrony refclock "HOST" = /dev/ptp_kvm,
                                            NTP to the Proxmox hosts as fallback)
+             file01, tx3                  (chrony to the Proxmox hosts)
              util1 (FreeBSD)              (ntpd to the Proxmox hosts by address)
-             tx3                          (chrony to the Proxmox hosts; no PHC on its NIC)
 ```
+PTP (ptp4l) is off: the hosts' LACP bonds and fksw don't support it
+(`time_sync_ptp_enabled`). NIC hardware timestamps for NTP are on for the
+Proxmox group, guarded by roles/igb_rx_ts_fix.
 
 ## Inventory groups
 
