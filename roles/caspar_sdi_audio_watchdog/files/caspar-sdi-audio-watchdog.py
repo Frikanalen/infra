@@ -10,12 +10,23 @@ This compares two audio levels once a second:
   * SDI: the studio ATEM's audio meter for CasparCG's input, from
     atemkontroll's /state, when fresh; otherwise the encoder appliance's
     program return
-The audio is "jammed" when pre is above PRE_MIN_DBFS while SDI is silent
-(ATEM meter at or below ATEM_SILENT_DBFS on both channels, or the return
-below POST_MAX_DBFS). If that holds for JAM_SECONDS, the watchdog restarts
-nodm (and with it CasparCG). Playout re-cues by itself on reconnect.
 
-Fail-safe: if either input has no fresh audio, nothing is done.
+With the ATEM meter, "jammed" means the meter sits at its floor (at or below
+ATEM_FLOOR_DBFS on both channels: a dead embedder reads exactly -60, while
+programme audio never went below -54 in a week of data) while the multicast
+is not digital silence (above PRE_SILENCE_DBFS). How loud the multicast is
+doesn't matter, so quiet music or speech can't reset the timer: only real
+audio on the ATEM input (above ATEM_ALIVE_DBFS) clears it. Seconds that
+prove nothing either way (the multicast silent or unreadable, the meter
+between floor and alive) neither count nor reset.
+
+Without fresh ATEM levels it falls back to the program return: jammed means
+pre above PRE_MIN_DBFS while the return is below POST_MAX_DBFS.
+
+Once jammed for JAM_SECONDS it acts: SOFT_REMEDY_COMMAND first if set (e.g.
+re-creating the DeckLink consumer over AMCP), else, or if that didn't clear
+it within VERIFY_SECONDS, RESTART_COMMAND (nodm, and with it CasparCG).
+Playout re-cues by itself on reconnect.
 Air check before restarting, from atemkontroll (the studio ATEM's HTTP API):
   * jam seen on the ATEM meter: restart whether or not CasparCG is on program
     (RESTART_OFF_PROGRAM), except during a transition involving its input.
@@ -23,8 +34,12 @@ Air check before restarting, from atemkontroll (the studio ATEM's HTTP API):
     program; another source, a transition or fade-to-black inhibits.
   * atemkontroll unset, unreachable or unclear: ON_UNKNOWN_PROGRAM decides.
 After a cut to CasparCG, a jam counts only after PROGRAM_GRACE_SECONDS.
-Rate-limited: COOLDOWN_SECONDS between restarts, at most MAX_RESTARTS per
-WINDOW_SECONDS (counted across watchdog restarts), then log only.
+Rate limits: COOLDOWN_SECONDS between remedies for new jams. A remedy that
+leaves the jam in place counts as failed; each failure in a row doubles the
+wait before the next (up to MAX_BACKOFF_SECONDS) and logs CRIT. The failure
+count resets after FAILURE_RESET_SECONDS of audio. MAX_RESTARTS per
+WINDOW_SECONDS is an optional hard cap (0 = none). State survives restarts
+of the watchdog.
 
 Config comes from the environment (see the systemd unit). Stdlib only;
 needs the ffmpeg CLI.
@@ -46,12 +61,16 @@ CFG = {
     "POST_URL": os.environ.get("POST_URL", "http://simula.frikanalen.tv:9094/frikanalen.ts"),
     "PRE_MIN_DBFS": float(os.environ.get("PRE_MIN_DBFS", "-50")),
     "POST_MAX_DBFS": float(os.environ.get("POST_MAX_DBFS", "-70")),
-    "JAM_SECONDS": int(os.environ.get("JAM_SECONDS", "45")),
+    "JAM_SECONDS": int(os.environ.get("JAM_SECONDS", "30")),
     "STALE_SECONDS": float(os.environ.get("STALE_SECONDS", "5")),
     "COOLDOWN_SECONDS": int(os.environ.get("COOLDOWN_SECONDS", "600")),
-    "MAX_RESTARTS": int(os.environ.get("MAX_RESTARTS", "3")),
+    "MAX_RESTARTS": int(os.environ.get("MAX_RESTARTS", "0")),
     "WINDOW_SECONDS": int(os.environ.get("WINDOW_SECONDS", "21600")),
     "RESTART_COMMAND": os.environ.get("RESTART_COMMAND", "systemctl restart nodm"),
+    "SOFT_REMEDY_COMMAND": os.environ.get("SOFT_REMEDY_COMMAND", ""),
+    "VERIFY_SECONDS": int(os.environ.get("VERIFY_SECONDS", "60")),
+    "MAX_BACKOFF_SECONDS": int(os.environ.get("MAX_BACKOFF_SECONDS", "3600")),
+    "FAILURE_RESET_SECONDS": int(os.environ.get("FAILURE_RESET_SECONDS", "300")),
     "DRY_RUN": os.environ.get("DRY_RUN", "true").lower() in ("1", "true", "yes"),
     "STATE_FILE": os.environ.get("STATE_FILE", "/var/lib/caspar-sdi-audio-watchdog/state.json"),
     "METRICS_FILE": os.environ.get("METRICS_FILE", ""),
@@ -61,7 +80,9 @@ CFG = {
     "ATEM_ME": int(os.environ.get("ATEM_ME", "0")),
     "ATEM_INPUT_NAME": os.environ.get("ATEM_INPUT_NAME", ""),
     "PROGRAM_GRACE_SECONDS": int(os.environ.get("PROGRAM_GRACE_SECONDS", "15")),
-    "ATEM_SILENT_DBFS": float(os.environ.get("ATEM_SILENT_DBFS", "-58")),
+    "ATEM_FLOOR_DBFS": float(os.environ.get("ATEM_FLOOR_DBFS", "-59.5")),
+    "ATEM_ALIVE_DBFS": float(os.environ.get("ATEM_ALIVE_DBFS", "-57")),
+    "PRE_SILENCE_DBFS": float(os.environ.get("PRE_SILENCE_DBFS", "-90")),
     "LEVELS_STALE_SECONDS": float(os.environ.get("LEVELS_STALE_SECONDS", "3")),
     "RESTART_OFF_PROGRAM": os.environ.get("RESTART_OFF_PROGRAM", "true").lower() in ("1", "true", "yes"),
     "ON_UNKNOWN_PROGRAM": os.environ.get("ON_UNKNOWN_PROGRAM", "restart"),
@@ -311,6 +332,128 @@ class AtemWatch:
         return program_decision(state, CFG["ATEM_INPUT"], CFG["ATEM_ME"], CFG["ATEM_INPUT_NAME"])
 
 
+class JamTracker:
+    """Counts the seconds the SDI audio has been jammed, one tick a second.
+
+    tick() returns what the second showed: "jam", "alive" (clears the
+    count) or "hold" (proves nothing: neither counts nor clears).
+    """
+
+    def __init__(self):
+        self.seconds = 0
+        self.signal = None
+
+    def tick(self, atem_levels, pre_dbfs, post_dbfs, in_grace=False):
+        """atem_levels: (left, right) if fresh, else None; *_dbfs None if stale.
+
+        in_grace: CasparCG was just cut to program. The program return lags
+        the cut, so a return-based jam doesn't count yet; the ATEM's own
+        input meter doesn't lag.
+        """
+        if atem_levels is not None:
+            loudest = max(atem_levels)
+            if loudest > CFG["ATEM_ALIVE_DBFS"]:
+                verdict = "alive"
+            elif (loudest <= CFG["ATEM_FLOOR_DBFS"] and pre_dbfs is not None
+                  and pre_dbfs > CFG["PRE_SILENCE_DBFS"]):
+                verdict = "jam"
+            else:
+                verdict = "hold"
+            signal_ = "atem"
+        elif post_dbfs is not None and pre_dbfs is not None:
+            signal_ = "return"
+            if post_dbfs >= CFG["POST_MAX_DBFS"]:
+                verdict = "alive"
+            elif pre_dbfs > CFG["PRE_MIN_DBFS"] and not in_grace:
+                verdict = "jam"
+            else:
+                verdict = "hold"
+        else:
+            signal_, verdict = None, "hold"
+
+        if verdict == "alive":
+            self.seconds = 0
+        elif verdict == "jam":
+            if self.signal is not None and self.signal != signal_:
+                self.seconds = 0  # the two signals don't add up
+            self.seconds += 1
+            self.signal = signal_
+        return verdict
+
+    def clear(self):
+        self.seconds = 0
+
+
+class RemedyPolicy:
+    """Decides when to act on a jam, and how, from persisted state.
+
+    state: {"restarts": [timestamps of remedies], "failures": int,
+            "last_remedy": float, "last_kind": "soft"|"restart"|None,
+            "alive_since_remedy": bool, "alive_since": float|None}
+    """
+
+    def __init__(self, state):
+        self.state = state
+        state.setdefault("restarts", [])
+        state.setdefault("failures", 0)
+        state.setdefault("last_remedy", max(state["restarts"], default=0.0))
+        state.setdefault("last_kind", None)
+        state.setdefault("alive_since_remedy", True)
+        state.setdefault("alive_since", None)
+
+    def saw(self, verdict, now):
+        """Feed every second's verdict: audio after a remedy proves it worked."""
+        st = self.state
+        if verdict == "alive":
+            st["alive_since_remedy"] = True
+            if st["alive_since"] is None:
+                st["alive_since"] = now
+            if st["failures"] and now - st["alive_since"] >= CFG["FAILURE_RESET_SECONDS"]:
+                log("INFO", "audio back for a while; remedy failure count reset", failures=st["failures"])
+                st["failures"] = 0
+        elif verdict == "jam":
+            st["alive_since"] = None
+
+    def wait_seconds(self):
+        """How long after the last remedy the next may come."""
+        return min(CFG["COOLDOWN_SECONDS"] * 2 ** self.state["failures"], CFG["MAX_BACKOFF_SECONDS"])
+
+    def decide(self, now):
+        """With the jam held long enough: (kind or None, reason)."""
+        st = self.state
+        st["restarts"] = [t for t in st["restarts"] if now - t < max(CFG["WINDOW_SECONDS"], 86400)]
+        since = now - st["last_remedy"]
+        if st["last_remedy"] and since < CFG["VERIFY_SECONDS"]:
+            return None, "settling"
+        failed = st["last_remedy"] and not st["alive_since_remedy"]
+        if failed and not st.get("failure_counted"):
+            st["failures"] += 1
+            st["failure_counted"] = True
+            log("CRIT", "remedy did not clear the SDI audio jam", kind=st["last_kind"],
+                failures=st["failures"], next_wait_s=self.wait_seconds())
+            if st["last_kind"] == "soft":
+                # The cheap fix didn't take: go straight to the restart.
+                return "restart", "soft remedy failed"
+        if since < self.wait_seconds():
+            return None, "backoff" if st["failures"] else "cooldown"
+        if CFG["MAX_RESTARTS"]:
+            recent = [t for t in st["restarts"] if now - t < CFG["WINDOW_SECONDS"]]
+            if len(recent) >= CFG["MAX_RESTARTS"]:
+                return None, "limit"
+        if CFG["SOFT_REMEDY_COMMAND"] and not failed:
+            return "soft", "new jam"
+        return "restart", "jam persists after a remedy" if failed else "new jam"
+
+    def acted(self, kind, now):
+        st = self.state
+        st["restarts"].append(now)
+        st["last_remedy"] = now
+        st["last_kind"] = kind
+        st["alive_since_remedy"] = False
+        st["alive_since"] = None
+        st["failure_counted"] = False
+
+
 def load_state():
     try:
         with open(CFG["STATE_FILE"]) as f:
@@ -360,94 +503,91 @@ def main():
     pre = Level("pre", CFG["PRE_URL"])
     post = Level("post", CFG["POST_URL"])
     state = load_state()
-    jam_since = None
+    policy = RemedyPolicy(state)
+    jam = JamTracker()
     last_status = 0.0
-    last_limit_log = 0.0
+    last_hold_log = 0.0
     last_inhibit_log = 0.0
     watch = AtemWatch()
-    jam_signal = None
+    previous = None
 
     while True:
         time.sleep(1)
         now = time.time()
-        state["restarts"] = [t for t in state["restarts"] if now - t < CFG["WINDOW_SECONDS"]]
-        last_restart = max(state["restarts"], default=0)
 
-        # The SDI signal: the ATEM's meter for CasparCG's input when fresh,
-        # else the encoder's program return.
         levels = watch.sdi_levels(now)
-        if levels is not None:
-            sdi_src, sdi_silent = "atem", max(levels) <= CFG["ATEM_SILENT_DBFS"]
-            sdi_desc = f"{levels[0]:.1f}/{levels[1]:.1f}"
-        elif post.fresh():
-            sdi_src, sdi_silent = "return", post.dbfs < CFG["POST_MAX_DBFS"]
-            sdi_desc = f"{post.dbfs:.1f}"
-        else:
-            sdi_src, sdi_silent, sdi_desc = None, False, "stale"
+        pre_dbfs = pre.dbfs if pre.fresh() else None
+        post_dbfs = post.dbfs if post.fresh() else None
+        in_grace = bool(watch.on_air_since) and now < watch.on_air_since + CFG["PROGRAM_GRACE_SECONDS"]
+        verdict = jam.tick(levels, pre_dbfs, post_dbfs, in_grace)
+        policy.saw(verdict, now)
+        sdi_desc = (f"{levels[0]:.1f}/{levels[1]:.1f}" if levels is not None
+                    else f"{post_dbfs:.1f}" if post_dbfs is not None else "stale")
+        if verdict == "jam" and previous != "jam" and jam.seconds == 1:
+            log("WARN", "possible SDI audio jam", signal=jam.signal,
+                pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc)
+        previous = verdict
 
-        if not pre.fresh() or sdi_src is None:
-            if jam_since is not None:
-                log("INFO", "input lost, jam timer reset", pre_fresh=pre.fresh(), sdi_signal=sdi_src)
-            jam_since = None
-        elif pre.dbfs > CFG["PRE_MIN_DBFS"] and sdi_silent:
-            if jam_since is None or jam_signal != sdi_src:
-                jam_since, jam_signal = now, sdi_src
-                log("WARN", "possible SDI audio jam", signal=sdi_src, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
-        else:
-            if jam_since is not None and now - jam_since >= 5:
-                log("INFO", "condition cleared", signal=sdi_src, after_s=int(now - jam_since),
-                    pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
-            jam_since = None
-
-        jammed_for = max(0, int(now - watch.jam_start(jam_since))) if jam_since else 0
-        write_metrics(pre, post, jammed_for, len(state["restarts"]), last_restart)
+        jammed_for = jam.seconds
+        write_metrics(pre, post, jammed_for, len(policy.state["restarts"]), policy.state["last_remedy"])
 
         if now - last_status >= 60:
             last_status = now
+            save_state(policy.state)  # keep the failure bookkeeping current on disk
             log("INFO", "status",
-                pre_dbfs=f"{pre.dbfs:.1f}" if pre.fresh() else "stale",
-                post_dbfs=f"{post.dbfs:.1f}" if post.fresh() else "stale",
-                sdi_signal=sdi_src, sdi_dbfs=sdi_desc,
+                pre_dbfs=f"{pre_dbfs:.1f}" if pre_dbfs is not None else "stale",
+                post_dbfs=f"{post_dbfs:.1f}" if post_dbfs is not None else "stale",
+                sdi_signal="atem" if levels is not None else "return" if post_dbfs is not None else None,
+                sdi_dbfs=sdi_desc, last=verdict,
                 program=program_of(watch.fresh_state(now), CFG["ATEM_ME"]) if CFG["ATEM_URL"] else "n/a",
-                jammed_s=jammed_for, restarts_in_window=len(state["restarts"]))
+                jammed_s=jammed_for, failures=policy.state["failures"],
+                remedies_24h=len(policy.state["restarts"]))
 
         if jammed_for < CFG["JAM_SECONDS"]:
             continue
 
-        if now - last_restart < CFG["COOLDOWN_SECONDS"]:
-            continue  # the last restart may still be settling
-        if len(state["restarts"]) >= CFG["MAX_RESTARTS"]:
-            if now - last_limit_log >= 300:
-                last_limit_log = now
-                log("CRIT", "SDI audio jammed but restart limit reached; not restarting",
-                    jammed_s=jammed_for, restarts_in_window=len(state["restarts"]),
-                    window_s=CFG["WINDOW_SECONDS"])
+        kind, why = policy.decide(now)
+        save_state(policy.state)
+        if kind is None:
+            if why == "limit" and now - last_hold_log >= 300:
+                last_hold_log = now
+                log("CRIT", "SDI audio jammed but restart limit reached; not acting",
+                    jammed_s=jammed_for, window_s=CFG["WINDOW_SECONDS"])
+            elif why == "backoff" and now - last_hold_log >= 300:
+                last_hold_log = now
+                log("CRIT", "SDI audio still jammed after a remedy; backing off",
+                    jammed_s=jammed_for, failures=policy.state["failures"],
+                    next_in_s=int(policy.wait_seconds() - (now - policy.state["last_remedy"])))
             continue
 
-        verdict, detail = watch.decide(jam_signal, now)
-        if verdict == "unknown":
-            verdict = "on_air" if CFG["ON_UNKNOWN_PROGRAM"] == "restart" else "inhibit"
+        air_verdict, detail = watch.decide(jam.signal, now)
+        if air_verdict == "unknown":
+            air_verdict = "on_air" if CFG["ON_UNKNOWN_PROGRAM"] == "restart" else "inhibit"
             detail = f"program unknown ({detail}); on_unknown_program={CFG['ON_UNKNOWN_PROGRAM']}"
-        if verdict == "inhibit":
+        if air_verdict == "inhibit":
             if now - last_inhibit_log >= 300:
                 last_inhibit_log = now
-                log("WARN", "SDI audio jammed; restart inhibited", reason=repr(detail), signal=jam_signal,
-                    jammed_s=jammed_for)
+                log("WARN", "SDI audio jammed; remedy inhibited", reason=repr(detail),
+                    signal=jam.signal, jammed_s=jammed_for)
             continue
-        if CFG["DRY_RUN"]:
-            log("CRIT", "SDI audio jammed; DRY RUN, would restart", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
-                signal=jam_signal, jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc)
-        else:
-            log("CRIT", "SDI audio jammed; restarting CasparCG", command=repr(CFG["RESTART_COMMAND"]), air=repr(detail),
-                signal=jam_signal, jammed_s=jammed_for, pre_dbfs=f"{pre.dbfs:.1f}", sdi_dbfs=sdi_desc,
-                restarts_in_window=len(state["restarts"]) + 1)
-            rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)
-            log("INFO", "restart command finished", rc=rc)
-        # A dry run also counts, so it logs at the same rate a real run would act.
-        state["restarts"].append(now)
-        save_state(state)
-        jam_since = None
 
+        command = CFG["SOFT_REMEDY_COMMAND"] if kind == "soft" else CFG["RESTART_COMMAND"]
+        what = "re-creating the DeckLink consumer" if kind == "soft" else "restarting CasparCG"
+        if CFG["DRY_RUN"]:
+            log("CRIT", f"SDI audio jammed; DRY RUN, would be {what}", reason=why, command=repr(command),
+                air=repr(detail), signal=jam.signal, jammed_s=jammed_for,
+                pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc)
+        else:
+            log("CRIT", f"SDI audio jammed; {what}", reason=why, command=repr(command),
+                air=repr(detail), signal=jam.signal, jammed_s=jammed_for,
+                pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc,
+                failures=policy.state["failures"], remedies_24h=len(policy.state["restarts"]) + 1)
+            rc = subprocess.call(command, shell=True)
+            log("INFO", "remedy command finished", kind=kind, rc=rc)
+        # A dry run also counts, so it logs at the same rate a real run would act.
+        policy.acted(kind, now)
+        save_state(policy.state)
+        jam.clear()
 
 if __name__ == "__main__":
     main()
