@@ -14,7 +14,9 @@
 #   4. start any guest that ran before and isn't running, check the patched
 #      igb and the NIC timestamping guard;
 #   5. wait for Ceph to be active+clean again, unset noout;
-#   6. wait for the Kubernetes nodes to be Ready, uncordon, wait for the API;
+#   6. wait for the Kubernetes nodes to be Ready, uncordon, wait for the API
+#      and for every node's API server to deliver watch events (a frozen
+#      watch cache leaves new pods Pending while /readyz says ok);
 #   7. wait rolling_reboot_settle_minutes before the next host.
 # Any failure stops the whole run with the host's state left as it is.
 #
@@ -98,6 +100,9 @@
       failed_when: >-
         rolling_reboot_nodes.rc != 0
         or rolling_reboot_nodes.stdout_lines | reject('search', '=True,$') | list | length > 0
+
+    - name: Check no API server has a frozen watch cache
+      ansible.builtin.include_tasks: tasks/rolling_reboot_watch_check.yml
 
     - name: Show where playout-0 runs
       ansible.builtin.command: >-
@@ -188,6 +193,11 @@
       loop: "{{ rolling_reboot_kube_guests }}"
       loop_control:
         loop_var: rolling_reboot_node
+
+    - name: Check the API servers deliver watch events again
+      ansible.builtin.include_tasks: tasks/rolling_reboot_watch_check.yml
+      vars:
+        rolling_reboot_watch_retries: 15
 
     - name: Let the clusters settle before the next host
       ansible.builtin.pause:
