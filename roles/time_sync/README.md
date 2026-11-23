@@ -4,8 +4,8 @@ Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
 
 ```
  ntp.uio.no (ntp1 + ntp2, stratum 2, 0.2-0.5 ms) ─┐
- ntp.justervesenet.no (stratum 1, 77.40.226.121) ─┼─ NTP ─> vm1-4, vmtx1  (chrony time servers;
- simula 192.168.3.1 (stratum 2, by address) ──────┘          NIC timestamps on vm1-4 where the
+ ntp.justervesenet.no (stratum 1, 77.40.226.121) ─┴─ NTP ─> vm1-4, vmtx1  (chrony time servers;
+                                                             NIC timestamps on vm1-4 where the
                                                              patched igb is loaded)
                                        NTP among the hosts │ serve 192.168.3.0/24
                          ┌─────────────────────────────────┼──────────────────────────┐
@@ -19,7 +19,7 @@ LACP bonds and fksw has no PTP support. The tasks for it are kept for later.
 
 ## Inventory groups
 
-- `time_servers` (the Proxmox hosts): NTP upstream by IP address, and serve NTP
+- `time_servers` (the Proxmox hosts): NTP upstream from UiO and Justervesenet (not simula), and serve NTP
   to `time_sync_allow`.
 - `ptp_hosts` (Proxmox hosts + file01): physical hosts whose NIC has a hardware
   clock (Intel I350/I210, Broadcom BCM57800). `time_sync_ptp_grandmaster`
