@@ -25,6 +25,15 @@ time_sync_upstream_servers:
 time_sync_upstream_pools:
   - no.pool.ntp.org
 
+# Which time server leads. Each time server follows the ones before it in
+# this list (chrony "prefer"), so all of them sit on the first one that is
+# synced and agree with each other to a few µs over NIC timestamps. A host
+# takes the upstream servers directly only when every host before it is
+# unreachable or unsynced: vm1 is the internal reference, vm2 takes over if
+# vm1 is down, then vm3, and so on. Before this (2026-11-23) each host steered
+# to Justervesenet on its own and they disagreed by 46-117 µs.
+time_sync_reference_order: [vm1, vm2, vm3, vm4, vmtx1]
+
 # Polling of the local time servers by everyone else. Short, because the
 # servers are on the same LAN and few. On a VM these are only the fallback
 # behind ptp_kvm.

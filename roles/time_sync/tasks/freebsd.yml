@@ -13,6 +13,8 @@
       {{ groups['time_servers'] | default([])
          | map('extract', host_config) | map(attribute='ip_cidr')
          | map('split', '/') | map('first') | list }}
+    time_sync_ntpd_prefer: >-
+      {{ (host_config[time_sync_reference_order[0]].ip_cidr | split('/')) | first }}
   notify: Restart ntpd
 
 # ntpd_sync_on_start runs ntpd -g -q first, so a clock that is far off is
