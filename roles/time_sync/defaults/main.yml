@@ -10,15 +10,20 @@
 
 # Where the time servers (inventory group time_servers, the Proxmox hosts)
 # get their time. Addresses rather than names on purpose: a DNS failure at
-# boot is exactly what left util1 unsynced.
-#   77.40.226.121  Meinberg stratum 1 (refid MBGh), 1.4 ms away
-#   192.168.3.1    simula's NTP server, stratum 2 from the Meinberg above
-# The pool lines only add votes so one bad server can be outvoted.
+# boot is exactly what left util1 unsynced. Measured from vm1, 2026-11-23:
+#   129.240.2.6    ntp1.uio.no, stratum 2, 0.2 ms: we sit in UiO's server room
+#   129.240.2.42   ntp2.uio.no, stratum 2, 0.5 ms
+#   77.40.226.121  ntp.justervesenet.no, stratum 1 (Meinberg, refid MBGh),
+#                  1.2 ms: Norway's official UTC and the UiO servers' source
+#   192.168.3.1    simula's NTP server, stratum 2 from Justervesenet
+# The UiO servers' short, steady path gives the tightest estimate; with four
+# servers one bad one is outvoted, so no pool is needed.
 time_sync_upstream_servers:
+  - 129.240.2.6
+  - 129.240.2.42
   - 77.40.226.121
   - 192.168.3.1
-time_sync_upstream_pools:
-  - no.pool.ntp.org
+time_sync_upstream_pools: []
 
 # Polling of the local time servers by everyone else. Short, because the
 # servers are on the same LAN and few. On a VM these are only the fallback
