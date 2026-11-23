@@ -1,0 +1,1454 @@
+diff --git a/src/modules/decklink/consumer/decklink_consumer.cpp b/src/modules/decklink/consumer/decklink_consumer.cpp
+index c485ca9..1e81f27 100644
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp
+@@ -45,16 +45,39 @@
+ 
+ #include <boost/circular_buffer.hpp>
+ 
++#include <common/utf.h>
++
++#include <boost/filesystem.hpp>
++
++#include <algorithm>
++#include <array>
+ #include <atomic>
++#include <chrono>
++#include <climits>
+ #include <common/prec_timer.h>
+ #include <condition_variable>
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <ctime>
++#include <fstream>
+ #include <future>
+ #include <memory>
+ #include <mutex>
+ #include <optional>
+ #include <queue>
++#include <string>
+ #include <thread>
+ #include <utility>
++#include <vector>
++
++#ifndef _WIN32
++#include <pthread.h>
++#include <sched.h>
++#include <sys/resource.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#endif
+ 
+ namespace caspar { namespace decklink {
+ 
+@@ -237,6 +260,9 @@ class decklink_frame
+     BMDFrameFlags           flags_;
+     BMDPixelFormat          pix_fmt_;
+     int                     row_bytes_;
++    // DIAGNOSTIC BUILD: identity of the frame, so the completion callback can tell which frame completed.
++    BMDTimeValue display_time_ = -1;
++    BMDTimeValue audio_time_   = -1;
+ 
+   public:
+     decklink_frame(std::shared_ptr<void>         data,
+@@ -321,6 +347,15 @@ class decklink_frame
+ 
+     [[nodiscard]] int nb_samples() const { return nb_samples_; }
+ 
++    // DIAGNOSTIC BUILD
++    void set_schedule_info(BMDTimeValue display_time, BMDTimeValue audio_time)
++    {
++        display_time_ = display_time;
++        audio_time_   = audio_time;
++    }
++    [[nodiscard]] BMDTimeValue display_time() const { return display_time_; }
++    [[nodiscard]] BMDTimeValue audio_time() const { return audio_time_; }
++
+     // IDeckLinkVideoFrameMetadataExtensions
+     HRESULT STDMETHODCALLTYPE GetInt(BMDDeckLinkFrameMetadataID metadataID, int64_t* value) override
+     {
+@@ -594,6 +629,984 @@ struct decklink_secondary_port final : public IDeckLinkVideoOutputCallback
+     }
+ };
+ 
++/*
++ * DIAGNOSTIC BUILD: embedded audio buffer investigation.
++ *
++ * The completion callback fills one frame_sample per frame and pushes it into a preallocated
++ * single-producer/single-consumer ring (no locks, no allocation, no syscalls apart from clock reads).
++ * A separate low priority thread drains the ring, aggregates per wall-clock second and writes
++ * to CASPAR_DECKLINK_DIAG_LOG (default /var/log/casparcg/decklink-diag.log). If the file cannot be
++ * opened (or a write fails later), output falls back to CASPAR_LOG(info), rate limited to roughly one
++ * line per second. CASPAR_DECKLINK_DIAG_CSV=1 additionally writes one CSV line per callback to
++ * <log path>.csv. Setting CASPAR_DECKLINK_DIAG=0 disables the extra driver queries and the logger entirely.
++ */
++namespace diag {
++
++using steady_clock = std::chrono::steady_clock;
++
++inline std::int64_t wall_ms_now()
++{
++    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
++        .count();
++}
++
++inline std::int32_t us_between(steady_clock::time_point from, steady_clock::time_point to)
++{
++    return static_cast<std::int32_t>(std::chrono::duration_cast<std::chrono::microseconds>(to - from).count());
++}
++
++inline std::string format_utc(std::int64_t ms)
++{
++    auto    secs = static_cast<std::time_t>(ms / 1000);
++    std::tm tm{};
++#ifdef _WIN32
++    gmtime_s(&tm, &secs);
++#else
++    gmtime_r(&secs, &tm);
++#endif
++    char buf[64];
++    std::snprintf(buf,
++                  sizeof(buf),
++                  "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
++                  tm.tm_year + 1900,
++                  tm.tm_mon + 1,
++                  tm.tm_mday,
++                  tm.tm_hour,
++                  tm.tm_min,
++                  tm.tm_sec,
++                  static_cast<int>(ms % 1000));
++    return buf;
++}
++
++inline const char* result_name(std::int32_t result)
++{
++    switch (result) {
++        case bmdOutputFrameCompleted:
++            return "ok";
++        case bmdOutputFrameDisplayedLate:
++            return "late";
++        case bmdOutputFrameDropped:
++            return "drop";
++        case bmdOutputFrameFlushed:
++            return "flush";
++        default:
++            return "?";
++    }
++}
++
++inline bool enabled_by_env()
++{
++    const char* value = std::getenv("CASPAR_DECKLINK_DIAG");
++    return value == nullptr || std::string(value) != "0";
++}
++
++inline bool csv_by_env()
++{
++    const char* value = std::getenv("CASPAR_DECKLINK_DIAG_CSV");
++    return value != nullptr && std::string(value) == "1";
++}
++
++// Cheap per-thread identifiers (thread id cached per thread, CPU via vDSO on Linux).
++inline std::int32_t current_tid()
++{
++#ifdef _WIN32
++    return static_cast<std::int32_t>(GetCurrentThreadId());
++#else
++    thread_local const auto tid = static_cast<std::int32_t>(syscall(SYS_gettid));
++    return tid;
++#endif
++}
++
++inline std::int32_t current_cpu()
++{
++#ifdef _WIN32
++    return static_cast<std::int32_t>(GetCurrentProcessorNumber());
++#else
++    return static_cast<std::int32_t>(sched_getcpu());
++#endif
++}
++
++struct frame_sample
++{
++    std::int64_t frame_no = 0; // monotonic per-consumer completion counter
++    std::int64_t wall_ms  = 0; // UTC wall clock at callback entry
++    std::int32_t result   = -1;
++    bool         late_adj = false; // caspar skipped one frame of timeline (displayed-late path)
++    bool         aborted  = false;
++
++    // Identity of the frame the driver reports as completed (recorded on the frame when it was scheduled).
++    std::int64_t cf_display_time = -1; // display time the completed frame was scheduled with
++    std::int64_t cf_audio_time   = -1; // audio stream time scheduled together with the completed frame
++    std::int32_t cf_nb_samples   = -1; // samples scheduled together with the completed frame
++
++    std::int32_t buffered_video      = -1; // GetBufferedVideoFrameCount at callback entry
++    std::int32_t buffered_audio      = -1; // GetBufferedAudioSampleFrameCount at callback entry
++    std::int32_t buffered_audio_post = -1; // GetBufferedAudioSampleFrameCount after parallel_for joined
++    std::int32_t ba_pre_sched        = -1; // GetBufferedAudioSampleFrameCount right before ScheduleAudioSamples
++    std::int32_t ba_post_sched       = -1; // GetBufferedAudioSampleFrameCount right after ScheduleAudioSamples
++
++    std::int32_t stream_hr      = 0; // GetScheduledStreamTime at callback entry (video playhead)
++    std::int64_t stream_time    = 0;
++    double       playback_speed = 0.0;
++    std::int32_t hw_hr          = 0; // GetHardwareReferenceClock at callback entry
++    std::int64_t hw_time        = 0;
++    std::int64_t hw_in_frame    = 0;
++    std::int64_t hw_per_frame   = 0;
++
++    // Read immediately before ScheduleAudioSamples (deadline margin at schedule time).
++    std::int32_t sched_stream_hr = 0;
++    std::int64_t sched_ph        = -1;
++    std::int32_t sched_hw_hr     = 0;
++    std::int64_t sched_hw_time   = 0;
++    std::int64_t sched_in_frame  = -1;
++    std::int32_t sched_tid       = 0; // thread that ran the primary task (TBB worker or the callback thread)
++    std::int32_t sched_cpu       = -1;
++    std::int32_t cb_tid          = 0; // callback thread
++
++    std::int32_t buffer_size_after_pop = -1; // caspar's frame queue size when pop() returned
++
++    std::int64_t video_scheduled_entry = 0;  // video_scheduled_ when buffers were read (after late adjust)
++    std::int64_t audio_scheduled_entry = 0;  // audio_scheduled_ when buffers were read (after late adjust)
++    std::int64_t video_display_time    = -1; // display time passed to ScheduleVideoFrame
++    std::int64_t audio_stream_time     = -1; // stream time passed to ScheduleAudioSamples
++    std::int32_t nb_samples            = 0;
++    std::int32_t samples_written       = -1;
++    std::int32_t audio_hr              = 0;
++    std::int32_t video_hr              = 0;
++
++    std::int32_t inter_arrival_us = 0;
++    std::int32_t pop_us           = 0;
++    std::int32_t sched_video_us   = 0;
++    std::int32_t sched_audio_us   = 0;
++    std::int32_t callback_us      = 0;
++};
++
++// Single producer (completion callback) / single consumer (diag thread). Preallocated, lock free.
++template <typename T, std::size_t N>
++class spsc_ring
++{
++    static_assert((N & (N - 1)) == 0, "N must be a power of two");
++
++    std::vector<T> items_ = std::vector<T>(N);
++    alignas(64) std::atomic<std::uint64_t> head_{0};
++    alignas(64) std::atomic<std::uint64_t> tail_{0};
++
++  public:
++    bool push(const T& item)
++    {
++        const auto head = head_.load(std::memory_order_relaxed);
++        if (head - tail_.load(std::memory_order_acquire) >= N)
++            return false;
++        items_[head & (N - 1)] = item;
++        head_.store(head + 1, std::memory_order_release);
++        return true;
++    }
++
++    bool pop(T& item)
++    {
++        const auto tail = tail_.load(std::memory_order_relaxed);
++        if (tail == head_.load(std::memory_order_acquire))
++            return false;
++        item = items_[tail & (N - 1)];
++        tail_.store(tail + 1, std::memory_order_release);
++        return true;
++    }
++};
++
++class logger
++{
++    static constexpr int          event_ba_step_threshold      = 480;  // BA_MIN_STEP, A_UNACC_STEP
++    static constexpr int          event_sched_accept_tolerance = 48;   // SCHED_ACCEPT
++    static constexpr int          event_av_skew_tolerance      = 48;   // AV_SKEW
++    static constexpr int          event_ba_low                 = 1920; // BA_LOW (two frames at 48 kHz/50p)
++    static constexpr std::int32_t event_inter_arrival_us       = 30000;
++    static constexpr std::int32_t event_inter_arrival_short_us = 10000;
++    static constexpr int          context_before               = 5;  // frames printed before the trigger frame
++    static constexpr int          context_after                = 4;  // frames printed after the trigger frame
++    static constexpr int          context_after_long           = 50; // BA_LOW / BA_ZERO
++    static constexpr int          max_events_per_second        = 20;
++
++    struct second_aggregate
++    {
++        std::int64_t second            = -1;
++        std::int64_t first_frame       = 0;
++        int          n                 = 0;
++        int          results[5]        = {0, 0, 0, 0, 0}; // ok, late, drop, flush, other
++        std::int32_t ba_min            = INT32_MAX;
++        std::int32_t ba_max            = INT32_MIN;
++        std::int32_t ba_post_min       = INT32_MAX;
++        std::int32_t ba_post_max       = INT32_MIN;
++        std::int32_t bv_min            = INT32_MAX;
++        std::int32_t bv_max            = INT32_MIN;
++        std::int64_t unacc_min         = INT64_MAX;
++        std::int64_t unacc_max         = INT64_MIN;
++        std::int64_t skew_min          = INT64_MAX;
++        std::int64_t skew_max          = INT64_MIN;
++        std::int64_t sched_lead_min    = INT64_MAX;
++        std::int64_t sched_lead_max    = INT64_MIN;
++        std::int32_t ia_min            = INT32_MAX;
++        std::int32_t ia_max            = 0;
++        std::int32_t pop_max           = 0;
++        std::int32_t sched_video_max   = 0;
++        std::int32_t sched_audio_max   = 0;
++        std::int32_t callback_max      = 0;
++        int          short_writes      = 0;
++        int          audio_hr_failures = 0;
++        int          video_hr_failures = 0;
++        int          late_adjustments  = 0;
++        int          playhead_jumps    = 0;
++        int          cft_steps         = 0;
++        int          sched_accept      = 0;
++        int          ns_cadence        = 0;
++        int          sched_on_cb       = 0; // primary task ran on the callback thread
++        frame_sample last;
++    };
++
++    struct pending_event
++    {
++        std::int64_t frame_no;
++        std::int64_t wall_ms;
++        std::string  reasons;
++        int          after;
++    };
++
++    const std::string                              name_;
++    const std::int64_t                             time_scale_;
++    const std::int64_t                             duration_;
++    const std::int64_t                             sample_rate_;
++    const bool                                     embedded_audio_;
++    const std::vector<int>                         expected_samples_; // per-frame sample counts of the cadence
++    std::unique_ptr<spsc_ring<frame_sample, 1024>> ring_ = std::make_unique<spsc_ring<frame_sample, 1024>>();
++    std::atomic<std::uint64_t>                     overflow_{0};
++
++    std::mutex               text_mutex_;
++    std::vector<std::string> text_queue_;
++
++    std::ofstream file_;
++    bool          use_file_ = false;
++    std::ofstream csv_;
++    bool          use_csv_ = false;
++
++    boost::circular_buffer<frame_sample> history_{128};
++    std::vector<pending_event>           pending_;
++    second_aggregate                     agg_;
++    std::int32_t                         prev_ba_min_           = -1;
++    std::int64_t                         prev_stream_time_      = -1;
++    std::int64_t                         prev_hw_time_          = -1;
++    std::int64_t                         prev_cft_              = -1;
++    std::int64_t                         prev_ph_cft_           = INT64_MIN;
++    std::int64_t                         prev_unacc_            = INT64_MIN;
++    std::int64_t                         prev_skew_             = INT64_MIN;
++    std::int32_t                         prev_ba_               = -1;
++    bool                                 warned_per_frame_      = false;
++    std::uint64_t                        reported_overflow_     = 0;
++    std::int64_t                         event_second_          = -1;
++    int                                  events_this_second_    = 0;
++    int                                  suppressed_events_     = 0;
++    std::int64_t                         fallback_event_second_ = -1;
++    steady_clock::time_point             last_sample_seen_{};
++    bool                                 stalled_ = false;
++
++    std::atomic<bool> stop_{false};
++    std::thread       thread_;
++
++    static std::mutex& file_mutex()
++    {
++        static std::mutex mutex;
++        return mutex;
++    }
++
++    std::int64_t to_samples(std::int64_t t) const { return time_scale_ > 0 ? t * sample_rate_ / time_scale_ : 0; }
++
++    std::int64_t playhead_samples(const frame_sample& s) const { return to_samples(s.stream_time); }
++
++    // Samples caspar's timeline says the driver should hold minus what the driver reports holding.
++    // Only meaningful with embedded audio and a successful GetScheduledStreamTime.
++    std::int64_t a_unacc(const frame_sample& s) const
++    {
++        return s.audio_scheduled_entry - playhead_samples(s) - s.buffered_audio;
++    }
++
++    std::int64_t av_skew(const frame_sample& s) const
++    {
++        return s.audio_scheduled_entry - to_samples(s.video_scheduled_entry);
++    }
++
++    // Audio lead over the video playhead at the moment ScheduleAudioSamples was called.
++    std::int64_t sched_lead(const frame_sample& s) const
++    {
++        return s.sched_ph >= 0 && s.audio_stream_time >= 0 ? s.audio_stream_time - to_samples(s.sched_ph) : 0;
++    }
++
++    bool unacc_valid(const frame_sample& s) const
++    {
++        return embedded_audio_ && SUCCEEDED(s.stream_hr) && s.buffered_audio >= 0;
++    }
++
++    std::string prefix(std::int64_t wall_ms) const { return format_utc(wall_ms) + " " + name_; }
++
++    void write(const std::string& text, bool is_event)
++    {
++        if (use_file_) {
++            std::lock_guard<std::mutex> lock(file_mutex());
++            file_ << text;
++            file_.flush();
++            if (file_.good())
++                return;
++            use_file_ = false;
++            CASPAR_LOG(warning) << u16(name_)
++                                << L" decklink diagnostics: write to log file failed, falling back to CASPAR_LOG(info)";
++        }
++
++        // Fallback: CASPAR_LOG(info), at most one event per second in addition to the per-second summary.
++        if (is_event) {
++            auto second = wall_ms_now() / 1000;
++            if (second == fallback_event_second_) {
++                ++suppressed_events_;
++                return;
++            }
++            fallback_event_second_ = second;
++        }
++        auto line = text;
++        while (!line.empty() && line.back() == '\n')
++            line.pop_back();
++        CASPAR_LOG(info) << u16(line);
++    }
++
++    void write_csv(const frame_sample& s)
++    {
++        if (!use_csv_)
++            return;
++        char buf[640];
++        std::snprintf(buf,
++                      sizeof(buf),
++                      "%lld,%s,%lld,%d,%d,%lld,%lld,%d,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%lld,%lld,%lld,%lld,%lld,%d,%"
++                      "d,0x%08x,0x%08x,%lld,%lld,%d,%d,%d,%d,%d,%d,%d,%d\n",
++                      static_cast<long long>(s.wall_ms),
++                      name_.c_str(),
++                      static_cast<long long>(s.frame_no),
++                      s.result,
++                      s.late_adj ? 1 : 0,
++                      static_cast<long long>(s.cf_display_time),
++                      static_cast<long long>(s.cf_audio_time),
++                      s.cf_nb_samples,
++                      static_cast<long long>(s.stream_time),
++                      static_cast<long long>(s.hw_time),
++                      static_cast<long long>(s.hw_in_frame),
++                      static_cast<long long>(s.sched_ph),
++                      s.buffered_video,
++                      s.buffered_audio,
++                      s.ba_pre_sched,
++                      s.ba_post_sched,
++                      s.buffered_audio_post,
++                      static_cast<long long>(s.audio_scheduled_entry),
++                      static_cast<long long>(s.video_scheduled_entry),
++                      static_cast<long long>(s.audio_stream_time),
++                      static_cast<long long>(s.video_display_time),
++                      static_cast<long long>(s.sched_in_frame),
++                      s.nb_samples,
++                      s.samples_written,
++                      static_cast<unsigned>(s.audio_hr),
++                      static_cast<unsigned>(s.video_hr),
++                      static_cast<long long>(unacc_valid(s) ? a_unacc(s) : 0),
++                      static_cast<long long>(av_skew(s)),
++                      s.buffer_size_after_pop,
++                      s.sched_cpu,
++                      s.sched_tid == s.cb_tid ? 1 : 0,
++                      s.inter_arrival_us,
++                      s.pop_us,
++                      s.sched_video_us,
++                      s.sched_audio_us,
++                      s.callback_us);
++        std::lock_guard<std::mutex> lock(file_mutex());
++        csv_ << buf;
++        csv_.flush();
++        if (!csv_.good()) {
++            use_csv_ = false;
++            CASPAR_LOG(warning) << u16(name_) << L" decklink diagnostics: write to CSV failed, CSV disabled";
++        }
++    }
++
++    std::string format_frame(const frame_sample& s) const
++    {
++        char buf[768];
++        std::snprintf(buf,
++                      sizeof(buf),
++                      "  f=%lld t=%s r=%s%s%s cft=%lld cat=%lld cns=%d ba=%d/%d/%d/%d bv=%d ph=%lld spd=%.2f "
++                      "hw=%lld/%lld/%lld hwhr=0x%08x vt=%lld at=%lld a_lead=%lld v_lead=%lld a_unacc=%lld av_skew=%lld "
++                      "s_ph=%lld s_inf=%lld s_lead=%lld ns=%d sw=%d ahr=0x%08x vhr=0x%08x shr=0x%08x q=%d cpu=%d%s "
++                      "ia=%d pop=%d sv=%d sa=%d cb=%d\n",
++                      static_cast<long long>(s.frame_no),
++                      format_utc(s.wall_ms).c_str() + 11,
++                      result_name(s.result),
++                      s.late_adj ? " LATE_ADJ" : "",
++                      s.aborted ? " ABORT" : "",
++                      static_cast<long long>(s.cf_display_time),
++                      static_cast<long long>(s.cf_audio_time),
++                      s.cf_nb_samples,
++                      s.buffered_audio,
++                      s.ba_pre_sched,
++                      s.ba_post_sched,
++                      s.buffered_audio_post,
++                      s.buffered_video,
++                      static_cast<long long>(s.stream_time),
++                      s.playback_speed,
++                      static_cast<long long>(s.hw_time),
++                      static_cast<long long>(s.hw_in_frame),
++                      static_cast<long long>(s.hw_per_frame),
++                      static_cast<unsigned>(s.hw_hr),
++                      static_cast<long long>(s.video_display_time),
++                      static_cast<long long>(s.audio_stream_time),
++                      static_cast<long long>(s.audio_scheduled_entry - playhead_samples(s)),
++                      static_cast<long long>(s.video_scheduled_entry - s.stream_time),
++                      static_cast<long long>(unacc_valid(s) ? a_unacc(s) : 0),
++                      static_cast<long long>(av_skew(s)),
++                      static_cast<long long>(s.sched_ph),
++                      static_cast<long long>(s.sched_in_frame),
++                      static_cast<long long>(sched_lead(s)),
++                      s.nb_samples,
++                      s.samples_written,
++                      static_cast<unsigned>(s.audio_hr),
++                      static_cast<unsigned>(s.video_hr),
++                      static_cast<unsigned>(s.stream_hr),
++                      s.buffer_size_after_pop,
++                      s.sched_cpu,
++                      s.sched_tid != 0 && s.sched_tid == s.cb_tid ? " oncb" : "",
++                      s.inter_arrival_us,
++                      s.pop_us,
++                      s.sched_video_us,
++                      s.sched_audio_us,
++                      s.callback_us);
++        return buf;
++    }
++
++    // Prints up to `before` frames before and `after` frames after `center_frame` (from history).
++    std::string format_context(std::int64_t center_frame, int before, int after) const
++    {
++        std::string out;
++        for (const auto& s : history_) {
++            if (s.frame_no >= center_frame - before && s.frame_no <= center_frame + after)
++                out += format_frame(s);
++        }
++        return out;
++    }
++
++    bool allow_event(std::int64_t wall_ms)
++    {
++        auto second = wall_ms / 1000;
++        if (second != event_second_) {
++            event_second_       = second;
++            events_this_second_ = 0;
++        }
++        if (++events_this_second_ > max_events_per_second) {
++            ++suppressed_events_;
++            return false;
++        }
++        return true;
++    }
++
++    void emit_event(std::int64_t wall_ms, const std::string& header, std::int64_t center_frame, int after)
++    {
++        if (!allow_event(wall_ms))
++            return;
++        write(prefix(wall_ms) + " E " + header + "\n" + format_context(center_frame, context_before, after), true);
++    }
++
++    void emit_ready_events(bool force)
++    {
++        if (pending_.empty())
++            return;
++        const auto newest = history_.empty() ? 0 : history_.back().frame_no;
++        auto       it     = pending_.begin();
++        while (it != pending_.end()) {
++            if (force || newest >= it->frame_no + it->after) {
++                char head[64];
++                std::snprintf(head, sizeof(head), "fr=%lld ", static_cast<long long>(it->frame_no));
++                emit_event(it->wall_ms, head + it->reasons, it->frame_no, it->after);
++                it = pending_.erase(it);
++            } else {
++                ++it;
++            }
++        }
++    }
++
++    void add_pending(const frame_sample& s, const std::string& reasons, int after)
++    {
++        if (!pending_.empty() && pending_.back().frame_no == s.frame_no) {
++            pending_.back().reasons += " " + reasons;
++            pending_.back().after = std::max(pending_.back().after, after);
++            return;
++        }
++        pending_.push_back(pending_event{s.frame_no, s.wall_ms, reasons, after});
++    }
++
++    void flush_second()
++    {
++        if (agg_.n == 0)
++            return;
++
++        const auto& l         = agg_.last;
++        const auto  overflow  = overflow_.load(std::memory_order_relaxed);
++        const bool  has_unacc = agg_.unacc_min <= agg_.unacc_max;
++        const bool  has_lead  = agg_.sched_lead_min <= agg_.sched_lead_max;
++
++        char buf[1280];
++        std::snprintf(
++            buf,
++            sizeof(buf),
++            " S fr=%lld n=%d res=ok:%d,late:%d,drop:%d,flush:%d,other:%d ba=%d..%d ba_post=%d..%d bv=%d..%d "
++            "a_unacc=%lld..%lld av_skew=%lld..%lld s_lead=%lld..%lld ia=%.1f..%.1fms pop_max=%.1fms sv_max=%.1fms "
++            "sa_max=%.1fms cb_max=%.1fms ph=%lld spd=%.2f hw=%lld/%lld/%lld a_sched=%lld v_sched=%lld a_lead=%lld "
++            "v_lead=%lld late_adj=%d ph_jump=%d cft_step=%d sched_acc=%d ns_cad=%d short=%d ahr_fail=%d vhr_fail=%d "
++            "oncb=%d ovf=%llu sup=%d\n",
++            static_cast<long long>(l.frame_no),
++            agg_.n,
++            agg_.results[0],
++            agg_.results[1],
++            agg_.results[2],
++            agg_.results[3],
++            agg_.results[4],
++            agg_.ba_min,
++            agg_.ba_max,
++            agg_.ba_post_min,
++            agg_.ba_post_max,
++            agg_.bv_min,
++            agg_.bv_max,
++            static_cast<long long>(has_unacc ? agg_.unacc_min : 0),
++            static_cast<long long>(has_unacc ? agg_.unacc_max : 0),
++            static_cast<long long>(agg_.skew_min),
++            static_cast<long long>(agg_.skew_max),
++            static_cast<long long>(has_lead ? agg_.sched_lead_min : 0),
++            static_cast<long long>(has_lead ? agg_.sched_lead_max : 0),
++            (agg_.ia_min == INT32_MAX ? 0 : agg_.ia_min) / 1000.0,
++            agg_.ia_max / 1000.0,
++            agg_.pop_max / 1000.0,
++            agg_.sched_video_max / 1000.0,
++            agg_.sched_audio_max / 1000.0,
++            agg_.callback_max / 1000.0,
++            static_cast<long long>(l.stream_time),
++            l.playback_speed,
++            static_cast<long long>(l.hw_time),
++            static_cast<long long>(l.hw_in_frame),
++            static_cast<long long>(l.hw_per_frame),
++            static_cast<long long>(l.audio_scheduled_entry),
++            static_cast<long long>(l.video_scheduled_entry),
++            static_cast<long long>(l.audio_scheduled_entry - playhead_samples(l)),
++            static_cast<long long>(l.video_scheduled_entry - l.stream_time),
++            agg_.late_adjustments,
++            agg_.playhead_jumps,
++            agg_.cft_steps,
++            agg_.sched_accept,
++            agg_.ns_cadence,
++            agg_.short_writes,
++            agg_.audio_hr_failures,
++            agg_.video_hr_failures,
++            agg_.sched_on_cb,
++            static_cast<unsigned long long>(overflow - reported_overflow_),
++            suppressed_events_);
++        reported_overflow_ = overflow;
++        suppressed_events_ = 0;
++
++        write(prefix(l.wall_ms) + buf, false);
++
++        // Buffered-audio level step between consecutive seconds.
++        if (embedded_audio_ && prev_ba_min_ >= 0 && std::abs(agg_.ba_min - prev_ba_min_) >= event_ba_step_threshold) {
++            // Candidates in the last ~2.5 s of history: the two largest frame-to-frame buffered-audio deltas
++            // (may be DMA-chunk noise) and the largest a_unacc change (preferred when it is >= 480 samples).
++            std::int64_t ba_frame[2] = {agg_.first_frame, agg_.first_frame};
++            std::int32_t ba_delta[2] = {0, 0};
++            std::int64_t un_frame    = -1;
++            std::int64_t un_delta    = 0;
++            for (std::size_t i = 1; i < history_.size(); ++i) {
++                const auto& a = history_[i - 1];
++                const auto& b = history_[i];
++                if (b.frame_no < agg_.first_frame - 60 || a.buffered_audio < 0 || b.buffered_audio < 0)
++                    continue;
++                auto delta = b.buffered_audio - a.buffered_audio;
++                if (std::abs(delta) > std::abs(ba_delta[0])) {
++                    ba_delta[1] = ba_delta[0];
++                    ba_frame[1] = ba_frame[0];
++                    ba_delta[0] = delta;
++                    ba_frame[0] = b.frame_no;
++                } else if (std::abs(delta) > std::abs(ba_delta[1])) {
++                    ba_delta[1] = delta;
++                    ba_frame[1] = b.frame_no;
++                }
++                if (unacc_valid(a) && unacc_valid(b)) {
++                    auto ud = a_unacc(b) - a_unacc(a);
++                    if (std::abs(ud) > std::abs(un_delta)) {
++                        un_delta = ud;
++                        un_frame = b.frame_no;
++                    }
++                }
++            }
++            const auto step_frame =
++                un_frame >= 0 && std::abs(un_delta) >= event_ba_step_threshold ? un_frame : ba_frame[0];
++            char head[320];
++            std::snprintf(head,
++                          sizeof(head),
++                          "BA_MIN_STEP sec_last_fr=%lld prev_min=%d min=%d delta=%d ba_cand=%lld:%d,%lld:%d "
++                          "unacc_cand=%lld:%lld",
++                          static_cast<long long>(l.frame_no),
++                          prev_ba_min_,
++                          agg_.ba_min,
++                          agg_.ba_min - prev_ba_min_,
++                          static_cast<long long>(ba_frame[0]),
++                          ba_delta[0],
++                          static_cast<long long>(ba_frame[1]),
++                          ba_delta[1],
++                          static_cast<long long>(un_frame),
++                          static_cast<long long>(un_delta));
++            // Deferred so that frames after the step are included as well.
++            pending_.push_back(pending_event{step_frame, l.wall_ms, head, context_after});
++        }
++        if (embedded_audio_)
++            prev_ba_min_ = agg_.ba_min;
++
++        agg_ = second_aggregate{};
++    }
++
++    bool cadence_ok(int nb_samples) const
++    {
++        if (expected_samples_.empty())
++            return true;
++        return std::find(expected_samples_.begin(), expected_samples_.end(), nb_samples) != expected_samples_.end();
++    }
++
++    void handle(const frame_sample& s)
++    {
++        last_sample_seen_ = steady_clock::now();
++        if (stalled_) {
++            stalled_ = false;
++            write(prefix(s.wall_ms) + " E fr=" + std::to_string(s.frame_no) + " CALLBACKS_RESUMED\n", true);
++        }
++
++        const auto second = s.wall_ms / 1000;
++        if (agg_.n > 0 && second != agg_.second)
++            flush_second();
++
++        history_.push_back(s);
++        write_csv(s);
++
++        if (agg_.n == 0) {
++            agg_.second      = second;
++            agg_.first_frame = s.frame_no;
++        }
++        ++agg_.n;
++        switch (s.result) {
++            case bmdOutputFrameCompleted:
++                ++agg_.results[0];
++                break;
++            case bmdOutputFrameDisplayedLate:
++                ++agg_.results[1];
++                break;
++            case bmdOutputFrameDropped:
++                ++agg_.results[2];
++                break;
++            case bmdOutputFrameFlushed:
++                ++agg_.results[3];
++                break;
++            default:
++                ++agg_.results[4];
++        }
++        if (s.buffered_audio >= 0) {
++            agg_.ba_min = std::min(agg_.ba_min, s.buffered_audio);
++            agg_.ba_max = std::max(agg_.ba_max, s.buffered_audio);
++        }
++        if (s.buffered_audio_post >= 0) {
++            agg_.ba_post_min = std::min(agg_.ba_post_min, s.buffered_audio_post);
++            agg_.ba_post_max = std::max(agg_.ba_post_max, s.buffered_audio_post);
++        }
++        const bool has_unacc = unacc_valid(s);
++        const auto unacc     = has_unacc ? a_unacc(s) : 0;
++        const auto skew      = av_skew(s);
++        if (has_unacc) {
++            agg_.unacc_min = std::min(agg_.unacc_min, unacc);
++            agg_.unacc_max = std::max(agg_.unacc_max, unacc);
++        }
++        agg_.skew_min = std::min(agg_.skew_min, skew);
++        agg_.skew_max = std::max(agg_.skew_max, skew);
++        if (embedded_audio_ && s.sched_ph >= 0 && s.audio_stream_time >= 0 && SUCCEEDED(s.sched_stream_hr)) {
++            agg_.sched_lead_min = std::min(agg_.sched_lead_min, sched_lead(s));
++            agg_.sched_lead_max = std::max(agg_.sched_lead_max, sched_lead(s));
++        }
++        agg_.bv_min = std::min(agg_.bv_min, s.buffered_video);
++        agg_.bv_max = std::max(agg_.bv_max, s.buffered_video);
++        if (s.inter_arrival_us > 0)
++            agg_.ia_min = std::min(agg_.ia_min, s.inter_arrival_us);
++        agg_.ia_max          = std::max(agg_.ia_max, s.inter_arrival_us);
++        agg_.pop_max         = std::max(agg_.pop_max, s.pop_us);
++        agg_.sched_video_max = std::max(agg_.sched_video_max, s.sched_video_us);
++        agg_.sched_audio_max = std::max(agg_.sched_audio_max, s.sched_audio_us);
++        agg_.callback_max    = std::max(agg_.callback_max, s.callback_us);
++        agg_.late_adjustments += s.late_adj ? 1 : 0;
++        agg_.sched_on_cb += s.sched_tid != 0 && s.sched_tid == s.cb_tid ? 1 : 0;
++        agg_.last = s;
++
++        if (!warned_per_frame_ && SUCCEEDED(s.hw_hr) && s.hw_per_frame != 0 && s.hw_per_frame != duration_) {
++            warned_per_frame_ = true;
++            write(prefix(s.wall_ms) + " I WARNING hw ticksPerFrame=" + std::to_string(s.hw_per_frame) +
++                      " != duration=" + std::to_string(duration_) + "\n",
++                  false);
++        }
++
++        std::string reasons;
++        int         after = context_after;
++        if (s.result != bmdOutputFrameCompleted)
++            reasons += std::string(" RESULT_") + result_name(s.result);
++        if (s.inter_arrival_us > event_inter_arrival_us)
++            reasons += " INTER_ARRIVAL_" + std::to_string(s.inter_arrival_us / 1000) + "ms";
++        if (s.inter_arrival_us > 0 && s.inter_arrival_us < event_inter_arrival_short_us)
++            reasons += " INTER_ARRIVAL_SHORT_" + std::to_string(s.inter_arrival_us) + "us";
++
++        // Completed-frame identity: consecutive completions should be exactly one frame duration apart.
++        if (s.cf_display_time >= 0) {
++            if (prev_cft_ >= 0 && s.cf_display_time - prev_cft_ != duration_) {
++                ++agg_.cft_steps;
++                reasons += " CFT_STEP_" + std::to_string(s.cf_display_time - prev_cft_);
++            }
++            prev_cft_ = s.cf_display_time;
++            if (SUCCEEDED(s.stream_hr)) {
++                const auto ph_cft = s.stream_time - s.cf_display_time;
++                if (prev_ph_cft_ != INT64_MIN && std::abs(ph_cft - prev_ph_cft_) > duration_ / 2)
++                    reasons += " PH_CFT_SHIFT_" + std::to_string(ph_cft - prev_ph_cft_);
++                prev_ph_cft_ = ph_cft;
++            }
++        }
++
++        if (embedded_audio_ && s.audio_stream_time >= 0) {
++            if (FAILED(s.audio_hr)) {
++                ++agg_.audio_hr_failures;
++                reasons += " AUDIO_HR_FAIL";
++            }
++            if (s.samples_written != s.nb_samples) {
++                ++agg_.short_writes;
++                reasons +=
++                    " SAMPLES_WRITTEN_" + std::to_string(s.samples_written) + "_OF_" + std::to_string(s.nb_samples);
++            }
++            if (!cadence_ok(s.nb_samples)) {
++                ++agg_.ns_cadence;
++                reasons += " NS_CADENCE_" + std::to_string(s.nb_samples);
++            }
++            // Did the driver's buffered count grow by what it accepted? Catches silently discarded blocks.
++            if (s.ba_pre_sched >= 0 && s.ba_post_sched >= 0) {
++                const auto accepted = s.ba_post_sched - s.ba_pre_sched;
++                if (std::abs(accepted - s.nb_samples) >= event_sched_accept_tolerance) {
++                    ++agg_.sched_accept;
++                    reasons += " SCHED_ACCEPT_" + std::to_string(accepted) + "_OF_" + std::to_string(s.nb_samples);
++                }
++            }
++        }
++
++        if (embedded_audio_ && has_unacc) {
++            if (prev_unacc_ != INT64_MIN && std::abs(unacc - prev_unacc_) >= event_ba_step_threshold)
++                reasons += " A_UNACC_STEP_" + std::to_string(unacc - prev_unacc_);
++            prev_unacc_ = unacc;
++        }
++        if (embedded_audio_) {
++            if (prev_skew_ != INT64_MIN && std::abs(skew - prev_skew_) >= event_av_skew_tolerance)
++                reasons += " AV_SKEW_" + std::to_string(skew - prev_skew_);
++            prev_skew_ = skew;
++        }
++
++        if (embedded_audio_ && s.buffered_audio >= 0) {
++            const auto low =
++                s.buffered_audio_post >= 0 ? std::min(s.buffered_audio, s.buffered_audio_post) : s.buffered_audio;
++            if (prev_ba_ >= 0) {
++                if (low == 0 && prev_ba_ > 0) {
++                    reasons += " BA_ZERO";
++                    after = context_after_long;
++                } else if (low < event_ba_low && prev_ba_ >= event_ba_low) {
++                    reasons += " BA_LOW_" + std::to_string(low);
++                    after = context_after_long;
++                }
++            }
++            prev_ba_ = low;
++        }
++
++        if (SUCCEEDED(s.stream_hr) && prev_stream_time_ >= 0) {
++            // A real playhead jump shows as a ph step that differs from the hardware clock delta; callback jitter
++            // with an interpolated ph moves both equally. Without a usable hw clock, compare with one frame.
++            const auto step     = s.stream_time - prev_stream_time_;
++            const bool hw_ok    = SUCCEEDED(s.hw_hr) && prev_hw_time_ >= 0;
++            const auto hw_delta = hw_ok ? s.hw_time - prev_hw_time_ : duration_;
++            if (std::abs(step - hw_delta) > duration_ / 2) {
++                ++agg_.playhead_jumps;
++                reasons += " PLAYHEAD_STEP_" + std::to_string(step) + "_HW_" + std::to_string(hw_delta);
++            }
++        }
++        if (SUCCEEDED(s.stream_hr))
++            prev_stream_time_ = s.stream_time;
++        prev_hw_time_ = SUCCEEDED(s.hw_hr) ? s.hw_time : -1;
++
++        if (!reasons.empty())
++            add_pending(s, reasons.substr(1), after);
++
++        emit_ready_events(false);
++    }
++
++    void drain_text()
++    {
++        std::vector<std::string> lines;
++        {
++            std::lock_guard<std::mutex> lock(text_mutex_);
++            lines.swap(text_queue_);
++        }
++        for (auto& line : lines)
++            write(prefix(wall_ms_now()) + " I " + line + "\n", false);
++    }
++
++    void run()
++    {
++        set_thread_name(L"decklink-diag");
++#ifdef _WIN32
++        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
++#else
++        {
++            sched_param param{};
++            param.sched_priority = 0;
++            pthread_setschedparam(pthread_self(), SCHED_OTHER, &param);
++            setpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)), 10);
++        }
++#endif
++
++        while (true) {
++            const bool stopping = stop_.load();
++
++            frame_sample s;
++            bool         got = false;
++            while (ring_->pop(s)) {
++                handle(s);
++                got = true;
++            }
++            drain_text();
++
++            if (!got && last_sample_seen_ != steady_clock::time_point{} && !stalled_ &&
++                steady_clock::now() - last_sample_seen_ > std::chrono::seconds(1)) {
++                stalled_ = true;
++                flush_second();
++                emit_ready_events(true);
++                write(prefix(wall_ms_now()) + " E NO_CALLBACKS_FOR_1S last_fr=" +
++                          (history_.empty() ? std::string("-") : std::to_string(history_.back().frame_no)) + "\n",
++                      true);
++            }
++
++            if (stopping)
++                break;
++
++            std::this_thread::sleep_for(std::chrono::milliseconds(20));
++        }
++
++        flush_second();
++        emit_ready_events(true);
++        drain_text();
++    }
++
++  public:
++    logger(std::string                    name,
++           const core::video_format_desc& format_desc,
++           bool                           embedded_audio,
++           std::vector<int>               expected_samples)
++        : name_(std::move(name))
++        , time_scale_(format_desc.time_scale)
++        , duration_(format_desc.duration)
++        , sample_rate_(format_desc.audio_sample_rate)
++        , embedded_audio_(embedded_audio)
++        , expected_samples_(std::move(expected_samples))
++    {
++        const char* env  = std::getenv("CASPAR_DECKLINK_DIAG_LOG");
++        std::string path = env != nullptr && *env != '\0' ? env : "/var/log/casparcg/decklink-diag.log";
++        try {
++            boost::system::error_code ec;
++            boost::filesystem::create_directories(boost::filesystem::path(path).parent_path(), ec);
++            file_.open(path, std::ios::out | std::ios::app);
++            use_file_ = file_.is_open() && file_.good();
++        } catch (...) {
++            use_file_ = false;
++        }
++
++        if (use_file_)
++            CASPAR_LOG(info) << u16(name_) << L" decklink diagnostics -> " << u16(path);
++        else
++            CASPAR_LOG(warning) << u16(name_) << L" decklink diagnostics: cannot open " << u16(path)
++                                << L", falling back to CASPAR_LOG(info) at ~1 line/s";
++
++        if (csv_by_env()) {
++            const auto csv_path = path + ".csv";
++            try {
++                const bool fresh = !boost::filesystem::exists(csv_path);
++                csv_.open(csv_path, std::ios::out | std::ios::app);
++                use_csv_ = csv_.is_open() && csv_.good();
++                if (use_csv_ && fresh)
++                    csv_ << "wall_ms,consumer,frame_no,result,late_adj,cft,cat,cns,ph,hw,hw_in_frame,sched_ph,bv,ba,"
++                            "ba_pre_sched,ba_post_sched,ba_post,a_sched,v_sched,at,vt,sched_in_frame,ns,sw,ahr,vhr,"
++                            "a_unacc,av_skew,q,cpu,oncb,ia_us,pop_us,sv_us,sa_us,cb_us\n";
++            } catch (...) {
++                use_csv_ = false;
++            }
++            if (use_csv_)
++                CASPAR_LOG(info) << u16(name_) << L" decklink diagnostics CSV -> " << u16(csv_path);
++            else
++                CASPAR_LOG(warning) << u16(name_) << L" decklink diagnostics: cannot open " << u16(csv_path);
++        }
++
++        thread_ = std::thread([this] { run(); });
++    }
++
++    ~logger()
++    {
++        stop_ = true;
++        if (thread_.joinable())
++            thread_.join();
++    }
++
++    logger(const logger&)            = delete;
++    logger& operator=(const logger&) = delete;
++
++    // Real-time safe: called from the completion callback only.
++    void push(const frame_sample& s)
++    {
++        if (!ring_->push(s))
++            overflow_.fetch_add(1, std::memory_order_relaxed);
++    }
++
++    // Not real-time safe (takes a mutex, allocates). Use outside of the completion callback only.
++    void post_text(std::string line)
++    {
++        std::lock_guard<std::mutex> lock(text_mutex_);
++        text_queue_.push_back(std::move(line));
++    }
++};
++
++// Pushes the sample when the callback leaves scope (normal return, abort return or exception).
++class sample_guard
++{
++    logger*                  logger_;
++    frame_sample&            sample_;
++    steady_clock::time_point start_;
++
++  public:
++    sample_guard(logger* logger, frame_sample& sample, steady_clock::time_point start)
++        : logger_(logger)
++        , sample_(sample)
++        , start_(start)
++    {
++    }
++
++    ~sample_guard()
++    {
++        if (logger_ != nullptr) {
++            sample_.callback_us = us_between(start_, steady_clock::now());
++            logger_->push(sample_);
++        }
++    }
++
++    sample_guard(const sample_guard&)            = delete;
++    sample_guard& operator=(const sample_guard&) = delete;
++};
++
++} // namespace diag
++
+ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+ {
+     const int                        channel_index_;
+@@ -639,6 +1652,28 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+ 
+     std::atomic<bool> abort_request_{false};
+ 
++    // DIAGNOSTIC BUILD state. diag_last_* are written by schedule_next_audio/video (primary task inside
++    // parallel_for, or the constructor during preroll) and read by the callback after parallel_for has joined.
++    std::unique_ptr<diag::logger>  diag_;
++    std::atomic<std::int64_t>      diag_frame_no_{0};
++    diag::steady_clock::time_point diag_last_callback_{};
++    HRESULT                        diag_last_audio_hr_        = S_OK;
++    std::uint32_t                  diag_last_samples_written_ = 0;
++    std::int64_t                   diag_last_audio_time_      = -1;
++    std::int32_t                   diag_last_audio_us_        = 0;
++    HRESULT                        diag_last_video_hr_        = S_OK;
++    std::int32_t                   diag_last_video_us_        = 0;
++    std::int32_t                   diag_last_ba_pre_          = -1;
++    std::int32_t                   diag_last_ba_post_         = -1;
++    HRESULT                        diag_last_sched_stream_hr_ = S_OK;
++    std::int64_t                   diag_last_sched_ph_        = -1;
++    HRESULT                        diag_last_sched_hw_hr_     = S_OK;
++    std::int64_t                   diag_last_sched_hw_time_   = 0;
++    std::int64_t                   diag_last_sched_in_frame_  = -1;
++    std::int32_t                   diag_last_sched_tid_       = 0;
++    std::int32_t                   diag_last_sched_cpu_       = -1;
++    std::int32_t                   diag_last_buffer_size_     = -1; // written in pop() (callback thread only)
++
+   public:
+     decklink_consumer(const configuration& config, core::video_format_desc channel_format_desc, int channel_index)
+         : channel_index_(channel_index)
+@@ -670,6 +1705,48 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+         graph_->set_text(print());
+         diagnostics::register_graph(graph_);
+ 
++        if (diag::enabled_by_env()) {
++            std::vector<int> expected_samples;
++            for (auto c : decklink_format_desc_.audio_cadence)
++                expected_samples.push_back(c * decklink_format_desc_.field_count);
++            try {
++                diag_ = std::make_unique<diag::logger>("dl" + std::to_string(config_.primary.device_index) + "/ch" +
++                                                           std::to_string(channel_index_),
++                                                       decklink_format_desc_,
++                                                       config_.embedded_audio,
++                                                       std::move(expected_samples));
++            } catch (...) {
++                diag_.reset();
++                CASPAR_LOG(warning) << print() << L" [diag] could not start decklink diagnostics logger";
++            }
++        }
++        if (diag_) {
++            std::string cadence;
++            for (auto c : decklink_format_desc_.audio_cadence)
++                cadence += (cadence.empty() ? "" : ",") + std::to_string(c);
++            diag_->post_text("START " + u8(print()) +
++                             " time_scale=" + std::to_string(decklink_format_desc_.time_scale) +
++                             " duration=" + std::to_string(decklink_format_desc_.duration) +
++                             " sample_rate=" + std::to_string(decklink_format_desc_.audio_sample_rate) +
++                             " channels=" + std::to_string(decklink_format_desc_.audio_channels) +
++                             " buffer_depth=" + std::to_string(buffer_size_) + " audio_cadence=" + cadence +
++                             " field_count=" + std::to_string(decklink_format_desc_.field_count) +
++                             " embedded_audio=" + std::to_string(config_.embedded_audio ? 1 : 0));
++            diag_->post_text(
++                "LEGEND S=per-second summary, E=event (frames trigger-5..trigger+4, +50 for BA_LOW/BA_ZERO), I=info. "
++                "cft/cat/cns=display time, audio stream time and sample count the COMPLETED frame was scheduled with. "
++                "ba=buffered audio samples at callback entry/before ScheduleAudioSamples/after it/after parallel_for, "
++                "bv=buffered video frames, ph=GetScheduledStreamTime (VIDEO playhead; no API exposes the audio "
++                "playhead in timestamped mode, so an audio-only slip shows only as a_unacc stepping while ph, hw "
++                "and bv stay regular), hw=GetHardwareReferenceClock time/timeInFrame/ticksPerFrame (only deltas "
++                "matter), hwhr=its HRESULT, vt/at=video display time/audio stream time passed to Schedule*, "
++                "a_lead=audio_scheduled_-ph_in_samples, v_lead=video_scheduled_-ph, a_unacc=a_lead-ba (samples "
++                "caspar thinks the driver holds but it does not report), av_skew=audio_scheduled_-video_scheduled_ "
++                "in samples, s_ph/s_inf=ph and hw timeInFrame read right before ScheduleAudioSamples, "
++                "s_lead=at-s_ph_in_samples, q=caspar frame queue size after pop, cpu=CPU of the primary task, "
++                "oncb=primary task ran on the callback thread, sw=samplesWritten, ia/pop/sv/sa/cb=us");
++        }
++
+         // If there are additional ports devices, then enable the sync group
+         if (!config.secondaries.empty()) {
+             // A unique id is needed for this group, this is simpler than a random number
+@@ -717,14 +1794,26 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+         for (int n = 0; n < buffer_size_; ++n) {
+             auto nb_samples = decklink_format_desc_.audio_cadence[n % decklink_format_desc_.audio_cadence.size()] *
+                               decklink_format_desc_.field_count;
++            const auto preroll_audio_time = audio_scheduled_;
+             if (config.embedded_audio) {
+                 schedule_next_audio(std::vector<int32_t>(nb_samples * decklink_format_desc_.audio_channels),
+                                     nb_samples);
++                if (FAILED(diag_last_audio_hr_) ||
++                    diag_last_samples_written_ != static_cast<std::uint32_t>(nb_samples)) {
++                    CASPAR_LOG(warning) << print() << L" [diag] preroll ScheduleAudioSamples hr=" << diag_last_audio_hr_
++                                        << L" samplesWritten=" << diag_last_samples_written_ << L" of " << nb_samples;
++                }
++                if (diag_) {
++                    diag_->post_text(
++                        "PREROLL audio n=" + std::to_string(n) + " at=" + std::to_string(diag_last_audio_time_) +
++                        " ns=" + std::to_string(nb_samples) + " sw=" + std::to_string(diag_last_samples_written_) +
++                        " hr=" + std::to_string(diag_last_audio_hr_));
++                }
+             }
+ 
+             std::shared_ptr<void> image_data = format_strategy_->allocate_frame_data(decklink_format_desc_);
+ 
+-            schedule_next_video(image_data, nb_samples, video_scheduled_);
++            schedule_next_video(image_data, nb_samples, video_scheduled_, preroll_audio_time);
+             for (auto& context : secondary_port_contexts_) {
+                 context->schedule_next_video(image_data, 0, video_scheduled_);
+             }
+@@ -736,6 +1825,17 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+             output_->EndAudioPreroll();
+         }
+ 
++        if (diag_) {
++            UINT32 buffered_video = 0;
++            UINT32 buffered_audio = 0;
++            output_->GetBufferedVideoFrameCount(&buffered_video);
++            if (config.embedded_audio)
++                output_->GetBufferedAudioSampleFrameCount(&buffered_audio);
++            diag_->post_text("PREROLL done bv=" + std::to_string(buffered_video) + " ba=" +
++                             std::to_string(buffered_audio) + " video_scheduled=" + std::to_string(video_scheduled_) +
++                             " audio_scheduled=" + std::to_string(audio_scheduled_));
++        }
++
+         wait_for_reference_lock();
+ 
+         start_playback();
+@@ -751,10 +1851,19 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+             if (config_.embedded_audio) {
+                 output_->DisableAudioOutput();
+             }
++            if (diag_) {
++                // DIAGNOSTIC BUILD: make sure no completion callback can reach diag_ after it is destroyed.
++                output_->SetScheduledFrameCompletionCallback(nullptr);
++            }
+             output_->DisableVideoOutput();
+         }
+ 
+         secondary_port_contexts_.clear();
++
++        if (diag_) {
++            diag_->post_text("STOP frames=" + std::to_string(diag_frame_no_.load()) + " video_scheduled=" +
++                             std::to_string(video_scheduled_) + " audio_scheduled=" + std::to_string(audio_scheduled_));
++        }
+     }
+ 
+     void wait_for_reference_lock()
+@@ -849,6 +1958,8 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+     HRESULT STDMETHODCALLTYPE ScheduledPlaybackHasStopped() override
+     {
+         CASPAR_LOG(info) << print() << L" Scheduled playback has stopped.";
++        if (diag_)
++            diag_->post_text("SCHEDULED_PLAYBACK_HAS_STOPPED");
+         return S_OK;
+     }
+ 
+@@ -862,6 +1973,17 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+             set_thread_name(L"decklink_consumer[" + std::to_wstring(config_.primary.device_index) +
+                             L"]-ScheduledFrameCompleted");
+         }
++        const auto         diag_start = diag::steady_clock::now();
++        diag::frame_sample ds;
++        ds.frame_no = ++diag_frame_no_;
++        ds.cb_tid   = diag_ ? diag::current_tid() : 0;
++        ds.wall_ms  = diag::wall_ms_now();
++        ds.result   = static_cast<std::int32_t>(result);
++        if (diag_last_callback_ != diag::steady_clock::time_point{})
++            ds.inter_arrival_us = diag::us_between(diag_last_callback_, diag_start);
++        diag_last_callback_ = diag_start;
++        diag::sample_guard diag_guard(diag_.get(), ds, diag_start);
++
+         try {
+             auto tick_time = tick_timer_.elapsed() * decklink_format_desc_.hz * 0.5;
+             graph_->set_value("tick-time", tick_time);
+@@ -871,6 +1993,11 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+ 
+             auto dframe = reinterpret_cast<decklink_frame*>(completed_frame);
+             // ++scheduled_frames_completed_;
++            if (dframe != nullptr) {
++                ds.cf_display_time = dframe->display_time();
++                ds.cf_audio_time   = dframe->audio_time();
++                ds.cf_nb_samples   = dframe->nb_samples();
++            }
+ 
+             /*
+             if (key_context_) {
+@@ -889,6 +2016,7 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                 graph_->set_tag(diagnostics::tag_severity::WARNING, "late-frame");
+                 video_scheduled_ += decklink_format_desc_.duration;
+                 audio_scheduled_ += dframe->nb_samples();
++                ds.late_adj = true;
+             } else if (result == bmdOutputFrameDropped) {
+                 graph_->set_tag(diagnostics::tag_severity::WARNING, "dropped-frame");
+             } else if (result == bmdOutputFrameFlushed) {
+@@ -899,6 +2027,7 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                 UINT32 buffered;
+                 output_->GetBufferedVideoFrameCount(&buffered);
+                 graph_->set_value("buffered-video", static_cast<double>(buffered) / config_.buffer_depth());
++                ds.buffered_video = static_cast<std::int32_t>(buffered);
+ 
+                 if (config_.embedded_audio) {
+                     output_->GetBufferedAudioSampleFrameCount(&buffered);
+@@ -906,10 +2035,30 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                                       static_cast<double>(buffered) /
+                                           (decklink_format_desc_.audio_cadence[0] * decklink_format_desc_.field_count *
+                                            config_.buffer_depth()));
++                    ds.buffered_audio = static_cast<std::int32_t>(buffered);
++                }
++
++                if (diag_) {
++                    BMDTimeValue stream_time = 0;
++                    double       speed       = 0.0;
++                    ds.stream_hr =
++                        output_->GetScheduledStreamTime(decklink_format_desc_.time_scale, &stream_time, &speed);
++                    ds.stream_time    = stream_time;
++                    ds.playback_speed = speed;
++
++                    BMDTimeValue hw_time = 0, in_frame = 0, per_frame = 0;
++                    ds.hw_hr = output_->GetHardwareReferenceClock(
++                        decklink_format_desc_.time_scale, &hw_time, &in_frame, &per_frame);
++                    ds.hw_time      = hw_time;
++                    ds.hw_in_frame  = in_frame;
++                    ds.hw_per_frame = per_frame;
+                 }
++                ds.video_scheduled_entry = video_scheduled_;
++                ds.audio_scheduled_entry = audio_scheduled_;
+             }
+ 
+-            core::const_frame frame1 = pop();
++            const auto        diag_pop_start = diag::steady_clock::now();
++            core::const_frame frame1         = pop();
+             core::const_frame frame2;
+ 
+             bool isInterlaced = mode_->GetFieldDominance() != bmdProgressiveFrame;
+@@ -917,9 +2066,13 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                 // If the main is not progressive, then pop the second frame
+                 frame2 = pop();
+             }
++            ds.pop_us                = diag::us_between(diag_pop_start, diag::steady_clock::now());
++            ds.buffer_size_after_pop = diag_last_buffer_size_;
+ 
+-            if (abort_request_)
++            if (abort_request_) {
++                ds.aborted = true;
+                 return E_FAIL;
++            }
+ 
+             BMDTimeValue video_display_time = video_scheduled_;
+             video_scheduled_ += decklink_format_desc_.duration;
+@@ -946,7 +2099,7 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                                                                  frame2,
+                                                                  mode_->GetFieldDominance());
+ 
+-                    schedule_next_video(image_data, nb_samples, video_display_time);
++                    schedule_next_video(image_data, nb_samples, video_display_time, audio_scheduled_);
+ 
+                     if (config_.embedded_audio) {
+                         schedule_next_audio(std::move(audio_data), nb_samples);
+@@ -965,6 +2118,31 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                 }
+             });
+ 
++            ds.video_display_time = video_display_time;
++            ds.video_hr           = diag_last_video_hr_;
++            ds.sched_video_us     = diag_last_video_us_;
++            ds.nb_samples         = nb_samples;
++            if (config_.embedded_audio) {
++                ds.audio_stream_time = diag_last_audio_time_;
++                ds.audio_hr          = diag_last_audio_hr_;
++                ds.samples_written   = static_cast<std::int32_t>(diag_last_samples_written_);
++                ds.sched_audio_us    = diag_last_audio_us_;
++                ds.ba_pre_sched      = diag_last_ba_pre_;
++                ds.ba_post_sched     = diag_last_ba_post_;
++                ds.sched_stream_hr   = diag_last_sched_stream_hr_;
++                ds.sched_ph          = diag_last_sched_ph_;
++                ds.sched_hw_hr       = diag_last_sched_hw_hr_;
++                ds.sched_hw_time     = diag_last_sched_hw_time_;
++                ds.sched_in_frame    = diag_last_sched_in_frame_;
++                ds.sched_tid         = diag_last_sched_tid_;
++                ds.sched_cpu         = diag_last_sched_cpu_;
++                if (diag_) {
++                    UINT32 buffered = 0;
++                    output_->GetBufferedAudioSampleFrameCount(&buffered);
++                    ds.buffered_audio_post = static_cast<std::int32_t>(buffered);
++                }
++            }
++
+         } catch (...) {
+             std::lock_guard<std::mutex> lock(exception_mutex_);
+             exception_ = std::current_exception();
+@@ -984,6 +2162,7 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+                 frame = buffer_.front();
+                 buffer_.pop();
+             }
++            diag_last_buffer_size_ = static_cast<std::int32_t>(buffer_.size());
+         }
+         buffer_cond_.notify_all();
+         return frame;
+@@ -995,31 +2174,74 @@ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+ 
+         audio_container_.push_back(std::move(audio));
+ 
+-        if (FAILED(output_->ScheduleAudioSamples(audio_container_.back().data(),
+-                                                 nb_samples,
+-                                                 audio_scheduled_,
+-                                                 decklink_format_desc_.audio_sample_rate,
+-                                                 nullptr))) {
++        // DIAGNOSTIC BUILD: pass a real samplesWritten pointer and record the outcome.
++        std::uint32_t samples_written = 0;
++        if (diag_) {
++            // Deadline margin and driver buffer level immediately before scheduling.
++            diag_last_sched_tid_ = diag::current_tid();
++            diag_last_sched_cpu_ = diag::current_cpu();
++            BMDTimeValue ph = 0, hw_time = 0, in_frame = 0, per_frame = 0;
++            double       speed         = 0.0;
++            diag_last_sched_stream_hr_ = output_->GetScheduledStreamTime(decklink_format_desc_.time_scale, &ph, &speed);
++            diag_last_sched_ph_        = SUCCEEDED(diag_last_sched_stream_hr_) ? ph : -1;
++            diag_last_sched_hw_hr_ =
++                output_->GetHardwareReferenceClock(decklink_format_desc_.time_scale, &hw_time, &in_frame, &per_frame);
++            diag_last_sched_hw_time_  = hw_time;
++            diag_last_sched_in_frame_ = SUCCEEDED(diag_last_sched_hw_hr_) ? in_frame : -1;
++            UINT32 buffered           = 0;
++            diag_last_ba_pre_         = SUCCEEDED(output_->GetBufferedAudioSampleFrameCount(&buffered))
++                                            ? static_cast<std::int32_t>(buffered)
++                                            : -1;
++        }
++        const auto diag_start      = diag::steady_clock::now();
++        const auto hr              = output_->ScheduleAudioSamples(audio_container_.back().data(),
++                                                      nb_samples,
++                                                      audio_scheduled_,
++                                                      decklink_format_desc_.audio_sample_rate,
++                                                      &samples_written);
++        diag_last_audio_us_        = diag::us_between(diag_start, diag::steady_clock::now());
++        diag_last_audio_hr_        = hr;
++        diag_last_samples_written_ = samples_written;
++        diag_last_audio_time_      = audio_scheduled_;
++        if (diag_) {
++            UINT32 buffered    = 0;
++            diag_last_ba_post_ = SUCCEEDED(output_->GetBufferedAudioSampleFrameCount(&buffered))
++                                     ? static_cast<std::int32_t>(buffered)
++                                     : -1;
++        }
++
++        if (FAILED(hr)) {
+             CASPAR_LOG(error) << print() << L" Failed to schedule audio.";
+         }
+ 
+         audio_scheduled_ += nb_samples; // TODO - what if there are too many/few samples in this frame?
+     }
+ 
+-    void schedule_next_video(std::shared_ptr<void> image_data, int nb_samples, BMDTimeValue display_time)
++    void schedule_next_video(std::shared_ptr<void> image_data,
++                             int                   nb_samples,
++                             BMDTimeValue          display_time,
++                             BMDTimeValue          audio_time)
+     {
+-        auto fmt        = format_strategy_->get_pixel_format();
+-        auto row_bytes  = format_strategy_->get_row_bytes(decklink_format_desc_.width);
+-        auto fill_frame = wrap_raw<com_ptr, IDeckLinkVideoFrame>(new decklink_frame(std::move(image_data),
+-                                                                                    decklink_format_desc_,
+-                                                                                    nb_samples,
+-                                                                                    config_.hdr,
+-                                                                                    fmt,
+-                                                                                    row_bytes,
+-                                                                                    config_.color_space,
+-                                                                                    config_.hdr_meta));
+-        if (FAILED(output_->ScheduleVideoFrame(
+-                get_raw(fill_frame), display_time, decklink_format_desc_.duration, decklink_format_desc_.time_scale))) {
++        auto fmt       = format_strategy_->get_pixel_format();
++        auto row_bytes = format_strategy_->get_row_bytes(decklink_format_desc_.width);
++        auto raw_frame = new decklink_frame(std::move(image_data),
++                                            decklink_format_desc_,
++                                            nb_samples,
++                                            config_.hdr,
++                                            fmt,
++                                            row_bytes,
++                                            config_.color_space,
++                                            config_.hdr_meta);
++        // DIAGNOSTIC BUILD: record the frame's identity for the completion callback.
++        raw_frame->set_schedule_info(display_time, audio_time);
++        auto       fill_frame = wrap_raw<com_ptr, IDeckLinkVideoFrame>(raw_frame);
++        const auto diag_start = diag::steady_clock::now();
++        const auto hr         = output_->ScheduleVideoFrame(
++            get_raw(fill_frame), display_time, decklink_format_desc_.duration, decklink_format_desc_.time_scale);
++        diag_last_video_us_ = diag::us_between(diag_start, diag::steady_clock::now());
++        diag_last_video_hr_ = hr;
++
++        if (FAILED(hr)) {
+             CASPAR_LOG(error) << print() << L" Failed to schedule primary video.";
+         }
+     }
+@@ -1085,7 +2307,9 @@ struct decklink_consumer_proxy : public core::frame_consumer
+         });
+     }
+ 
+-    void initialize(const core::video_format_desc& format_desc, const core::channel_info& channel_info, int port_index) override
++    void initialize(const core::video_format_desc& format_desc,
++                    const core::channel_info&      channel_info,
++                    int                            port_index) override
+     {
+         format_desc_ = format_desc;
+         executor_.invoke([=] {
