@@ -9,9 +9,9 @@ pool {{ p }} iburst maxsources 2
 {% endfor %}
 {% endif %}
 {% if not time_sync_is_grandmaster | bool %}
-# The other local time servers.
+# The other local time servers.{{ ' "prefer" marks the ones ahead of this host in time_sync_reference_order: it follows them, and the upstream servers only when none of them is usable.' if time_sync_preferred_servers else '' }}
 {% for s in time_sync_local_servers %}
-server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}
+server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}{{ ' prefer' if s in time_sync_preferred_servers else '' }}
 {% endfor %}
 {% endif %}
 {% if time_sync_hwts_guarded | bool %}
