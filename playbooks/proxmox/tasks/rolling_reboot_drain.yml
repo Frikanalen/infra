@@ -1,0 +1,40 @@
+---
+# Drains rolling_reboot_node, run from a node of the same cluster that is on
+# another Proxmox host (so it stays up while this one reboots).
+- name: Pick a cluster node on another host to drain {{ rolling_reboot_node }}
+  ansible.builtin.set_fact:
+    rolling_reboot_driver: >-
+      {{ (groups['kubeprod'] if rolling_reboot_node in groups['kubeprod'] else groups['kubedev'])
+         | difference(rolling_reboot_kube_guests) | first }}
+
+- name: Move the external load-balancer IPs off {{ rolling_reboot_node }}
+  ansible.builtin.command: >-
+    {{ rolling_reboot_kubectl }} label node {{ rolling_reboot_node }}
+    node.kubernetes.io/exclude-from-external-load-balancers=true --overwrite
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: true
+
+- name: Cordon {{ rolling_reboot_node }}
+  ansible.builtin.command: "{{ rolling_reboot_kubectl }} cordon {{ rolling_reboot_node }}"
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: true
+
+# CloudNativePG's primary PDB allows no evictions; the operator switches over
+# by itself once the primary's node is unschedulable.
+- name: Wait for CloudNativePG primaries to leave {{ rolling_reboot_node }}
+  ansible.builtin.command: >-
+    {{ rolling_reboot_kubectl }} get pods -A -l cnpg.io/instanceRole=primary
+    --field-selector spec.nodeName={{ rolling_reboot_node }} -o name
+  delegate_to: "{{ rolling_reboot_driver }}"
+  register: rolling_reboot_cnpg
+  changed_when: false
+  until: rolling_reboot_cnpg.stdout | trim | length == 0
+  retries: 30
+  delay: 10
+
+- name: Drain {{ rolling_reboot_node }}
+  ansible.builtin.command: >-
+    {{ rolling_reboot_kubectl }} drain {{ rolling_reboot_node }}
+    --ignore-daemonsets --delete-emptydir-data --timeout=900s
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: true

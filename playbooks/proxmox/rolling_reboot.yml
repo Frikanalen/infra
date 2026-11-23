@@ -1,0 +1,195 @@
+---
+# Reboots the Proxmox hosts one at a time, slowly, so the production
+# Kubernetes cluster and Ceph keep serving throughout:
+#
+#   ansible-playbook playbooks/proxmox/rolling_reboot.yml -l vm3
+#   ansible-playbook playbooks/proxmox/rolling_reboot.yml -l vm3,vm4,vm2
+#
+# Hosts go in the order given to -l. Per host:
+#   1. check Ceph is fully healthy (all OSDs up, all PGs active+clean) and
+#      every node of both clusters is Ready, else stop;
+#   2. drain the Kubernetes nodes that are VMs on this host (load-balancer IPs
+#      and CloudNativePG primaries move first), from a node on another host;
+#   3. ceph osd set noout, reboot, wait;
+#   4. start any guest that ran before and isn't running, check the patched
+#      igb and the NIC timestamping guard;
+#   5. wait for Ceph to be active+clean again, unset noout;
+#   6. wait for the Kubernetes nodes to be Ready, uncordon, wait for the API;
+#   7. wait rolling_reboot_settle_minutes before the next host.
+# Any failure stops the whole run with the host's state left as it is.
+#
+# What this can't hide:
+# - vm1 runs util1 (router, DNS for the site), mail1, bao1 and pbx: a reboot
+#   takes the site's internet away for minutes until the firewall pair
+#   exists. Refused unless -e rolling_reboot_allow_vm1=true.
+# - vmtx1 runs caspar1 (playout on air) and prod-kube-4 (only QSV ingest).
+#   Refused unless -e rolling_reboot_allow_vmtx1=true, in an off-air window.
+# - A drain restarts single-replica pods elsewhere. playout-0 re-cues
+#   CasparCG when it restarts (seen 2026-11-23), so drain the host running it
+#   between programmes. The play prints which host that is.
+
+- name: Reboot Proxmox hosts one at a time without taking production down
+  hosts: proxmox
+  become: true
+  serial: 1
+  order: inventory
+  any_errors_fatal: true
+  gather_facts: false
+  vars:
+    rolling_reboot_allow_vm1: false
+    rolling_reboot_allow_vmtx1: false
+    rolling_reboot_settle_minutes: 10
+    rolling_reboot_kubectl: /snap/bin/microk8s kubectl
+    # Guests of this host, from data/hosts.yml (host_config.<name>.vm.node).
+    rolling_reboot_guests: >-
+      {{ host_config | dict2items
+         | selectattr('value.vm', 'defined')
+         | selectattr('value.vm.node', 'defined')
+         | selectattr('value.vm.node', 'equalto', inventory_hostname)
+         | map(attribute='key') | list }}
+    rolling_reboot_kube_guests: "{{ rolling_reboot_guests | intersect(groups['microk8s'] | default([])) }}"
+    rolling_reboot_is_ceph: "{{ inventory_hostname in groups['proxmox_ceph'] | default([]) }}"
+    # A Ceph host to run ceph commands from while this one is down.
+    rolling_reboot_ceph_admin: >-
+      {{ groups['proxmox_ceph'] | default([]) | difference([inventory_hostname]) | first | default('') }}
+  tasks:
+    - name: Refuse vm1 unless asked (util1 is the site's router)
+      ansible.builtin.fail:
+        msg: >-
+          vm1 runs util1 (router/DNS), mail1, bao1 and pbx; rebooting it takes
+          the site offline for minutes. Re-run with -e rolling_reboot_allow_vm1=true
+          when that is acceptable.
+      when: inventory_hostname == 'vm1' and not rolling_reboot_allow_vm1 | bool
+
+    - name: Refuse vmtx1 unless asked (caspar1 plays out on air)
+      ansible.builtin.fail:
+        msg: >-
+          vmtx1 runs caspar1 (on-air playout) and prod-kube-4 (QSV ingest).
+          Re-run with -e rolling_reboot_allow_vmtx1=true in an off-air window.
+      when: inventory_hostname == 'vmtx1' and not rolling_reboot_allow_vmtx1 | bool
+
+    - name: Say what lives on this host
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: guests {{ rolling_reboot_guests | join(', ') or 'none in hosts.yml' }};
+          Kubernetes nodes to drain {{ rolling_reboot_kube_guests | join(', ') or 'none' }};
+          Ceph host {{ rolling_reboot_is_ceph }}.
+
+    - name: Check Ceph is fully healthy before taking a host out
+      ansible.builtin.include_tasks: tasks/rolling_reboot_ceph_wait.yml
+      vars:
+        rolling_reboot_ceph_from: "{{ rolling_reboot_ceph_admin if rolling_reboot_is_ceph else groups['proxmox_ceph'][0] }}"
+        rolling_reboot_ceph_retries: 1
+      when: groups['proxmox_ceph'] | default([]) | length > 0
+
+    - name: Check every node of both clusters is Ready
+      ansible.builtin.command:
+        argv:
+          - /snap/bin/microk8s
+          - kubectl
+          - get
+          - nodes
+          - -o
+          - 'jsonpath={range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status},{.spec.unschedulable}{"\n"}{end}'
+      delegate_to: "{{ item }}"
+      loop: "{{ [groups['kubeprod_admin'][0], groups['kubedev_admin'][0]] }}"
+      register: rolling_reboot_nodes
+      changed_when: false
+      failed_when: >-
+        rolling_reboot_nodes.rc != 0
+        or rolling_reboot_nodes.stdout_lines | reject('search', '=True,$') | list | length > 0
+
+    - name: Show where playout-0 runs
+      ansible.builtin.command: >-
+        {{ rolling_reboot_kubectl }} get pods -A --no-headers
+        -o custom-columns=POD:.metadata.name,NODE:.spec.nodeName
+      delegate_to: "{{ groups['kubeprod_admin'][0] }}"
+      register: rolling_reboot_playout
+      changed_when: false
+      failed_when: false
+
+    - name: Warn when playout will be moved
+      ansible.builtin.debug:
+        msg: "{{ rolling_reboot_playout_lines | join('; ') }}: draining re-cues CasparCG."
+      vars:
+        rolling_reboot_playout_lines: >-
+          {{ rolling_reboot_playout.stdout_lines | default([]) | select('match', '^playout')
+             | select('search', rolling_reboot_kube_guests | join('|') or '^$nothing') | list }}
+      when: rolling_reboot_playout_lines | length > 0
+
+    - name: Drain the Kubernetes nodes on this host
+      ansible.builtin.include_tasks: tasks/rolling_reboot_drain.yml
+      loop: "{{ rolling_reboot_kube_guests }}"
+      loop_control:
+        loop_var: rolling_reboot_node
+
+    - name: Record the guests that are running now
+      ansible.builtin.shell: |
+        set -o pipefail
+        qm list | awk '$3 == "running" {print $1}'
+      args:
+        executable: /bin/bash
+      register: rolling_reboot_running
+      changed_when: false
+
+    - name: Keep Ceph from rebalancing while this host is down
+      ansible.builtin.command: ceph osd set noout
+      changed_when: true
+      when: rolling_reboot_is_ceph | bool
+
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: 1800
+        msg: "Rolling reboot (playbooks/proxmox/rolling_reboot.yml)"
+
+    - name: Start any guest that ran before and is not running yet
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for id in {{ rolling_reboot_running.stdout_lines | join(' ') }}; do
+          st=$(qm status "$id" | awk '{print $2}')
+          if [ "$st" != running ]; then qm start "$id"; echo "started $id"; fi
+        done
+      args:
+        executable: /bin/bash
+      register: rolling_reboot_started
+      changed_when: "'started' in rolling_reboot_started.stdout"
+      retries: 3
+      delay: 30
+      until: rolling_reboot_started is succeeded
+
+    - name: Check the NIC timestamping guard after boot
+      ansible.builtin.shell: |
+        set -uo pipefail
+        echo "kernel $(uname -r), igb $(cat /sys/module/igb/srcversion 2>/dev/null || echo none)"
+        journalctl -b -u chrony --no-pager | grep -o 'chrony-hwts-guard: .*' | tail -1
+      args:
+        executable: /bin/bash
+      register: rolling_reboot_guard
+      changed_when: false
+
+    - name: Report the driver and guard
+      ansible.builtin.debug:
+        msg: "{{ rolling_reboot_guard.stdout_lines }}"
+
+    - name: Wait for Ceph to be fully healthy again
+      ansible.builtin.include_tasks: tasks/rolling_reboot_ceph_wait.yml
+      vars:
+        rolling_reboot_ceph_from: "{{ inventory_hostname }}"
+        rolling_reboot_ceph_retries: 90
+      when: rolling_reboot_is_ceph | bool
+
+    - name: Let Ceph rebalance again
+      ansible.builtin.command: ceph osd unset noout
+      changed_when: true
+      when: rolling_reboot_is_ceph | bool
+
+    - name: Bring the Kubernetes nodes back
+      ansible.builtin.include_tasks: tasks/rolling_reboot_return.yml
+      loop: "{{ rolling_reboot_kube_guests }}"
+      loop_control:
+        loop_var: rolling_reboot_node
+
+    - name: Let the clusters settle before the next host
+      ansible.builtin.pause:
+        minutes: "{{ rolling_reboot_settle_minutes | int }}"
+      when: rolling_reboot_settle_minutes | int > 0
