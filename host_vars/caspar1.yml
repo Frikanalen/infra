@@ -30,3 +30,17 @@ caspar_sdi_audio_watchdog_dry_run: false
 # caspar1 is the ATEM input named "caspar1" (short name VM1), input 1.
 caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
 caspar_sdi_audio_watchdog_atem_input_name: caspar1
+
+# Diagnostic CasparCG build: 2.5.0 + casparcg-patches/0002-decklink-diag-v250.patch,
+# built with ~/Frikanalen/caspar-build/build.sh on the controller. It logs the
+# DeckLink consumer's audio lead per second and per event, to find out why the
+# card's audio lead drops a frame at a time. Takes effect at the next CasparCG
+# restart. Rollback: clear casparcg_server_deb_src (reinstalls upstream's deb
+# from casparcg_server_url, downgrades allowed), apply, restart nodm.
+casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk1_amd64.deb"
+casparcg_diag_log_dir: /var/log/casparcg
+casparcg_env:
+  CASPAR_DECKLINK_DIAG_LOG: /var/log/casparcg/decklink-diag.log
+# The bpftrace probe's offsets are for upstream's binary (BuildID c2fb0fce...);
+# the diagnostic build logs the same and more by itself.
+caspar_sdi_audio_probe_enabled: false
