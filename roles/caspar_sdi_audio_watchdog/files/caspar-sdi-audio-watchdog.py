@@ -34,6 +34,20 @@ Air check before restarting, from atemkontroll (the studio ATEM's HTTP API):
     program; another source, a transition or fade-to-black inhibits.
   * atemkontroll unset, unreachable or unclear: ON_UNKNOWN_PROGRAM decides.
 After a cut to CasparCG, a jam counts only after PROGRAM_GRACE_SECONDS.
+Dropouts: a second detector counts short gaps in both decoded streams, per
+rolling minute: runs of (near) digital zero on all channels, 8 samples to
+DROPOUT_MAX_SECONDS long, inside audio that is otherwise not silent (the
+second's RMS above DROPOUT_CONTEXT_DBFS). Audio PTS holes count too: the
+reader zero-fills them (aresample async), so an ffmpeg consumer dropping
+frames shows up as zero runs on the multicast. Sustained for
+DROPOUT_SUSTAIN_SECONDS at DROPOUT_PER_MINUTE or more:
+  * on the program return only: the DeckLink path (the 16 Nov case, cured by
+    re-creating the consumer) -> the same remedies as a jam;
+  * on both outputs: upstream of the consumers (or the source material
+    itself) -> CRIT only, or a restart with RESTART_ON_SHARED_DROPOUTS;
+  * on the multicast only: the ffmpeg consumer -> CRIT only.
+The layers on air (INFO 1) are logged at the start of each episode.
+
 Rate limits: COOLDOWN_SECONDS between remedies for new jams. A remedy that
 leaves the jam in place counts as failed; each failure in a row doubles the
 wait before the next (up to MAX_BACKOFF_SECONDS) and logs CRIT. The failure
@@ -45,15 +59,19 @@ Config comes from the environment (see the systemd unit). Stdlib only;
 needs the ffmpeg CLI.
 """
 
+import collections
 import json
 import math
 import os
+import re
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime
 
 CFG = {
@@ -86,6 +104,14 @@ CFG = {
     "LEVELS_STALE_SECONDS": float(os.environ.get("LEVELS_STALE_SECONDS", "3")),
     "RESTART_OFF_PROGRAM": os.environ.get("RESTART_OFF_PROGRAM", "true").lower() in ("1", "true", "yes"),
     "ON_UNKNOWN_PROGRAM": os.environ.get("ON_UNKNOWN_PROGRAM", "restart"),
+    "DROPOUT_NOISE_DBFS": float(os.environ.get("DROPOUT_NOISE_DBFS", "-80")),
+    "DROPOUT_MIN_SAMPLES": int(os.environ.get("DROPOUT_MIN_SAMPLES", "8")),
+    "DROPOUT_MAX_SECONDS": float(os.environ.get("DROPOUT_MAX_SECONDS", "0.2")),
+    "DROPOUT_CONTEXT_DBFS": float(os.environ.get("DROPOUT_CONTEXT_DBFS", "-60")),
+    "DROPOUT_PER_MINUTE": int(os.environ.get("DROPOUT_PER_MINUTE", "20")),
+    "DROPOUT_SUSTAIN_SECONDS": int(os.environ.get("DROPOUT_SUSTAIN_SECONDS", "120")),
+    "RESTART_ON_SHARED_DROPOUTS": os.environ.get("RESTART_ON_SHARED_DROPOUTS", "false").lower() in ("1", "true", "yes"),
+    "AMCP_HOST": os.environ.get("AMCP_HOST", "127.0.0.1"),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -107,7 +133,41 @@ class Level:
         self.dbfs = None
         self.updated = 0.0
         self.proc = None
+        self.dropouts = collections.deque()  # wall-clock times of counted gaps
+        self.lock = threading.Lock()
         threading.Thread(target=self._run, daemon=True, name=name).start()
+
+    def dropouts_last(self, now, seconds=60):
+        gaps = getattr(self, "gaps", None)
+        if gaps is not None:
+            with self.lock:
+                confirmed = gaps.flush(now)
+            for d in confirmed:
+                self.on_gap(d, now)
+        with self.lock:
+            while self.dropouts and now - self.dropouts[0] > seconds:
+                self.dropouts.popleft()
+            return len(self.dropouts)
+
+    def clear_dropouts(self):
+        with self.lock:
+            self.dropouts.clear()
+
+    def on_gap(self, duration, now):
+        """A run of near-zero audio ended; count it if it's a dropout."""
+        if is_dropout(duration, self.dbfs if self.fresh() else None):
+            with self.lock:
+                self.dropouts.append(now)
+
+    def _stderr(self, stream):
+        gaps = GapFilter()
+        self.gaps = gaps
+        for raw in iter(stream.readline, b""):
+            now = time.time()
+            with self.lock:
+                confirmed = gaps.feed(raw.decode(errors="replace"), now) + gaps.flush(now)
+            for d in confirmed:
+                self.on_gap(d, now)
 
     def fresh(self):
         return self.dbfs is not None and time.monotonic() - self.updated < CFG["STALE_SECONDS"]
@@ -115,15 +175,12 @@ class Level:
     def _run(self):
         backoff = 2
         while True:
-            cmd = [
-                "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
-                "-analyzeduration", "2000000", "-probesize", "2000000",
-                "-i", self.url, "-map", "0:a:0", "-vn", "-sn", "-dn",
-                "-ac", "1", "-ar", str(RATE), "-f", "s16le", "-",
-            ]
+            cmd = reader_command(self.url)
             started = time.monotonic()
             try:
-                self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                threading.Thread(target=self._stderr, args=(self.proc.stderr,), daemon=True,
+                                 name=self.name + "-gaps").start()
                 while True:
                     buf = self.proc.stdout.read(BYTES_PER_SECOND)
                     if len(buf) < BYTES_PER_SECOND:
@@ -148,6 +205,141 @@ class Level:
                 backoff = 2
             time.sleep(backoff)
             backoff = min(backoff * 2, 60)
+
+
+def reader_command(url):
+    """ffmpeg reading one source: 1 s levels on stdout (8 kHz mono s16le), and
+    on stderr silencedetect events for gaps at 48 kHz on all channels, after
+    aresample async has zero-filled any PTS holes."""
+    min_d = CFG["DROPOUT_MIN_SAMPLES"] / 48000
+    graph = (
+        "[0:a:0]asplit=2[a][b];"
+        f"[a]aresample={RATE},aformat=sample_fmts=s16:channel_layouts=mono[lvl];"
+        "[b]aresample=48000:async=48000,"
+        f"silencedetect=n={CFG['DROPOUT_NOISE_DBFS']}dB:d={min_d:.6f}[sd]"
+    )
+    return [
+        "ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-loglevel", "info",
+        "-analyzeduration", "2000000", "-probesize", "2000000",
+        "-i", url, "-filter_complex", graph,
+        "-map", "[lvl]", "-f", "s16le", "pipe:1",
+        "-map", "[sd]", "-f", "null", "-",
+    ]
+
+
+def parse_silence_end(line):
+    """silence_duration from an ffmpeg silencedetect "silence_end" line."""
+    if "silence_end:" not in line or "silence_duration:" not in line:
+        return None
+    try:
+        return float(line.rsplit("silence_duration:", 1)[1].split()[0])
+    except (IndexError, ValueError):
+        return None
+
+
+class GapFilter:
+    """Turns silencedetect events into dropout candidates, leaving out the
+    short sub-threshold run a fade leaves right before or after a real pause
+    (within EDGE seconds of a gap longer than DROPOUT_MAX_SECONDS)."""
+
+    EDGE = 0.05
+
+    def __init__(self):
+        self.pending = None  # (end, duration, wall time)
+        self.last_long_end = float("-inf")
+
+    def feed(self, line, wall):
+        """Returns the durations confirmed by this line."""
+        out = []
+        if "silence_start:" in line:
+            try:
+                start = float(line.rsplit("silence_start:", 1)[1].split()[0])
+            except (IndexError, ValueError):
+                return out
+            if self.pending and start - self.pending[0] >= self.EDGE:
+                out.append(self.pending[1])
+            # else: a short run right before the next pause: part of a fade
+            self.pending = None
+            return out
+        dur = parse_silence_end(line)
+        if dur is None:
+            return out
+        try:
+            end = float(line.split("silence_end:", 1)[1].split("|")[0])
+        except (IndexError, ValueError):
+            return out
+        if dur > CFG["DROPOUT_MAX_SECONDS"]:
+            self.last_long_end = end
+        elif end - dur - self.last_long_end >= self.EDGE:
+            self.pending = (end, dur, wall)
+        return out
+
+    def flush(self, wall, after=0.5):
+        """Confirm a candidate no pause has followed for a while."""
+        if self.pending and wall - self.pending[2] >= after:
+            dur, self.pending = self.pending[1], None
+            return [dur]
+        return []
+
+
+def is_dropout(duration, context_dbfs):
+    """A short gap inside otherwise non-silent audio."""
+    return (duration <= CFG["DROPOUT_MAX_SECONDS"]
+            and context_dbfs is not None and context_dbfs > CFG["DROPOUT_CONTEXT_DBFS"])
+
+
+def classify_dropouts(multicast_per_min, return_per_min):
+    """Which path the dropouts are on, from the two rolling-minute counts."""
+    thr = CFG["DROPOUT_PER_MINUTE"]
+    mc, ret = multicast_per_min >= thr, return_per_min >= thr
+    if mc and ret:
+        return "shared"
+    if ret and multicast_per_min < thr / 4:
+        return "sdi"
+    if mc:
+        return "multicast"
+    return None
+
+
+def layers_on_air(host=None, timeout=3):
+    """A short summary of INFO 1's foreground layers (producer and path), for
+    the log at an episode's start. Read-only; '?' if CasparCG can't be read."""
+    try:
+        with socket.create_connection((host or CFG["AMCP_HOST"], 5250), timeout) as s:
+            s.settimeout(timeout)
+            s.sendall(b"INFO 1\r\n")
+            buf = b""
+            while not buf.rstrip().endswith(b"</channel>"):
+                data = s.recv(65536)
+                if not data:
+                    break
+                buf += data
+    except OSError as e:
+        return f"? ({e!r})"
+    return summarize_layers(buf.decode(errors="replace"))
+
+
+def summarize_layers(xml):
+    out = []
+    for m in re.finditer(r"<layer_(\d+)>(.*?)</layer_\1>", xml, re.S):
+        fg = re.search(r"<foreground>(.*?)</foreground>", m.group(2), re.S)
+        if not fg:
+            continue
+        prods = re.findall(r"<producer>([^<]+)</producer>", fg.group(1))
+        prod = next((p for p in prods if p not in ("empty", "transition")), None)
+        if prod is None:
+            continue
+        path = re.search(r"<path>([^<]*)</path>", fg.group(1))
+        name = path.group(1) if path else ""
+        if "://" in name:
+            # Live sources: scheme, host and path only. Credentials sit in the
+            # userinfo (rtsp) or the query (srt streamid).
+            u = urlsplit(name)
+            name = f"{u.scheme}://{u.hostname or ''}{u.path}"
+        else:
+            name = name.rsplit("/", 1)[-1]
+        out.append(f"{m.group(1)}:{prod}:{name[:40]}")
+    return ",".join(out) or "none"
 
 
 def resolve_input(state, name, fallback):
@@ -454,6 +646,53 @@ class RemedyPolicy:
         st["failure_counted"] = False
 
 
+class DropoutMonitor:
+    """Tracks dropout episodes from the per-minute counts, once a second."""
+
+    def __init__(self):
+        self.kind = None
+        self.since = None
+
+    def tick(self, now, multicast_per_min, return_per_min):
+        """Returns (kind or None, seconds the kind has held, started now?)."""
+        kind = classify_dropouts(multicast_per_min, return_per_min)
+        started = False
+        if kind != self.kind:
+            self.kind, self.since = kind, now
+            started = kind is not None
+        return kind, (now - self.since if kind else 0), started
+
+    def reset(self):
+        self.kind = self.since = None
+
+
+def run_remedy(kind, why, detail, signal_, pre_dbfs, sdi_desc, policy, extra=None):
+    """Run a remedy (soft, falling back to restart) and record it on policy."""
+    now = time.time()
+    command = CFG["SOFT_REMEDY_COMMAND"] if kind == "soft" else CFG["RESTART_COMMAND"]
+    what = "re-creating the DeckLink consumer" if kind == "soft" else "restarting CasparCG"
+    fields = dict(reason=why, command=repr(command), air=repr(detail), signal=signal_,
+                  pre_dbfs=f"{pre_dbfs:.1f}" if pre_dbfs is not None else "stale", sdi_dbfs=sdi_desc)
+    fields.update(extra or {})
+    if CFG["DRY_RUN"]:
+        log("CRIT", f"DRY RUN, would be {what}", **fields)
+    else:
+        log("CRIT", what, failures=policy.state["failures"],
+            remedies_24h=len(policy.state["restarts"]) + 1, **fields)
+        rc = subprocess.call(command, shell=True)
+        log("INFO", "remedy command finished", kind=kind, rc=rc)
+        if kind == "soft" and rc != 0:
+            # The consumer couldn't be re-created cleanly: restart now.
+            log("CRIT", "soft remedy failed; restarting CasparCG", rc=rc,
+                command=repr(CFG["RESTART_COMMAND"]))
+            policy.acted("soft", now)
+            kind = "restart"
+            rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)
+            log("INFO", "remedy command finished", kind=kind, rc=rc)
+    # A dry run also counts, so it logs at the same rate a real run would act.
+    policy.acted(kind, now)
+
+
 def load_state():
     try:
         with open(CFG["STATE_FILE"]) as f:
@@ -469,7 +708,8 @@ def save_state(state):
     os.replace(tmp, CFG["STATE_FILE"])
 
 
-def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart):
+def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart,
+                  dropouts_pre=0, dropouts_post=0):
     path = CFG["METRICS_FILE"]
     if not path or not os.path.isdir(os.path.dirname(path)):
         return
@@ -489,6 +729,10 @@ def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart):
         "# HELP caspar_sdi_audio_last_restart_timestamp_seconds Time of the last watchdog restart.",
         "# TYPE caspar_sdi_audio_last_restart_timestamp_seconds gauge",
         f"caspar_sdi_audio_last_restart_timestamp_seconds {last_restart}",
+        "# HELP caspar_sdi_audio_dropouts_per_minute Short gaps in the last minute, by output.",
+        "# TYPE caspar_sdi_audio_dropouts_per_minute gauge",
+        f'caspar_sdi_audio_dropouts_per_minute{{output="multicast"}} {dropouts_pre}',
+        f'caspar_sdi_audio_dropouts_per_minute{{output="return"}} {dropouts_post}',
     ]
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
@@ -504,6 +748,9 @@ def main():
     post = Level("post", CFG["POST_URL"])
     state = load_state()
     policy = RemedyPolicy(state)
+    dpolicy = RemedyPolicy(state.setdefault("dropouts", {"restarts": []}))
+    drops = DropoutMonitor()
+    last_drop_crit = 0.0
     jam = JamTracker()
     last_status = 0.0
     last_hold_log = 0.0
@@ -529,11 +776,12 @@ def main():
         previous = verdict
 
         jammed_for = jam.seconds
-        write_metrics(pre, post, jammed_for, len(policy.state["restarts"]), policy.state["last_remedy"])
+        write_metrics(pre, post, jammed_for, len(policy.state["restarts"]), policy.state["last_remedy"],
+                      pre.dropouts_last(now), post.dropouts_last(now))
 
         if now - last_status >= 60:
             last_status = now
-            save_state(policy.state)  # keep the failure bookkeeping current on disk
+            save_state(state)  # keep the failure bookkeeping current on disk
             log("INFO", "status",
                 pre_dbfs=f"{pre_dbfs:.1f}" if pre_dbfs is not None else "stale",
                 post_dbfs=f"{post_dbfs:.1f}" if post_dbfs is not None else "stale",
@@ -541,13 +789,51 @@ def main():
                 sdi_dbfs=sdi_desc, last=verdict,
                 program=program_of(watch.fresh_state(now), CFG["ATEM_ME"]) if CFG["ATEM_URL"] else "n/a",
                 jammed_s=jammed_for, failures=policy.state["failures"],
-                remedies_24h=len(policy.state["restarts"]))
+                remedies_24h=len(policy.state["restarts"]),
+                dropouts_multicast_per_min=pre.dropouts_last(now),
+                dropouts_return_per_min=post.dropouts_last(now))
+
+        mc_drops, ret_drops = pre.dropouts_last(now), post.dropouts_last(now)
+        dkind, dheld, dstarted = drops.tick(now, mc_drops, ret_drops)
+        dpolicy.saw("jam" if dkind == "sdi" else "alive" if dkind is None else "hold", now)
+        if dstarted:
+            log("WARN", "audio dropout episode", path=dkind, multicast_per_min=mc_drops,
+                return_per_min=ret_drops, layers=repr(layers_on_air()))
+        if dkind and dheld >= CFG["DROPOUT_SUSTAIN_SECONDS"] and jammed_for < CFG["JAM_SECONDS"]:
+            act = dkind == "sdi" or (dkind == "shared" and CFG["RESTART_ON_SHARED_DROPOUTS"])
+            if not act:
+                if now - last_drop_crit >= 300:
+                    last_drop_crit = now
+                    log("CRIT", "audio dropouts; not acting", path=dkind,
+                        multicast_per_min=mc_drops, return_per_min=ret_drops,
+                        hint=repr("ffmpeg consumer" if dkind == "multicast"
+                                  else "upstream of both consumers, or the source"))
+            elif now - policy.state["last_remedy"] >= CFG["COOLDOWN_SECONDS"]:
+                kind, why = dpolicy.decide(now)
+                if kind is not None:
+                    if dkind == "shared":
+                        kind = "restart"
+                    air_verdict, detail = watch.decide("atem", now)
+                    if air_verdict == "inhibit":
+                        if now - last_inhibit_log >= 300:
+                            last_inhibit_log = now
+                            log("WARN", "audio dropouts; remedy inhibited", reason=repr(detail), path=dkind)
+                    else:
+                        run_remedy(kind, f"{dkind} dropouts ({why})", detail, "dropouts", pre_dbfs,
+                                   sdi_desc, dpolicy,
+                                   extra=dict(multicast_per_min=mc_drops, return_per_min=ret_drops))
+                        pre.clear_dropouts()
+                        post.clear_dropouts()
+                        drops.reset()
+                save_state(state)
 
         if jammed_for < CFG["JAM_SECONDS"]:
             continue
 
         kind, why = policy.decide(now)
-        save_state(policy.state)
+        if kind is not None and now - dpolicy.state["last_remedy"] < CFG["VERIFY_SECONDS"]:
+            kind, why = None, "settling"  # a dropout remedy just ran
+        save_state(state)
         if kind is None:
             if why == "limit" and now - last_hold_log >= 300:
                 last_hold_log = now
@@ -571,31 +857,11 @@ def main():
                     signal=jam.signal, jammed_s=jammed_for)
             continue
 
-        command = CFG["SOFT_REMEDY_COMMAND"] if kind == "soft" else CFG["RESTART_COMMAND"]
-        what = "re-creating the DeckLink consumer" if kind == "soft" else "restarting CasparCG"
-        if CFG["DRY_RUN"]:
-            log("CRIT", f"SDI audio jammed; DRY RUN, would be {what}", reason=why, command=repr(command),
-                air=repr(detail), signal=jam.signal, jammed_s=jammed_for,
-                pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc)
-        else:
-            log("CRIT", f"SDI audio jammed; {what}", reason=why, command=repr(command),
-                air=repr(detail), signal=jam.signal, jammed_s=jammed_for,
-                pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc,
-                failures=policy.state["failures"], remedies_24h=len(policy.state["restarts"]) + 1)
-            rc = subprocess.call(command, shell=True)
-            log("INFO", "remedy command finished", kind=kind, rc=rc)
-            if kind == "soft" and rc != 0:
-                # The consumer couldn't be re-created cleanly: restart now.
-                log("CRIT", "soft remedy failed; restarting CasparCG", rc=rc,
-                    command=repr(CFG["RESTART_COMMAND"]))
-                policy.acted("soft", now)
-                kind = "restart"
-                rc = subprocess.call(CFG["RESTART_COMMAND"], shell=True)
-                log("INFO", "remedy command finished", kind=kind, rc=rc)
-        # A dry run also counts, so it logs at the same rate a real run would act.
-        policy.acted(kind, now)
-        save_state(policy.state)
+        run_remedy(kind, why, detail, jam.signal, pre_dbfs, sdi_desc, policy,
+                   extra=dict(jammed_s=jammed_for))
+        save_state(state)
         jam.clear()
+
 
 if __name__ == "__main__":
     main()

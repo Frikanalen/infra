@@ -33,6 +33,13 @@ Environment=PRE_SILENCE_DBFS={{ caspar_sdi_audio_watchdog_pre_silence_dbfs }}
 Environment=LEVELS_STALE_SECONDS={{ caspar_sdi_audio_watchdog_levels_stale_seconds }}
 Environment=RESTART_OFF_PROGRAM={{ caspar_sdi_audio_watchdog_restart_off_program | lower }}
 Environment=ON_UNKNOWN_PROGRAM={{ caspar_sdi_audio_watchdog_on_unknown_program }}
+Environment=DROPOUT_NOISE_DBFS={{ caspar_sdi_audio_watchdog_dropout_noise_dbfs }}
+Environment=DROPOUT_MIN_SAMPLES={{ caspar_sdi_audio_watchdog_dropout_min_samples }}
+Environment=DROPOUT_MAX_SECONDS={{ caspar_sdi_audio_watchdog_dropout_max_seconds }}
+Environment=DROPOUT_CONTEXT_DBFS={{ caspar_sdi_audio_watchdog_dropout_context_dbfs }}
+Environment=DROPOUT_PER_MINUTE={{ caspar_sdi_audio_watchdog_dropout_per_minute }}
+Environment=DROPOUT_SUSTAIN_SECONDS={{ caspar_sdi_audio_watchdog_dropout_sustain_seconds }}
+Environment=RESTART_ON_SHARED_DROPOUTS={{ caspar_sdi_audio_watchdog_restart_on_shared_dropouts | lower }}
 # ATEM_TOKEN, kept out of the world-readable unit.
 EnvironmentFile=-/etc/caspar-sdi-audio-watchdog.env
 ExecStart=/usr/bin/python3 -u /usr/local/lib/caspar-sdi-audio-watchdog/caspar-sdi-audio-watchdog.py

@@ -83,6 +83,27 @@ caspar_sdi_audio_watchdog_levels_stale_seconds: 3
 caspar_sdi_audio_watchdog_restart_off_program: true
 caspar_sdi_audio_watchdog_on_unknown_program: restart
 
+# Dropout detector: short gaps in each decoded stream, per rolling minute.
+# A gap = all channels below dropout_noise_dbfs for dropout_min_samples (at
+# 48 kHz) up to dropout_max_seconds, inside a second whose RMS is above
+# dropout_context_dbfs (a pause, a fade into silence or a quiet passage never
+# counts). Audio PTS holes are zero-filled by the reader, so an ffmpeg
+# consumer dropping frames counts as gaps on the multicast.
+caspar_sdi_audio_watchdog_dropout_noise_dbfs: -80
+caspar_sdi_audio_watchdog_dropout_min_samples: 8
+caspar_sdi_audio_watchdog_dropout_max_seconds: 0.2
+caspar_sdi_audio_watchdog_dropout_context_dbfs: -60
+# An episode = dropout_per_minute or more for dropout_sustain_seconds:
+#   on the program return only -> the DeckLink path: the same remedies as a
+#     jam (re-create the consumer, then restart), sharing cooldown/backoff;
+#   on both outputs -> CRIT only, unless restart_on_shared_dropouts (enable
+#     once a few days of data show source material doesn't trigger it: badly
+#     edited files with real gaps would show on both outputs too);
+#   on the multicast only -> CRIT only (the ffmpeg consumer).
+caspar_sdi_audio_watchdog_dropout_per_minute: 20
+caspar_sdi_audio_watchdog_dropout_sustain_seconds: 120
+caspar_sdi_audio_watchdog_restart_on_shared_dropouts: false
+
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
 

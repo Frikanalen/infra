@@ -44,6 +44,22 @@ consumer is re-created.
   2. If the script fails, or the jam isn't cleared within 60 s:
      `systemctl restart nodm`, the same restart as by hand. Playout re-cues
      by itself.
+- Also counts **dropouts**: short gaps of near-digital silence (all channels
+  below -80 dBFS for 8 samples to 200 ms) inside otherwise non-silent audio.
+  It counts them on both the multicast and the program return, per rolling
+  minute. Audio PTS holes are zero-filled by the reader, so frames the
+  ffmpeg consumer drops count too. A fade's sub-threshold tail right before
+  or after a real pause is left out.
+  - The counts go in the status line (`dropouts_multicast_per_min`,
+    `dropouts_return_per_min`) and the textfile metric
+    `caspar_sdi_audio_dropouts_per_minute{output=...}`.
+  - At 20/min or more for 2 min, an episode starts. The watchdog logs it,
+    with the layers on air from `INFO 1`.
+  - On the return only (the DeckLink path, like 16 Nov), it applies the same
+    remedies as a jam.
+  - On both outputs, or the multicast only, it only logs `CRIT`.
+    `_restart_on_shared_dropouts` turns on a restart for dropouts on both
+    outputs once there's data to trust it.
 - Before restarting, checks what the studio ATEM has on program (M/E 0;
   caspar1 is input 1).
   - Jam seen on the `atem` signal: it restarts whether or not caspar1 is on
