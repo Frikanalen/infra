@@ -9,9 +9,12 @@ pool {{ p }} iburst maxsources 2
 {% endfor %}
 {% endif %}
 {% if not time_sync_is_grandmaster | bool %}
-# The other local time servers.
+{% set time_sync_on_host_clock = time_sync_is_guest | bool and time_sync_ptp_kvm_dev.stat.exists | default(false) %}
+# The other local time servers. "prefer" marks the internal reference hosts
+# ranked above this one (time_sync_reference_hosts): chrony follows those
+# while they are synced and agree with the rest, and falls back otherwise.
 {% for s in time_sync_local_servers %}
-server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}
+server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}{{ ' prefer' if s in time_sync_preferred_servers and not time_sync_on_host_clock else '' }}
 {% endfor %}
 {% endif %}
 {% if time_sync_hwts_guarded | bool %}

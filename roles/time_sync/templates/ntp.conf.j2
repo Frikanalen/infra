@@ -1,6 +1,6 @@
 # Managed by Ansible (roles/time_sync). Local time servers by address only.
 {% for s in time_sync_ntpd_servers %}
-server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}
+server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' prefer' if s in time_sync_ntpd_prefer else '' }}
 {% endfor %}
 server 77.40.226.121 iburst
 

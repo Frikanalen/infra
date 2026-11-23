@@ -21,6 +21,15 @@
          | difference([inventory_hostname])
          | map('extract', host_config) | map(attribute='ip_cidr')
          | map('split', '/') | map('first') | list }}
+    # Addresses of the reference hosts ranked above this one (all of them
+    # for a host that isn't one). See time_sync_reference_hosts.
+    time_sync_preferred_servers: >-
+      {{ (time_sync_reference_hosts[:time_sync_reference_hosts.index(inventory_hostname)]
+          if inventory_hostname in time_sync_reference_hosts
+          else time_sync_reference_hosts)
+         | select('in', groups['time_servers'] | default([]))
+         | map('extract', host_config) | map(attribute='ip_cidr')
+         | map('split', '/') | map('first') | list }}
 
 # chrony replaces whatever the OS shipped. openntpd (file01) and ntpd
 # (tx3's leftover ntp.conf) would fight it for the clock; timesyncd is

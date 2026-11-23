@@ -25,6 +25,22 @@ time_sync_upstream_servers:
 time_sync_upstream_pools:
   - no.pool.ntp.org
 
+# Internal reference for the time servers, in order. The hosts each used to
+# steer to Justervesenet over the internet on their own, which left them
+# 46-117 us apart (measured 2026-11-23) although the LAN path between them
+# is 9 us with NIC timestamps. Now each machine `prefer`s the reference hosts
+# ranked above it: vm1 follows the upstream servers; vm2 follows vm1; vm3
+# follows vm1 and vm2; everyone else follows all three. A reference that
+# loses its own sync (stratum 16) or disagrees with the upstream servers is
+# dropped by chrony's selection, and the next one takes over, so with vm1
+# down vm2 follows upstream and the rest follow vm2 (and vm3). The upstream
+# servers stay configured everywhere as checks and as the last fallback.
+# VMs on ptp_kvm keep their host clock (HOST) as their one preferred source.
+time_sync_reference_hosts:
+  - vm1
+  - vm2
+  - vm3
+
 # Polling of the local time servers by everyone else. Short, because the
 # servers are on the same LAN and few. On a VM these are only the fallback
 # behind ptp_kvm.

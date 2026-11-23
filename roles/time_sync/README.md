@@ -15,6 +15,13 @@ Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
              file01, tx3                  (chrony to the Proxmox hosts)
              util1 (FreeBSD)              (ntpd to the Proxmox hosts by address)
 ```
+The hosts agree with each other through an internal reference
+(`time_sync_reference_hosts`: vm1, then vm2, then vm3). vm1 follows the
+upstream servers; every other machine `prefer`s the reference hosts ranked
+above it, over the LAN with NIC timestamps. If vm1 loses sync, vm2 takes over
+from upstream and the rest follow vm2, and so on. Without this each host
+steered to Justervesenet on its own and they sat 46-117 µs apart (2026-11-23).
+
 PTP (ptp4l) is off: the hosts' LACP bonds and fksw don't support it
 (`time_sync_ptp_enabled`). NIC hardware timestamps for NTP are on for the
 Proxmox group, guarded by roles/igb_rx_ts_fix.
