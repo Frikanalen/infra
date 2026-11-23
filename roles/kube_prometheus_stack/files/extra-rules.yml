@@ -145,11 +145,12 @@ groups:
         # server normally receives ~5 lease events a second from storage;
         # zero (or the series vanishing while the scrape is up) while the
         # cluster as a whole still sees them means that node's watch is
-        # stuck. Restarting kubelite on that node clears it.
+        # stuck. On 2026-11-16 restarting k8s-dqlite on the node cleared it;
+        # restarting kubelite alone did not.
         expr: >-
           (
             sum by (instance) (rate(apiserver_storage_events_received_total{job="apiserver", resource="leases"}[5m]))
-            or on(instance) (0 * up{job="apiserver"} == 0)
+            or on(instance) (0 * group by (instance) (up{job="apiserver"}))
           ) == 0
           and on() sum(rate(apiserver_storage_events_received_total{job="apiserver", resource="leases"}[5m])) > 1
         for: 5m
@@ -161,6 +162,7 @@ groups:
             The API server at {{ $labels.instance }} has received no Lease
             events from storage for 5 minutes while the others still do: its
             watch feed (kine/dqlite) is stuck, so controllers, CSI and
-            kubelets talking to it see stale state. Restart kubelite on that
-            node (sudo snap restart microk8s.daemon-kubelite) after checking
-            dqlite has a leader.
+            kubelets talking to it see stale state. Check that dqlite has a
+            leader, then restart dqlite on that node (sudo snap restart
+            microk8s.daemon-k8s-dqlite); restarting kubelite alone has not
+            helped before.

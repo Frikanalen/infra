@@ -94,7 +94,12 @@ print(json.dumps({
 }))
 PY
 )
-    echo "$payload" | kc create --raw "$am/silences" -f - | python3 -c 'import json,sys; print(json.load(sys.stdin)["silenceID"])'
+    # Not `kubectl create --raw`: that sends application/octet-stream and
+    # Alertmanager answers 415. POST from the node to the service instead.
+    ip=$(kc -n monitoring get service kube-prometheus-stack-alertmanager -o 'jsonpath={.spec.clusterIP}')
+    echo "$payload" \
+      | ssh "$node" curl -sSf -X POST -H "Content-Type: application/json" --data-binary @- "http://$ip:9093/api/v2/silences" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["silenceID"])'
     ;;
   *) usage ;;
 esac
