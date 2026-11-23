@@ -1,0 +1,41 @@
+---
+- name: Pick a cluster node on another host to return {{ rolling_reboot_node }}
+  ansible.builtin.set_fact:
+    rolling_reboot_driver: >-
+      {{ (groups['kubeprod'] if rolling_reboot_node in groups['kubeprod'] else groups['kubedev'])
+         | difference(rolling_reboot_kube_guests) | first }}
+
+- name: Wait for MicroK8s on {{ rolling_reboot_node }}
+  ansible.builtin.command: /snap/bin/microk8s status --wait-ready --timeout 900
+  delegate_to: "{{ rolling_reboot_node }}"
+  changed_when: false
+
+- name: Wait for Ready on {{ rolling_reboot_node }}
+  ansible.builtin.command: >-
+    {{ rolling_reboot_kubectl }} wait node/{{ rolling_reboot_node }}
+    --for=condition=Ready --timeout=900s
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: false
+
+- name: Uncordon {{ rolling_reboot_node }}
+  ansible.builtin.command: "{{ rolling_reboot_kubectl }} uncordon {{ rolling_reboot_node }}"
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: true
+
+- name: Let load-balancer IPs return to {{ rolling_reboot_node }}
+  ansible.builtin.command: >-
+    {{ rolling_reboot_kubectl }} label node {{ rolling_reboot_node }}
+    node.kubernetes.io/exclude-from-external-load-balancers-
+  delegate_to: "{{ rolling_reboot_driver }}"
+  changed_when: true
+
+# The API answers only with a dqlite leader; a reboot of a voter can leave it
+# briefly leaderless (seen 2026-11-23).
+- name: Wait for the API server to be ready
+  ansible.builtin.command: "{{ rolling_reboot_kubectl }} get --raw /readyz"
+  delegate_to: "{{ rolling_reboot_node }}"
+  register: rolling_reboot_readyz
+  changed_when: false
+  until: rolling_reboot_readyz.rc == 0 and 'ok' in rolling_reboot_readyz.stdout
+  retries: 30
+  delay: 10

@@ -1,0 +1,28 @@
+---
+# Fails (after retries) unless every OSD is up and in and every PG is
+# active+clean. Run from rolling_reboot_ceph_from.
+- name: Wait for all OSDs up and all PGs active+clean
+  ansible.builtin.shell: |
+    set -euo pipefail
+    osd=$(ceph osd stat -f json)
+    pg=$(ceph pg stat -f json)
+    python3 - "$osd" "$pg" <<'PY'
+    import json, sys
+    o = json.loads(sys.argv[1]); p = json.loads(sys.argv[2])
+    o = o.get("osdmap", o)
+    p = p.get("pg_summary", p)
+    total = p.get("num_pgs", 0)
+    clean = sum(s["num"] for s in p.get("num_pg_by_state", [])
+                if s["name"] == "active+clean")
+    ok = o["num_up_osds"] == o["num_osds"] == o["num_in_osds"] and clean == total
+    print(f'osds {o["num_up_osds"]}/{o["num_osds"]} up, pgs {clean}/{total} active+clean')
+    sys.exit(0 if ok else 1)
+    PY
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ rolling_reboot_ceph_from }}"
+  register: rolling_reboot_ceph
+  changed_when: false
+  retries: "{{ rolling_reboot_ceph_retries | int }}"
+  delay: 20
+  until: rolling_reboot_ceph.rc == 0

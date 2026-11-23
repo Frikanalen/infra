@@ -1,0 +1,26 @@
+---
+# Fails if any cluster node's API server has a frozen watch cache: lists
+# still work, but watches (kubelet, controllers) see nothing new, so new pods
+# stay Pending. Seen on prod-kube-1/2 after the igb reloads on 2026-11-23;
+# /readyz stays "ok" through it. Fix: snap restart microk8s.daemon-k8s-dqlite
+# on the affected node (a standby first; on the leader it pauses the API).
+- name: Check that every node's API server delivers watch events
+  ansible.builtin.shell: |
+    set -euo pipefail
+    k="/snap/bin/microk8s kubectl"
+    rv=$($k get --raw '/api/v1/namespaces?limit=1' \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["metadata"]["resourceVersion"])')
+    out=$($k get --raw "/api/v1/namespaces?watch=1&resourceVersion=$rv&timeoutSeconds=3" 2>&1 || true)
+    if printf '%s' "$out" | grep -q 'Too large resource version'; then
+      echo "FROZEN: $out"; exit 1
+    fi
+    echo "watch ok at $rv"
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['kubeprod'] + groups['kubedev'] }}"
+  register: rolling_reboot_watch
+  changed_when: false
+  retries: "{{ rolling_reboot_watch_retries | default(1) | int }}"
+  delay: 20
+  until: rolling_reboot_watch.rc == 0
