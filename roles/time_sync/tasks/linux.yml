@@ -9,6 +9,12 @@
     time_sync_hwtimestamp: >-
       {{ time_sync_ntp_hwtimestamp | bool and not time_sync_ptp_enabled | bool
          and inventory_hostname in groups['ptp_hosts'] | default([]) }}
+    # Hosts where chrony owns the NIC filter (ptp4l doesn't). The guard runs
+    # there whether hwtimestamp is wanted or not, so turning it off also
+    # clears the filter that an earlier chrony run left on the NIC.
+    time_sync_hwts_guarded: >-
+      {{ not time_sync_ptp_enabled | bool
+         and inventory_hostname in groups['ptp_hosts'] | default([]) }}
     time_sync_is_guest: "{{ time_sync_ptp_kvm and inventory_hostname in groups['qemu_guest'] | default([]) }}"
     time_sync_local_servers: >-
       {{ groups['time_servers'] | default([])
@@ -112,21 +118,21 @@
   ansible.builtin.apt:
     name: linuxptp
     state: present
-  when: time_sync_hwtimestamp | bool
+  when: time_sync_hwts_guarded | bool
 
 - name: Install the timestamping guard
   ansible.builtin.copy:
     src: chrony-hwts-guard
     dest: /usr/local/libexec/chrony-hwts-guard
     mode: "0755"
-  when: time_sync_hwtimestamp | bool
+  when: time_sync_hwts_guarded | bool
 
 - name: Create chrony's systemd drop-in directory
   ansible.builtin.file:
     path: /etc/systemd/system/chrony.service.d
     state: directory
     mode: "0755"
-  when: time_sync_hwtimestamp | bool
+  when: time_sync_hwts_guarded | bool
 
 - name: Run the guard before chrony starts
   ansible.builtin.copy:
@@ -138,16 +144,16 @@
       # neither write its fragment under /run nor clear the NIC filter, and its
       # failure stops chrony from starting (seen on vm1, 2026-11-23).
       [Service]
-      ExecStartPre=+/usr/local/libexec/chrony-hwts-guard
+      ExecStartPre=+/usr/local/libexec/chrony-hwts-guard {{ 'auto' if time_sync_hwtimestamp | bool else 'off' }}
     mode: "0644"
-  when: time_sync_hwtimestamp | bool
+  when: time_sync_hwts_guarded | bool
   notify: Restart chrony
 
-- name: Remove the guard drop-in where NIC timestamping is off
+- name: Remove the guard drop-in where ptp4l owns the NIC
   ansible.builtin.file:
     path: /etc/systemd/system/chrony.service.d/hwts-guard.conf
     state: absent
-  when: not time_sync_hwtimestamp | bool
+  when: not time_sync_hwts_guarded | bool
   notify: Restart chrony
 
 - name: Configure chrony

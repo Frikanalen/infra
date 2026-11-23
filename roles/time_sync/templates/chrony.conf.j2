@@ -14,7 +14,7 @@ pool {{ p }} iburst maxsources 2
 server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}{{ ' xleave' if time_sync_hwtimestamp | bool else '' }}
 {% endfor %}
 {% endif %}
-{% if time_sync_hwtimestamp | bool %}
+{% if time_sync_hwts_guarded | bool %}
 
 # NIC timestamps for NTP. Since Linux 4.13 chrony resolves packets on a
 # bond/VLAN/bridge to the physical port they used, so the LACP bonds that
@@ -22,8 +22,9 @@ server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_syn
 # its hardware transmit timestamp too.
 #
 # "hwtimestamp *" is NOT written here. chrony-hwts-guard (ExecStartPre)
-# writes it into this directory at every chrony start, and only when the
-# loaded igb carries the jumbo-frame fix (roles/igb_rx_ts_fix). Stock igb
+# writes it into this directory at every chrony start, and only when
+# time_sync_ntp_hwtimestamp is on and the loaded igb carries the jumbo-frame
+# fix (roles/igb_rx_ts_fix). Otherwise it writes nothing and clears the NIC. Stock igb
 # plus RX timestamping truncates 9000-byte frames: the 2026-11-22 Ceph outage.
 # /run/chrony (chrony's own RuntimeDirectory, created before ExecStartPre)
 # because Debian's AppArmor profile for chronyd only lets it read there; a

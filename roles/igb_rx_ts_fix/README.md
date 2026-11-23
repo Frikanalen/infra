@@ -40,7 +40,9 @@ role was written. Patches 1/3 and 3/3 (XDP/AF_XDP) ride along where they apply.
 (`chrony-hwts-guard`, chrony ExecStartPre) turns it on at each chrony start
 only if the loaded igb is the DKMS build for the running kernel (same
 srcversion) or the kernel's own igb is fixed. Otherwise it leaves
-timestamping off and clears any NIC filter left from before. So a new kernel
+timestamping off and clears any NIC filter left from before. The guard
+runs on every `ptp_hosts` member without ptp4l, also with
+`time_sync_ntp_hwtimestamp` off, so switching it off clears the NIC too. So a new kernel
 that has no patched build yet just runs without NIC timestamps.
 
 ## Maintenance
