@@ -13,11 +13,17 @@
 # boot is exactly what left util1 unsynced.
 #   77.40.226.121  Meinberg stratum 1 (refid MBGh), 1.4 ms away
 #   192.168.3.1    simula's NTP server, stratum 2 from the Meinberg above
-# The pool lines only add votes so one bad server can be outvoted.
+# The pool lines add votes so one bad server can be outvoted. ntp.uio.no
+# resolves to UiO's ntp1 and ntp2, a hop or two away on the network the
+# servers sit in: a shorter, more symmetric path than the Meinberg's 1.4 ms,
+# which matters more for UTC accuracy than stratum. A name, unlike the
+# servers above, but chrony keeps retrying a pool name that failed to
+# resolve, so a DNS failure at boot only delays these votes.
 time_sync_upstream_servers:
   - 77.40.226.121
   - 192.168.3.1
 time_sync_upstream_pools:
+  - ntp.uio.no
   - no.pool.ntp.org
 
 # Polling of the local time servers by everyone else. Short, because the
