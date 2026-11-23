@@ -36,6 +36,19 @@
   tags:
     - time_sync
 
+- name: Build the fixed igb driver for NIC timestamping
+  # roles/igb_rx_ts_fix: DKMS igb with the upstream jumbo-frame timestamp fix,
+  # and a report of whether the fix has reached mainline. Skips hosts without
+  # igb ports. A host only loads it at its next reboot (or igb reload, which
+  # drops both bond ports). Run it before time_sync on these hosts.
+  hosts: ptp_hosts
+  become: true
+  gather_facts: true
+  roles:
+    - igb_rx_ts_fix
+  tags:
+    - igb_rx_ts_fix
+
 - name: Install node_exporter on the hosts outside the Kubernetes clusters
   # file01 and the Proxmox hypervisors. The kube nodes are excluded from the
   # inventory group on purpose -- kube-prometheus-stack already runs a

@@ -1,0 +1,13 @@
+# Managed by Ansible (roles/igb_rx_ts_fix). igb from stable v{{ igb_rx_ts_fix_stable }},
+# patches applied: {{ igb_rx_ts_fix_status.applied | join(', ') }}
+PACKAGE_NAME="igb-fk"
+PACKAGE_VERSION="{{ igb_rx_ts_fix_dkms_version }}"
+BUILT_MODULE_NAME[0]="igb"
+DEST_MODULE_LOCATION[0]="/updates/dkms"
+MAKE[0]="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build CONFIG_IGB=m modules"
+CLEAN="make -C ${kernel_source_dir} M=${dkms_tree}/${PACKAGE_NAME}/${PACKAGE_VERSION}/build clean"
+# Only kernels of this exact stable version. Any other boots with its own
+# igb until Ansible stages a tree for it, and time_sync's guard keeps NIC
+# timestamping off meanwhile.
+BUILD_EXCLUSIVE_KERNEL="^{{ igb_rx_ts_fix_stable | regex_escape }}[-+]"
+AUTOINSTALL="yes"

@@ -1,0 +1,34 @@
+---
+# Mainline check, once per run, on the controller. Never fails the play.
+- name: Check whether the igb fix has reached mainline
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/check_upstream.py"
+      - "{{ igb_rx_ts_fix_upstream_subject }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  changed_when: false
+  check_mode: false
+  register: igb_rx_ts_fix_upstream_raw
+
+- name: Remember the mainline verdict
+  ansible.builtin.set_fact:
+    igb_rx_ts_fix_upstream: "{{ igb_rx_ts_fix_upstream_raw.stdout | from_json }}"
+
+- name: Report the mainline verdict
+  ansible.builtin.debug:
+    msg: "{{ igb_rx_ts_fix_upstream.message | default(igb_rx_ts_fix_upstream.error) }}"
+  run_once: true
+
+- name: Look for igb ports on this host
+  ansible.builtin.find:
+    paths: /sys/bus/pci/drivers/igb
+    patterns: "0000:*"
+    file_type: link
+  register: igb_rx_ts_fix_ports
+
+- name: Build only where there is an igb port
+  ansible.builtin.include_tasks: build.yml
+  when: igb_rx_ts_fix_ports.matched > 0

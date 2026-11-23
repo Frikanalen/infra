@@ -1,0 +1,54 @@
+#!/bin/sh
+# Managed by Ansible (roles/time_sync). Runs as chrony's ExecStartPre.
+#
+# Turns on NIC timestamping for chrony only when it is safe. Stock igb
+# (I350/I210) with RX timestamping on drops 16 bytes from jumbo frames, which
+# took Ceph down on 2026-11-22. It is safe when the loaded igb is the patched
+# DKMS build for this kernel, or when this kernel's own igb has the fix
+# (both recorded by roles/igb_rx_ts_fix). Hosts without igb are unaffected.
+#
+# Argument: "auto" (time_sync_ntp_hwtimestamp on: enable when safe) or "off"
+# (disabled in Ansible: write nothing and clear the NIC filter, which chrony
+# leaves set when it restarts without hwtimestamp).
+set -u
+mode=${1:-auto}
+# chrony's RuntimeDirectory: the only place Debian's AppArmor profile lets
+# chronyd read a config fragment from under /run.
+dir=/run/chrony
+conf=$dir/hwtimestamp.conf
+state_dir=/etc/igb-rx-ts-fix
+k=$(uname -r)
+mkdir -p "$dir"
+
+safe=yes
+reason="no igb loaded"
+if [ "$mode" = off ]; then
+  safe=no; reason="time_sync_ntp_hwtimestamp is off"
+elif [ -e /sys/module/igb ]; then
+  safe=no
+  state=$(cat "$state_dir/$k" 2>/dev/null || echo none)
+  loaded=$(cat /sys/module/igb/srcversion 2>/dev/null || echo unknown)
+  built=$(modinfo -F srcversion /lib/modules/"$k"/updates/dkms/igb.ko* 2>/dev/null || echo none)
+  if [ "$state" = intree-fixed ]; then
+    safe=yes; reason="kernel's own igb has the fix"
+  elif [ "$state" = dkms ] && [ "$loaded" = "$built" ]; then
+    safe=yes; reason="patched igb loaded"
+  else
+    reason="igb is not the patched build (state=$state loaded=$loaded built=$built)"
+  fi
+fi
+
+if [ "$safe" = yes ]; then
+  echo "hwtimestamp *" > "$conf"
+  echo "chrony-hwts-guard: NIC timestamping ON ($reason)"
+else
+  : > "$conf"
+  # A filter set by an earlier chrony run survives chrony stopping; clear it
+  # on every physical port (igb is the one that breaks, but leave none set).
+  for d in /sys/class/net/*/device; do
+    i=$(basename "$(dirname "$d")")
+    hwstamp_ctl -i "$i" -r 0 -t 0 >/dev/null 2>&1 || true
+  done
+  echo "chrony-hwts-guard: NIC timestamping OFF ($reason)" >&2
+fi
+exit 0
