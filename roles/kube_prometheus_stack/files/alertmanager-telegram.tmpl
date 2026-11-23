@@ -1,0 +1,9 @@
+{{/* Overrides Alertmanager's built-in Telegram message (see
+     roles/kube_prometheus_stack/tasks/main.yml): the first line says the
+     tier, the alert and, off prod, the environment. */}}
+{{ define "telegram.default.message" -}}
+{{ if eq .Status "resolved" }}✅ RESOLVED{{ else if eq .CommonLabels.severity "critical" }}🔴 CRITICAL{{ else if eq .CommonLabels.severity "high" }}🟠 HIGH{{ else }}⚪ {{ .CommonLabels.severity }}{{ end }} {{ .CommonLabels.alertname | html }}{{ if ne .CommonLabels.environment "production" }} [{{ .CommonLabels.environment | html }}]{{ end }}
+{{ range .Alerts -}}
+• {{ if .Annotations.summary }}{{ .Annotations.summary | html }}{{ else }}{{ .Labels.alertname | html }}{{ end }}
+{{ if and (eq .Status "firing") .Annotations.description }}  {{ .Annotations.description | html }}
+{{ end }}{{ end }}{{ end }}

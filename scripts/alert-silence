@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Silence the alerts that planned work is known to trigger, for as long as
+# the work takes, so they don't bury a real alert. See docs/alerting.md.
+#
+#   scripts/alert-silence add <prod|staging> <duration> "<what you are doing>" <preset or matchers...>
+#   scripts/alert-silence list <prod|staging>
+#   scripts/alert-silence expire <prod|staging> <silence id>
+#
+# Durations: 15m, 90m, 2h (at most 6h; a forgotten silence is how real
+# alerts get missed). Presets:
+#   drain:<node>      a node drained/rebooted: pod, replica, DaemonSet, PDB,
+#                     node, target and Ceph alerts, cluster-wide
+#   rollout:<ns>      a deliberate rollout/restart: pod and replica alerts
+#                     in one namespace
+#   host:<name>       a host outside Kubernetes rebooted (file01, bao1, a
+#                     Proxmox host): its NodeDown/NodeRebooted/systemd alerts
+#   onair             accepted on-air impact (CasparCG/playout restart,
+#                     caspar1 reboot): stream, HLS, playout, ATEM, caspar1
+#                     alerts. Prod air work needs the user's OK anyway.
+# Matchers: name=value, name!=value, name=~regex, name!~regex. They are
+# ANDed with each other and with environment=<env>.
+#
+# Runs kubectl on the cluster's admin node over SSH (prod-kube-1 /
+# dev-kube-1) and talks to Alertmanager through the API server's service
+# proxy, so it needs nothing but the SSH access the playbooks use.
+# Set ALERT_SILENCE_BY to say who is asking (default: $USER@host).
+set -euo pipefail
+
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+
+[ $# -ge 2 ] || usage
+cmd=$1 env=$2; shift 2
+case $env in
+  prod|production) node=prod-kube-1 envlabel=production ;;
+  staging|dev|development) node=dev-kube-1 envlabel=development ;;
+  *) usage ;;
+esac
+am=/api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-alertmanager:9093/proxy/api/v2
+kc() { ssh "$node" sudo /snap/bin/microk8s kubectl "$@"; }
+
+case $cmd in
+  list)
+    kc get --raw "$am/silences" | python3 -c '
+import json, sys
+for s in json.load(sys.stdin):
+    if s["status"]["state"] == "expired": continue
+    m = ",".join(x["name"] + ("=" if x.get("isEqual", True) else "!") + ("~" if x["isRegex"] else "") + x["value"] for x in s["matchers"])
+    print(s["id"], s["status"]["state"], "until", s["endsAt"], "|", s["createdBy"], "|", s["comment"], "|", m)'
+    ;;
+  expire)
+    [ $# -eq 1 ] || usage
+    kc delete --raw "$am/silence/$1" >/dev/null
+    echo "expired $1"
+    ;;
+  add)
+    [ $# -ge 3 ] || usage
+    duration=$1 comment=$2; shift 2
+    case $duration in
+      *m) minutes=${duration%m} ;;
+      *h) minutes=$(( ${duration%h} * 60 )) ;;
+      *) echo "duration must be like 30m or 2h" >&2; exit 2 ;;
+    esac
+    if [ "$minutes" -gt 360 ]; then echo "refusing a silence longer than 6h" >&2; exit 2; fi
+    payload=$(python3 - "$envlabel" "$minutes" "$comment" "${ALERT_SILENCE_BY:-$USER@$(hostname -s)}" "$@" <<'PY'
+import json, re, sys
+from datetime import datetime, timedelta, timezone
+env, minutes, comment, by, *specs = sys.argv[1:]
+presets = {
+    "drain": lambda v: [("alertname", "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb|Node|Job|PersistentVolume).*|TargetDown|CPUThrottlingHigh|Ceph.*|KubeAPIWatchStale", True, True)],
+    "rollout": lambda v: [("alertname", "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb).*|TargetDown", True, True), ("namespace", v, False, True)],
+    "host": lambda v: [("alertname", "NodeDown|NodeRebooted|NodeSystemdServiceFailed|TargetDown", True, True), ("instance", v + "(:.*)?", True, True)],
+    "onair": lambda v: [("alertname", "Frikanalen.*|Atem.*|NvidiaSmi.*|NvidiaMetricsStale|CasparHostDown", True, True)],
+}
+matchers = [("environment", env, False, True)]
+for spec in specs:
+    name, _, val = spec.partition(":")
+    if name in presets and "=" not in spec:
+        matchers += presets[name](val)
+        continue
+    m = re.fullmatch(r"([a-zA-Z_][a-zA-Z0-9_]*)(=~|!~|!=|=)(.*)", spec)
+    if not m:
+        sys.exit(f"bad matcher or preset: {spec}")
+    n, op, v = m.groups()
+    matchers.append((n, v, "~" in op, not op.startswith("!")))
+if len(matchers) < 2:
+    sys.exit("give a preset or at least one matcher: refusing to silence a whole environment")
+now = datetime.now(timezone.utc)
+print(json.dumps({
+    "matchers": [{"name": n, "value": v, "isRegex": r, "isEqual": e} for n, v, r, e in matchers],
+    "startsAt": now.isoformat(),
+    "endsAt": (now + timedelta(minutes=int(minutes))).isoformat(),
+    "createdBy": by,
+    "comment": comment,
+}))
+PY
+)
+    # Not `kubectl create --raw`: that sends application/octet-stream and
+    # Alertmanager answers 415. POST from the node to the service instead.
+    ip=$(kc -n monitoring get service kube-prometheus-stack-alertmanager -o 'jsonpath={.spec.clusterIP}')
+    echo "$payload" \
+      | ssh "$node" curl -sSf -X POST -H Content-Type:application/json --data-binary @- "http://$ip:9093/api/v2/silences" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["silenceID"])'
+    ;;
+  *) usage ;;
+esac

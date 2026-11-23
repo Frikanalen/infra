@@ -77,10 +77,14 @@
       # dm-7 sat at 10-17 while its SSDs were under 1% busy). Each VM's own
       # node-exporter still watches its disk, and the hosts' physical
       # disks are still covered.
+      # NodeSystemdServiceFailed is replaced by one that ignores apport's
+      # per-crash coredump hook units, which fail every time something
+      # crashes and stay failed until someone resets them.
       defaultRules:
         disabled:
           NodeMemoryHighUtilization: true
           NodeDiskIOSaturation: true
+          NodeSystemdServiceFailed: true
       # A file lookup, not a template, so the rules' own {{ $labels }} pass
       # through to Prometheus untouched.
       additionalPrometheusRulesMap:
@@ -131,6 +135,30 @@
         prometheusSpec:
           externalLabels:
             environment: "{{ kube_prometheus_stack_environment }}"
+          # Severity tiers (docs/alerting.md). "critical" means the channel
+          # or the web stream is broken now, and is the only tier that
+          # should wake anyone. The upstream mixin marks plenty of other
+          # things critical (kubelet down, certificate expiry, a volume
+          # filling up), so every critical alert whose name is not in the
+          # on-air list below is sent on as "high" instead. Three steps
+          # because RE2 has no negative lookahead: mark the on-air ones,
+          # demote the remaining criticals, then restore the marked ones.
+          # This only changes what reaches Alertmanager; Prometheus's own
+          # ALERTS series and Grafana still show the rule's severity.
+          additionalAlertRelabelConfigs:
+            - source_labels: [severity, alertname]
+              separator: ";"
+              regex: "{{ kube_prometheus_stack_critical_alerts_regex }}"
+              target_label: severity
+              replacement: critical-on-air
+            - source_labels: [severity]
+              regex: critical
+              target_label: severity
+              replacement: high
+            - source_labels: [severity]
+              regex: critical-on-air
+              target_label: severity
+              replacement: critical
           # Chart default (true) pins podMonitorSelector/serviceMonitorSelector
           # to matchLabels: {release: kube-prometheus-stack} -- this chart's
           # own Helm release name -- so only PodMonitors/ServiceMonitors
@@ -167,44 +195,118 @@
             - hosts:
                 - "{{ kube_prometheus_stack_prometheus_hostname }}"
       alertmanager:
+        # Routing by tier and environment; docs/alerting.md explains the
+        # tiers. In short:
+        #   critical, prod -> alarm chat, with sound, repeated every 2h
+        #   high, prod     -> alarm chat, with sound, repeated every 8h
+        #   warning, prod  -> quiet chat, silent, no "resolved", daily repeat
+        #   staging        -> quiet chat, silent, whatever the severity
+        #   info           -> nowhere (Alertmanager UI and Grafana only)
+        # The quiet chat is the alarm chat unless
+        # vault_alertmanager_telegram_quiet_chat_id names a second one;
+        # either way its messages arrive without a notification sound.
+        # A file lookup, so its Go template braces reach Alertmanager
+        # untouched. It redefines telegram.default.message, the template
+        # the Telegram receivers use, to lead with the tier.
+        templateFiles:
+          frikanalen.tmpl: "{{ lookup('ansible.builtin.file', 'alertmanager-telegram.tmpl') }}"
         config:
           global:
             resolve_timeout: 5m
+          templates:
+            - /etc/alertmanager/config/*.tmpl
           inhibit_rules:
+            # A higher tier of the same alert hides the lower ones.
             - source_matchers:
                 - severity = critical
               target_matchers:
-                - severity =~ warning|info
-              equal: [namespace, alertname]
+                - severity =~ "high|warning|info"
+              equal: [environment, namespace, alertname]
+            - source_matchers:
+                - severity = high
+              target_matchers:
+                - severity =~ "warning|info"
+              equal: [environment, namespace, alertname]
             - source_matchers:
                 - severity = warning
               target_matchers:
                 - severity = info
-              equal: [namespace, alertname]
+              equal: [environment, namespace, alertname]
             - source_matchers:
                 - alertname = InfoInhibitor
               target_matchers:
                 - severity = info
               equal: [namespace]
+            # The web stream is down: everything that follows from it on
+            # the HLS side is the same incident. The caspar1 multicast
+            # monitor (service multicast-monitoring) watches what goes
+            # into the packager, so its alerts stay.
+            - source_matchers:
+                - alertname =~ "FrikanalenHlsUnavailable|FrikanalenPackagerNotReady"
+              target_matchers:
+                - "alertname =~ \"FrikanalenStream(Silent|Frozen|VideoStalled|AudioStalled|Disconnected|CodecErrors)\
+                  |FrikanalenContentAnalysisStale|FrikanalenHls(Stalled|RenditionsOutOfSync|OffClock|ProbeDown)\
+                  |FrikanalenPackager(Restarting|CPUThrottled|TimestampDiscontinuities|CorruptInput)\""
+                - service != "multicast-monitoring"
+              equal: [environment]
+            # caspar1's own output is silent or frozen: the same alert
+            # from the web stream monitor further down the chain adds
+            # nothing.
+            - source_matchers:
+                - alertname =~ "FrikanalenStream(Silent|Frozen)"
+                - service = "multicast-monitoring"
+              target_matchers:
+                - service = "stream-monitoring"
+              equal: [environment, alertname]
+            # A node that is down takes its pods with it.
+            - source_matchers:
+                - alertname =~ "KubeNodeNotReady|KubeNodeUnreachable"
+              target_matchers:
+                - "alertname =~ \"KubePodNotReady|KubeDeploymentReplicasMismatch|KubeStatefulSetReplicasMismatch\
+                  |KubeDaemonSetRolloutStuck|KubeDaemonSetMisScheduled|KubePdbNotEnoughHealthyPods|TargetDown\""
+              equal: [environment]
           route:
-            group_by: [namespace, alertname, environment]
+            group_by: [environment, alertname, namespace]
             group_wait: 30s
             group_interval: 5m
-            repeat_interval: 12h
-            receiver: telegram
+            repeat_interval: 24h
+            receiver: telegram-quiet
             routes:
               # These synthetic alerts verify the pipeline and implement
               # inhibition; sending them to humans would only create noise.
               - receiver: "null"
                 matchers:
                   - alertname =~ "Watchdog|InfoInhibitor"
+              - receiver: "null"
+                matchers:
+                  - severity = info
+              - receiver: telegram-alarm
+                matchers:
+                  - environment = production
+                  - severity = critical
+                group_wait: 10s
+                repeat_interval: 2h
+              - receiver: telegram-alarm
+                matchers:
+                  - environment = production
+                  - severity = high
+                repeat_interval: 8h
+              # Everything else (prod warnings, all of staging) falls
+              # through to telegram-quiet. A burst of pod warnings from a
+              # drain or a rollout arrives as one message per alert name.
           receivers:
             - name: "null"
-            - name: telegram
+            - name: telegram-alarm
               telegram_configs:
                 - bot_token_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/bot-token"
                   chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/chat-id"
                   send_resolved: true
+            - name: telegram-quiet
+              telegram_configs:
+                - bot_token_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/bot-token"
+                  chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/quiet-chat-id"
+                  disable_notifications: true
+                  send_resolved: false
         alertmanagerSpec:
           # Silences and notification state live here; on emptyDir they
           # were lost on every restart.

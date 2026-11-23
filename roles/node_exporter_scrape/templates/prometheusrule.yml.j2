@@ -27,8 +27,22 @@ spec:
     # 15% warning, and NodeLoadHigh still overlaps NodeSystemSaturation.
     - name: node-exporter-external
       rules:
+        # caspar1 is the playout box: if it stops answering, the channel is
+        # probably off air, so it gets its own critical alert, sooner.
+        - alert: CasparHostDown
+          expr: up{nodeclass="{{ node_exporter_scrape_nodeclass }}", instance=~"caspar1(:.*)?"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: caspar1 (playout) is not answering scrapes
+            description: >-
+              Prometheus has been unable to scrape node_exporter on caspar1
+              for 2 minutes. caspar1 runs CasparCG for prod air; check the
+              channel first, then the host (VM 402 on vmtx1).
+
         - alert: NodeDown
-          expr: up{nodeclass="{{ node_exporter_scrape_nodeclass }}"} == 0
+          expr: up{nodeclass="{{ node_exporter_scrape_nodeclass }}", instance!~"caspar1(:.*)?"} == 0
           for: 5m
           labels:
             severity: critical

@@ -1,0 +1,51 @@
+---
+# Silences the alerts a playbook knows it is about to trigger (a drain, a
+# reboot), so they don't bury a real alert. Same presets as
+# scripts/alert-silence; docs/alerting.md explains when to use which.
+#
+#   - ansible.builtin.include_role:
+#       name: alert_silence
+#     vars:
+#       alert_silence_preset: drain
+#       alert_silence_comment: "Ubuntu upgrade of {{ inventory_hostname }}"
+#   ...
+#   - ansible.builtin.include_role:
+#       name: alert_silence
+#       tasks_from: expire
+#
+# The silence ends by itself after alert_silence_minutes, so a run that
+# fails half-way does not leave alerts muted for long.
+
+# drain | rollout | host | onair, or "" to use alert_silence_matchers only.
+alert_silence_preset: drain
+# The node, namespace or host the preset is about (rollout and host need it).
+alert_silence_target: "{{ inventory_hostname }}"
+# Extra matchers, Alertmanager API form: {name, value, isRegex, isEqual}.
+alert_silence_matchers: []
+alert_silence_minutes: 60
+alert_silence_comment: "{{ ansible_play_name | default('Ansible') }} on {{ inventory_hostname }}"
+alert_silence_created_by: "ansible ({{ lookup('ansible.builtin.env', 'USER') | default('unknown', true) }})"
+
+# Where Alertmanager is reached from: the cluster's admin node.
+alert_silence_environment: "{{ kube_prometheus_stack_environment }}"
+alert_silence_admin_node: >-
+  {{ groups['kubeprod_admin'][0] if alert_silence_environment == 'production'
+     else groups['kubedev_admin'][0] }}
+alert_silence_microk8s: /snap/bin/microk8s
+alert_silence_api: /api/v1/namespaces/monitoring/services/http:kube-prometheus-stack-alertmanager:9093/proxy/api/v2
+
+alert_silence_presets:
+  drain:
+    - name: alertname
+      value: "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb|Node|Job|PersistentVolume).*\
+        |TargetDown|CPUThrottlingHigh|Ceph.*|KubeAPIWatchStale"
+      isRegex: true
+      isEqual: true
+  rollout:
+    - {name: alertname, value: "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb).*|TargetDown", isRegex: true, isEqual: true}
+    - {name: namespace, value: "{{ alert_silence_target }}", isRegex: false, isEqual: true}
+  host:
+    - {name: alertname, value: "NodeDown|NodeRebooted|NodeSystemdServiceFailed|TargetDown", isRegex: true, isEqual: true}
+    - {name: instance, value: "{{ alert_silence_target }}(:.*)?", isRegex: true, isEqual: true}
+  onair:
+    - {name: alertname, value: "Frikanalen.*|Atem.*|NvidiaSmi.*|NvidiaMetricsStale|CasparHostDown", isRegex: true, isEqual: true}

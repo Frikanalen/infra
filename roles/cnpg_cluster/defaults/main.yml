@@ -48,6 +48,9 @@ cnpg_cluster_backup_s3_secret_key: ""
 cnpg_cluster_backup_retention: 30d
 # Six fields: CNPG's schedule includes seconds. Daily base backup at 03:00.
 cnpg_cluster_backup_schedule: "0 0 3 * * *"
+# Exported by the barman-cloud plugin's sidecar: the time of the newest
+# base backup in the object store. Used by PostgresBackupStale.
+cnpg_cluster_backup_timestamp_metric: barman_cloud_cloudnative_pg_io_last_available_backup_timestamp
 
 # --- One-time import -------------------------------------------------------
 #
