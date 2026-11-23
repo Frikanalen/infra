@@ -112,6 +112,11 @@ CFG = {
     "DROPOUT_SUSTAIN_SECONDS": int(os.environ.get("DROPOUT_SUSTAIN_SECONDS", "120")),
     "RESTART_ON_SHARED_DROPOUTS": os.environ.get("RESTART_ON_SHARED_DROPOUTS", "false").lower() in ("1", "true", "yes"),
     "AMCP_HOST": os.environ.get("AMCP_HOST", "127.0.0.1"),
+    "CAPTURE_DIR": os.environ.get("CAPTURE_DIR", "/var/lib/caspar-sdi-audio-watchdog/captures"),
+    "CAPTURE_SECONDS": int(os.environ.get("CAPTURE_SECONDS", "60")),
+    "CAPTURE_INTERVAL_SECONDS": int(os.environ.get("CAPTURE_INTERVAL_SECONDS", "900")),
+    "CAPTURE_KEEP": int(os.environ.get("CAPTURE_KEEP", "50")),
+    "CAPTURE_MAX_BYTES": int(os.environ.get("CAPTURE_MAX_BYTES", str(2 * 1024 ** 3))),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -301,22 +306,51 @@ def classify_dropouts(multicast_per_min, return_per_min):
     return None
 
 
+def info_channel(host=None, timeout=3):
+    """INFO 1's XML, or raises OSError."""
+    with socket.create_connection((host or CFG["AMCP_HOST"], 5250), timeout) as s:
+        s.settimeout(timeout)
+        s.sendall(b"INFO 1\r\n")
+        buf = b""
+        while not buf.rstrip().endswith(b"</channel>"):
+            data = s.recv(65536)
+            if not data:
+                break
+            buf += data
+    return buf.decode(errors="replace")
+
+
 def layers_on_air(host=None, timeout=3):
     """A short summary of INFO 1's foreground layers (producer and path), for
     the log at an episode's start. Read-only; '?' if CasparCG can't be read."""
     try:
-        with socket.create_connection((host or CFG["AMCP_HOST"], 5250), timeout) as s:
-            s.settimeout(timeout)
-            s.sendall(b"INFO 1\r\n")
-            buf = b""
-            while not buf.rstrip().endswith(b"</channel>"):
-                data = s.recv(65536)
-                if not data:
-                    break
-                buf += data
+        return summarize_layers(info_channel(host, timeout))
     except OSError as e:
         return f"? ({e!r})"
-    return summarize_layers(buf.decode(errors="replace"))
+
+
+def layer_details(xml):
+    """Foreground layers from INFO 1: [{layer, producer, path, time, length}],
+    with credentials stripped from live URLs."""
+    out = []
+    for m in re.finditer(r"<layer_(\d+)>(.*?)</layer_\1>", xml, re.S):
+        fg = re.search(r"<foreground>(.*?)</foreground>", m.group(2), re.S)
+        if not fg:
+            continue
+        prods = re.findall(r"<producer>([^<]+)</producer>", fg.group(1))
+        prod = next((p for p in prods if p not in ("empty", "transition")), None)
+        if prod is None:
+            continue
+        path = re.search(r"<path>([^<]*)</path>", fg.group(1))
+        path = path.group(1) if path else ""
+        if "://" in path:
+            u = urlsplit(path)
+            path = f"{u.scheme}://{u.hostname or ''}{u.path}"
+        times = [float(t) for t in re.findall(r"<time>([0-9.]+)</time>", fg.group(1))]
+        out.append({"layer": int(m.group(1)), "producer": prod, "path": path,
+                    "time": times[0] if times else None,
+                    "length": times[1] if len(times) > 1 else None})
+    return out
 
 
 def summarize_layers(xml):
@@ -693,6 +727,60 @@ def run_remedy(kind, why, detail, signal_, pre_dbfs, sdi_desc, policy, extra=Non
     policy.acted(kind, now)
 
 
+class Capturer:
+    """At the start of an episode, records CAPTURE_SECONDS of both streams'
+    audio (stream copy, cheap) plus a JSON sidecar, at most one capture per
+    CAPTURE_INTERVAL_SECONDS. Keeps the newest CAPTURE_KEEP captures and at
+    most CAPTURE_MAX_BYTES."""
+
+    def __init__(self, sources, popen=subprocess.Popen, info=info_channel):
+        self.sources = sources  # {"multicast": url, "return": url}
+        self.popen = popen
+        self.info = info
+        self.last = 0.0
+
+    def capture(self, reason, now, **details):
+        if now - self.last < CFG["CAPTURE_INTERVAL_SECONDS"]:
+            return None
+        self.last = now
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now))
+        d = os.path.join(CFG["CAPTURE_DIR"], f"{stamp}-{reason}")
+        try:
+            os.makedirs(d, exist_ok=True)
+            for name, url in self.sources.items():
+                self.popen(["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                            "-i", url, "-map", "0:a:0", "-c", "copy",
+                            "-t", str(CFG["CAPTURE_SECONDS"]), "-f", "mpegts",
+                            os.path.join(d, f"{name}.ts")],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                layers = layer_details(self.info())
+            except OSError as e:
+                layers = f"? ({e!r})"
+            side = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                    "reason": reason, "layers": layers, **details}
+            with open(os.path.join(d, "episode.json"), "w") as f:
+                json.dump(side, f, indent=1)
+            self.prune()
+        except OSError as e:
+            log("WARN", "capture failed", reason=reason, error=repr(e))
+            return None
+        log("INFO", "capturing both streams", reason=reason, dir=d, seconds=CFG["CAPTURE_SECONDS"])
+        return d
+
+    def prune(self):
+        root = CFG["CAPTURE_DIR"]
+        dirs = sorted((os.path.join(root, n) for n in os.listdir(root)), reverse=True)
+        total = 0
+        for i, d in enumerate(dirs):
+            size = sum(os.path.getsize(os.path.join(d, f)) for f in os.listdir(d)) if os.path.isdir(d) else 0
+            total += size
+            if i >= CFG["CAPTURE_KEEP"] or total > CFG["CAPTURE_MAX_BYTES"]:
+                for f in os.listdir(d):
+                    os.remove(os.path.join(d, f))
+                os.rmdir(d)
+
+
 def load_state():
     try:
         with open(CFG["STATE_FILE"]) as f:
@@ -750,6 +838,7 @@ def main():
     policy = RemedyPolicy(state)
     dpolicy = RemedyPolicy(state.setdefault("dropouts", {"restarts": []}))
     drops = DropoutMonitor()
+    capturer = Capturer({"multicast": CFG["PRE_URL"], "return": CFG["POST_URL"]})
     last_drop_crit = 0.0
     jam = JamTracker()
     last_status = 0.0
@@ -773,6 +862,8 @@ def main():
         if verdict == "jam" and previous != "jam" and jam.seconds == 1:
             log("WARN", "possible SDI audio jam", signal=jam.signal,
                 pre_dbfs=f"{pre_dbfs:.1f}", sdi_dbfs=sdi_desc)
+        if verdict == "jam" and jam.seconds == CFG["JAM_SECONDS"]:
+            capturer.capture("jam", now, signal=jam.signal, pre_dbfs=pre_dbfs, sdi_dbfs=sdi_desc)
         previous = verdict
 
         jammed_for = jam.seconds
@@ -799,6 +890,8 @@ def main():
         if dstarted:
             log("WARN", "audio dropout episode", path=dkind, multicast_per_min=mc_drops,
                 return_per_min=ret_drops, layers=repr(layers_on_air()))
+            capturer.capture(f"dropouts-{dkind}", now, multicast_per_min=mc_drops,
+                             return_per_min=ret_drops)
         if dkind and dheld >= CFG["DROPOUT_SUSTAIN_SECONDS"] and jammed_for < CFG["JAM_SECONDS"]:
             act = dkind == "sdi" or (dkind == "shared" and CFG["RESTART_ON_SHARED_DROPOUTS"])
             if not act:

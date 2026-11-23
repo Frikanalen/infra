@@ -165,3 +165,45 @@ class WithFfmpeg(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Capture(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg = dict(w.CFG)
+        w.CFG.update(CAPTURE_DIR=self.tmp, CAPTURE_INTERVAL_SECONDS=900, CAPTURE_KEEP=3,
+                     CAPTURE_MAX_BYTES=10 ** 9, CAPTURE_SECONDS=60)
+        self.calls = []
+        xml = ("<channel><stage><layer><layer_50><foreground><producer>ffmpeg</producer><file>"
+               "<path>/mnt/media/1/original/a.mp4</path><time>308.5</time><time>1200</time></file>"
+               "</foreground></layer_50></layer></stage></channel>")
+        self.c = w.Capturer({"multicast": "udp://m", "return": "http://r"},
+                            popen=lambda cmd, **k: self.calls.append(cmd), info=lambda: xml)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+        w.CFG.clear()
+        w.CFG.update(self.cfg)
+
+    def test_captures_both_streams_with_a_sidecar(self):
+        import json
+        d = self.c.capture("dropouts-shared", 1_800_000_000.0, multicast_per_min=40, return_per_min=35)
+        self.assertEqual(len(self.calls), 2)
+        self.assertTrue(all("-c" in c and "copy" in c and "60" in c for c in self.calls))
+        side = json.load(open(os.path.join(d, "episode.json")))
+        self.assertEqual(side["reason"], "dropouts-shared")
+        self.assertEqual(side["layers"][0], {"layer": 50, "producer": "ffmpeg",
+                                             "path": "/mnt/media/1/original/a.mp4",
+                                             "time": 308.5, "length": 1200.0})
+        self.assertEqual(side["multicast_per_min"], 40)
+
+    def test_rate_limited(self):
+        self.assertIsNotNone(self.c.capture("jam", 1000.0))
+        self.assertIsNone(self.c.capture("jam", 1500.0))
+        self.assertIsNotNone(self.c.capture("jam", 1901.0))
+
+    def test_keeps_the_newest(self):
+        for k in range(5):
+            self.c.capture("jam", 1_800_000_000.0 + 1000 * k)
+        self.assertEqual(len(os.listdir(self.tmp)), 3)
+        self.assertTrue(sorted(os.listdir(self.tmp))[-1].startswith("20270115T090640Z"))

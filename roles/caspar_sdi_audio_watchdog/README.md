@@ -60,6 +60,13 @@ consumer is re-created.
   - On both outputs, or the multicast only, it only logs `CRIT`.
     `_restart_on_shared_dropouts` turns on a restart for dropouts on both
     outputs once there's data to trust it.
+- At the start of every jam and every dropout episode, it records 60 s of
+  both streams' audio (stream copy) to
+  `/var/lib/caspar-sdi-audio-watchdog/captures/<UTC>-<reason>/`. Next to the
+  audio it writes `episode.json`: the time, the class, the counts, and the
+  layers on air from `INFO 1`, with file paths and positions, so the source
+  file can be compared afterwards.
+  - At most one capture per 15 min, keeping the newest 50 and at most 2 GB.
 - Before restarting, checks what the studio ATEM has on program (M/E 0;
   caspar1 is input 1).
   - Jam seen on the `atem` signal: it restarts whether or not caspar1 is on
