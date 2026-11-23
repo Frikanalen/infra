@@ -80,7 +80,9 @@ spec:
           # Daily base backups ({{ cnpg_cluster_backup_schedule }}); 26 h
           # leaves room for one slow run.
           expr: >-
-            time() - max({{ cnpg_cluster_backup_timestamp_metric }}{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"}) > 26 * 3600
+            time()
+            - max({{ cnpg_cluster_backup_timestamp_metric }}{namespace="{{ cnpg_cluster_namespace }}", pod=~"{{ cnpg_cluster_name }}-[0-9]+"})
+            > 26 * 3600
           for: 30m
           labels:
             severity: high

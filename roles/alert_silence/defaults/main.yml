@@ -36,7 +36,11 @@ alert_silence_api: /api/v1/namespaces/monitoring/services/http:kube-prometheus-s
 
 alert_silence_presets:
   drain:
-    - {name: alertname, value: "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb|Node|Job|PersistentVolume).*|TargetDown|CPUThrottlingHigh|Ceph.*|KubeAPIWatchStale", isRegex: true, isEqual: true}
+    - name: alertname
+      value: "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb|Node|Job|PersistentVolume).*\
+        |TargetDown|CPUThrottlingHigh|Ceph.*|KubeAPIWatchStale"
+      isRegex: true
+      isEqual: true
   rollout:
     - {name: alertname, value: "Kube(Pod|Deployment|StatefulSet|DaemonSet|Pdb).*|TargetDown", isRegex: true, isEqual: true}
     - {name: namespace, value: "{{ alert_silence_target }}", isRegex: false, isEqual: true}

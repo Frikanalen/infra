@@ -205,14 +205,11 @@
         # The quiet chat is the alarm chat unless
         # vault_alertmanager_telegram_quiet_chat_id names a second one;
         # either way its messages arrive without a notification sound.
+        # A file lookup, so its Go template braces reach Alertmanager
+        # untouched. It redefines telegram.default.message, the template
+        # the Telegram receivers use, to lead with the tier.
         templateFiles:
-          frikanalen.tmpl: !unsafe |
-            {{ define "frikanalen.telegram" -}}
-            {{ if eq .Status "resolved" }}✅ RESOLVED{{ else if eq .CommonLabels.severity "critical" }}🔴 CRITICAL{{ else if eq .CommonLabels.severity "high" }}🟠 HIGH{{ else }}⚪ {{ .CommonLabels.severity }}{{ end }} {{ .CommonLabels.alertname | html }}{{ if ne .CommonLabels.environment "production" }} [{{ .CommonLabels.environment | html }}]{{ end }}
-            {{ range .Alerts -}}
-            • {{ if .Annotations.summary }}{{ .Annotations.summary | html }}{{ else }}{{ .Labels.alertname | html }}{{ end }}
-            {{ if and (eq .Status "firing") .Annotations.description }}  {{ .Annotations.description | html }}
-            {{ end }}{{ end }}{{ end }}
+          frikanalen.tmpl: "{{ lookup('ansible.builtin.file', 'alertmanager-telegram.tmpl') }}"
         config:
           global:
             resolve_timeout: 5m
@@ -247,7 +244,9 @@
             - source_matchers:
                 - alertname =~ "FrikanalenHlsUnavailable|FrikanalenPackagerNotReady"
               target_matchers:
-                - alertname =~ "FrikanalenStream(Silent|Frozen|VideoStalled|AudioStalled|Disconnected|CodecErrors)|FrikanalenContentAnalysisStale|FrikanalenHls(Stalled|RenditionsOutOfSync|OffClock|ProbeDown)|FrikanalenPackager(Restarting|CPUThrottled|TimestampDiscontinuities|CorruptInput)"
+                - "alertname =~ \"FrikanalenStream(Silent|Frozen|VideoStalled|AudioStalled|Disconnected|CodecErrors)\
+                  |FrikanalenContentAnalysisStale|FrikanalenHls(Stalled|RenditionsOutOfSync|OffClock|ProbeDown)\
+                  |FrikanalenPackager(Restarting|CPUThrottled|TimestampDiscontinuities|CorruptInput)\""
                 - service != "multicast-monitoring"
               equal: [environment]
             # caspar1's own output is silent or frozen: the same alert
@@ -263,7 +262,8 @@
             - source_matchers:
                 - alertname =~ "KubeNodeNotReady|KubeNodeUnreachable"
               target_matchers:
-                - alertname =~ "KubePodNotReady|KubeDeploymentReplicasMismatch|KubeStatefulSetReplicasMismatch|KubeDaemonSetRolloutStuck|KubeDaemonSetMisScheduled|KubePdbNotEnoughHealthyPods|TargetDown"
+                - "alertname =~ \"KubePodNotReady|KubeDeploymentReplicasMismatch|KubeStatefulSetReplicasMismatch\
+                  |KubeDaemonSetRolloutStuck|KubeDaemonSetMisScheduled|KubePdbNotEnoughHealthyPods|TargetDown\""
               equal: [environment]
           route:
             group_by: [environment, alertname, namespace]
@@ -300,13 +300,11 @@
               telegram_configs:
                 - bot_token_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/bot-token"
                   chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/chat-id"
-                  message: !unsafe '{{ template "frikanalen.telegram" . }}'
                   send_resolved: true
             - name: telegram-quiet
               telegram_configs:
                 - bot_token_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/bot-token"
                   chat_id_file: "/etc/alertmanager/secrets/{{ kube_prometheus_stack_telegram_secret_name }}/quiet-chat-id"
-                  message: !unsafe '{{ template "frikanalen.telegram" . }}'
                   disable_notifications: true
                   send_resolved: false
         alertmanagerSpec:
