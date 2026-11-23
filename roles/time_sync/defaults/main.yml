@@ -12,15 +12,15 @@
 # get their time. Measured from vm1, 2026-11-23:
 #   ntp.uio.no     -> 129.240.2.6 (ntp1) and 129.240.2.42 (ntp2), stratum 2,
 #                  0.2-0.5 ms away: we sit in UiO's server room
-#   77.40.226.121  ntp.justervesenet.no, stratum 1 (Meinberg, refid MBGh),
+#   ntp.justervesenet.no  77.40.226.121, stratum 1 (Meinberg, refid MBGh),
 #                  1.2 ms: Norway's official UTC and the UiO servers' source
 #   192.168.3.1    simula's NTP server, stratum 2 from Justervesenet
 # ntp.uio.no goes in as a pool so chrony uses both addresses it resolves to.
 # chrony keeps retrying a name that fails to resolve (unlike util1's ntpd,
-# which gave up after a DNS failure at boot), and the two servers by address
-# keep the hosts synced in the meantime.
+# which gave up after a DNS failure at boot), and 192.168.3.1 stays by
+# address so the hosts have a source even with DNS down at boot.
 time_sync_upstream_servers:
-  - 77.40.226.121
+  - ntp.justervesenet.no
   - 192.168.3.1
 time_sync_upstream_pools:
   - ntp.uio.no

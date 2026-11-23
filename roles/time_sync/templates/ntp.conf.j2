@@ -2,6 +2,7 @@
 {% for s in time_sync_ntpd_servers %}
 server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_sync_client_maxpoll }}
 {% endfor %}
+# ntp.justervesenet.no by address: FreeBSD's ntpd does not retry a failed lookup.
 server 77.40.226.121 iburst
 
 restrict default limited kod nomodify notrap noquery nopeer

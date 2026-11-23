@@ -3,21 +3,19 @@
 Keeps every host on one clock. Run by `playbooks/site.yml` (tag `time_sync`).
 
 ```
- Meinberg stratum 1 (77.40.226.121) ─┐
- simula 192.168.3.1 (stratum 2) ─────┼─ NTP ─> vm4  (PTP grandmaster: chrony + phc2sys
- no.pool.ntp.org ────────────────────┘               drives the I350's hardware clock)
-                                                    │
-                          PTP, layer 2 through fksw │ (no transparent clock)
-                                                    ▼
-                    vm1, vm2, vm3, vmtx1, file01  (ptp4l slave-only; chrony reads the
-                                                    NIC clock as refclock "PTP")
-                                                    │
-                                ptp_kvm, per host   ▼
-             every Linux VM on that host  (chrony refclock "HOST" = /dev/ptp_kvm,
-                                           NTP to the Proxmox hosts as fallback)
-             util1 (FreeBSD)              (ntpd to the Proxmox hosts by address)
-             tx3                          (chrony to the Proxmox hosts; no PHC on its NIC)
+ ntp.uio.no (ntp1 + ntp2, stratum 2, 0.2-0.5 ms) ─┐
+ ntp.justervesenet.no (stratum 1, 77.40.226.121) ─┼─ NTP ─> vm1-4, vmtx1  (chrony time servers;
+ simula 192.168.3.1 (stratum 2, by address) ──────┘          NIC timestamps on vm1-4 where the
+                                                             patched igb is loaded)
+                                       NTP among the hosts │ serve 192.168.3.0/24
+                         ┌─────────────────────────────────┼──────────────────────────┐
+                         ▼                                 ▼                          ▼
+             file01, tx3 (chrony client)   every Linux VM: chrony refclock "HOST"   util1 (FreeBSD
+                                           = /dev/ptp_kvm, its own host's clock;     ntpd, servers
+                                           the hosts over NTP as fallback)           by address)
 ```
+PTP (ptp4l/phc2sys) is off (`time_sync_ptp_enabled: false`): the hosts sit on
+LACP bonds and fksw has no PTP support. The tasks for it are kept for later.
 
 ## Inventory groups
 
