@@ -7,7 +7,9 @@
 # DKMS build for this kernel, or when this kernel's own igb has the fix
 # (both recorded by roles/igb_rx_ts_fix). Hosts without igb are unaffected.
 set -u
-dir=/run/chrony-hwts.d
+# chrony's RuntimeDirectory: the only place Debian's AppArmor profile lets
+# chronyd read a config fragment from under /run.
+dir=/run/chrony
 conf=$dir/hwtimestamp.conf
 state_dir=/etc/igb-rx-ts-fix
 k=$(uname -r)

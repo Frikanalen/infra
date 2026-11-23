@@ -25,7 +25,11 @@ server {{ s }} iburst minpoll {{ time_sync_client_minpoll }} maxpoll {{ time_syn
 # writes it into this directory at every chrony start, and only when the
 # loaded igb carries the jumbo-frame fix (roles/igb_rx_ts_fix). Stock igb
 # plus RX timestamping truncates 9000-byte frames: the 2026-11-22 Ceph outage.
-confdir /run/chrony-hwts.d
+# /run/chrony (chrony's own RuntimeDirectory, created before ExecStartPre)
+# because Debian's AppArmor profile for chronyd only lets it read there; a
+# directory of our own is silently skipped (apparmor DENIED, vm1 2026-11-23).
+# It holds only hwtimestamp.conf as *.conf; chronyd's pid/socket are ignored.
+confdir /run/chrony
 {% endif %}
 {% if time_sync_is_ptp | bool and not time_sync_is_grandmaster | bool %}
 

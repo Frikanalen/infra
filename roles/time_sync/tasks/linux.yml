@@ -135,7 +135,7 @@
       # Managed by Ansible (roles/time_sync)
       # "+": run the guard as root outside chrony's sandbox. Debian's unit has
       # User=_chrony and ProtectSystem=strict, so without it the guard can
-      # neither write /run/chrony-hwts.d nor clear the NIC filter, and its
+      # neither write its fragment under /run nor clear the NIC filter, and its
       # failure stops chrony from starting (seen on vm1, 2026-11-23).
       [Service]
       ExecStartPre=+/usr/local/libexec/chrony-hwts-guard
