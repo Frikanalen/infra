@@ -11,22 +11,42 @@ caspar_sdi_audio_watchdog_pre_url: "{{ casparcg_ffmpeg_path }}?overrun_nonfatal=
 # stream-monitoring watches.
 caspar_sdi_audio_watchdog_post_url: "http://simula.frikanalen.tv:9094/frikanalen.ts"
 
-# Jammed = pre above pre_min_dbfs while post is below post_max_dbfs, held for
-# jam_seconds. A dead SDI embedder measures about -83 dBFS RMS on the return
-# (2026-11-16); normal programme sits around -20 to -30.
+# Fallback without fresh ATEM levels: jammed = pre above pre_min_dbfs while
+# the program return is below post_max_dbfs. A dead SDI embedder measures
+# about -83 dBFS RMS on the return (2026-11-16); programme sits at -20 to -30.
 caspar_sdi_audio_watchdog_pre_min_dbfs: -50
 caspar_sdi_audio_watchdog_post_max_dbfs: -70
-caspar_sdi_audio_watchdog_jam_seconds: 45
+# How long the jam must hold before the watchdog acts.
+caspar_sdi_audio_watchdog_jam_seconds: 30
 # An input with no audio for this long counts as unreadable: do nothing.
 caspar_sdi_audio_watchdog_stale_seconds: 5
 
 # Rate limits. A dry run counts too, so it logs as often as it would act.
+# cooldown: between remedies for new jams. A remedy that leaves the jam in
+# place (no audio on the ATEM input within verify_seconds) counts as failed:
+# each failure in a row doubles the wait, up to max_backoff, and logs CRIT.
+# The count resets after failure_reset_seconds of audio. With the ATEM floor
+# as the trigger a false positive is very unlikely, so there is no cap per
+# window by default (max_restarts 0); the 3-per-6-h cap of the first version
+# left jams on air for hours.
 caspar_sdi_audio_watchdog_cooldown_seconds: 600
-caspar_sdi_audio_watchdog_max_restarts: 3
+caspar_sdi_audio_watchdog_verify_seconds: 60
+caspar_sdi_audio_watchdog_max_backoff_seconds: 3600
+caspar_sdi_audio_watchdog_failure_reset_seconds: 300
+caspar_sdi_audio_watchdog_max_restarts: 0
 caspar_sdi_audio_watchdog_window_seconds: 21600
 
 # The same restart as by hand; playout re-cues on reconnect in ~2 s.
 caspar_sdi_audio_watchdog_restart_command: "systemctl restart nodm"
+# Cheaper first remedy: re-create the DeckLink consumer over AMCP
+# (files/caspar-recreate-decklink.py: REMOVE 1-301, wait until it's gone,
+# ADD 1-301 DECKLINK 1 EMBEDDED_AUDIO INTERNAL_KEY, check INFO 1). About a
+# 1-2 s SDI break instead of a CasparCG restart and re-cue. If the script
+# fails, or the jam isn't cleared within verify_seconds, the restart follows
+# at once. Note: the re-added consumer gets the default buffer-depth (3);
+# a configured casparcg_decklink_buffer_depth only comes back with a restart.
+# Empty: always restart.
+caspar_sdi_audio_watchdog_soft_remedy_command: "/usr/bin/python3 /usr/local/lib/caspar-sdi-audio-watchdog/caspar-recreate-decklink.py"
 
 # Air check before a restart: atemkontroll (github.com/Frikanalen/atemkontroll),
 # GET <url>/state. Restart only if atem_input is on program on M/E atem_me;
@@ -46,16 +66,43 @@ caspar_sdi_audio_watchdog_atem_input_name: ""
 caspar_sdi_audio_watchdog_program_grace_seconds: 15
 # The ATEM's own audio meter for CasparCG's input (atemkontroll /state
 # "audio", atemkontroll#3) is the preferred SDI signal: it measures caspar1's
-# SDI directly, whatever is on program. Silent = at or below this on both
-# channels (atemkontroll floors at -60). Levels older than levels_stale_seconds
-# count as unknown, and the watchdog falls back to the program return.
-caspar_sdi_audio_watchdog_atem_silent_dbfs: -58
+# SDI directly, whatever is on program. Jammed = the meter at its floor
+# (atem_floor_dbfs, both channels; a dead input reads exactly -60, programme
+# audio never went below -54 on 17-23 Nov) while the multicast isn't digital
+# silence (above pre_silence_dbfs). Only audio above atem_alive_dbfs on the
+# ATEM input clears the timer, so quiet music or speech can't reset it.
+# Levels older than levels_stale_seconds count as unknown, and the watchdog
+# falls back to the program return.
+caspar_sdi_audio_watchdog_atem_floor_dbfs: -59.5
+caspar_sdi_audio_watchdog_atem_alive_dbfs: -57
+caspar_sdi_audio_watchdog_pre_silence_dbfs: -90
 caspar_sdi_audio_watchdog_levels_stale_seconds: 3
 # With the ATEM meter, also restart when CasparCG is off program: harmless,
 # and it fixes the audio before CasparCG goes back on air. A transition
 # involving its input still inhibits.
 caspar_sdi_audio_watchdog_restart_off_program: true
 caspar_sdi_audio_watchdog_on_unknown_program: restart
+
+# Dropout detector: short gaps in each decoded stream, per rolling minute.
+# A gap = all channels below dropout_noise_dbfs for dropout_min_samples (at
+# 48 kHz) up to dropout_max_seconds, inside a second whose RMS is above
+# dropout_context_dbfs (a pause, a fade into silence or a quiet passage never
+# counts). Audio PTS holes are zero-filled by the reader, so an ffmpeg
+# consumer dropping frames counts as gaps on the multicast.
+caspar_sdi_audio_watchdog_dropout_noise_dbfs: -80
+caspar_sdi_audio_watchdog_dropout_min_samples: 8
+caspar_sdi_audio_watchdog_dropout_max_seconds: 0.2
+caspar_sdi_audio_watchdog_dropout_context_dbfs: -60
+# An episode = dropout_per_minute or more for dropout_sustain_seconds:
+#   on the program return only -> the DeckLink path: the same remedies as a
+#     jam (re-create the consumer, then restart), sharing cooldown/backoff;
+#   on both outputs -> CRIT only, unless restart_on_shared_dropouts (enable
+#     once a few days of data show source material doesn't trigger it: badly
+#     edited files with real gaps would show on both outputs too);
+#   on the multicast only -> CRIT only (the ffmpeg consumer).
+caspar_sdi_audio_watchdog_dropout_per_minute: 20
+caspar_sdi_audio_watchdog_dropout_sustain_seconds: 120
+caspar_sdi_audio_watchdog_restart_on_shared_dropouts: false
 
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
