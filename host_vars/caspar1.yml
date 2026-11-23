@@ -30,3 +30,11 @@ caspar_sdi_audio_watchdog_dry_run: false
 # caspar1 is the ATEM input named "caspar1" (short name VM1), input 1.
 caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
 caspar_sdi_audio_watchdog_atem_input_name: caspar1
+
+# DeckLink buffer depth 8 instead of 3 (the consumer adds 2 for normal latency
+# and embedded audio: 10 frames instead of 5, about 100 ms more output
+# latency). CasparCG 2.5 never tops up the card's audio lead, which loses a
+# frame at a time until the embedder goes silent (probe data 19-23 Nov:
+# ~50 min median from a restart to under one frame). A deeper buffer starts
+# with a bigger lead, so a jam comes later; it doesn't stop the drift.
+casparcg_decklink_buffer_depth: 8
