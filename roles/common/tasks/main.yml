@@ -116,7 +116,7 @@
   tags: [clamav]
 
 - name: Clear the one-shot updater's old failed state
-  ansible.builtin.command: systemctl reset-failed clamav-freshclam-once.service
+  ansible.builtin.command: systemctl reset-failed clamav-freshclam-once.service clamav-freshclam-once.timer
   become: true
   changed_when: false
   failed_when: false
