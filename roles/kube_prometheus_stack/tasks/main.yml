@@ -77,6 +77,10 @@
       # dm-7 sat at 10-17 while its SSDs were under 1% busy). Each VM's own
       # node-exporter still watches its disk, and the hosts' physical
       # disks are still covered.
+      # KubeJobFailed is replaced by one that skips Jobs a CronJob owns:
+      # KubeCronJobLastRunFailed covers those and clears on the next good
+      # run, whereas a failed Job kept as history held KubeJobFailed for
+      # days after the CronJob was working again.
       # NodeSystemdServiceFailed is replaced by one that ignores apport's
       # per-crash coredump hook units, which fail every time something
       # crashes and stay failed until someone resets them.
@@ -85,6 +89,7 @@
           NodeMemoryHighUtilization: true
           NodeDiskIOSaturation: true
           NodeSystemdServiceFailed: true
+          KubeJobFailed: true
       # A file lookup, not a template, so the rules' own {{ $labels }} pass
       # through to Prometheus untouched.
       additionalPrometheusRulesMap:
