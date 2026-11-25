@@ -103,6 +103,15 @@ proxmox_backup_clients:
   - vm4
   - vmtx1
 
+# The air log (roles/air_log_storage): each environment's recorder writes
+# and its Django reads, from any node of its own cluster. all_squash maps
+# every client to the recorder's id, so the files have one owner whichever
+# pod wrote them.
+air_log_uid: 2050
+air_log_gid: 2050
+air_log_export_options: >-
+  rw,sync,no_subtree_check,all_squash,anonuid={{ air_log_uid }},anongid={{ air_log_gid }}
+
 nfs_exports:
   - path: /archive/media
     clients: >-
@@ -132,4 +141,14 @@ nfs_exports:
     clients: >-
       {{ proxmox_backup_clients
          | map('regex_replace', '^(.*)$', '\1(rw,sync,no_subtree_check,no_root_squash)')
+         | join(' ') }}
+  - path: /archive/airlog
+    clients: >-
+      {{ archive_media_kube_clients
+         | map('regex_replace', '^(.*)$', '\1(' ~ air_log_export_options ~ ')')
+         | join(' ') }}
+  - path: /archive/airlog-staging
+    clients: >-
+      {{ archive_media_staging_kube_clients
+         | map('regex_replace', '^(.*)$', '\1(' ~ air_log_export_options ~ ')')
          | join(' ') }}
