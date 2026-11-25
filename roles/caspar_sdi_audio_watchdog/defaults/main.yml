@@ -104,6 +104,25 @@ caspar_sdi_audio_watchdog_dropout_per_minute: 20
 caspar_sdi_audio_watchdog_dropout_sustain_seconds: 120
 caspar_sdi_audio_watchdog_restart_on_shared_dropouts: false
 
+# Audio lead detector, for the DeckLink diagnostic CasparCG build
+# (casparcg-patches/0002-decklink-diag-v250.patch). It reads the card's own
+# buffered audio from the build's per-second S lines. Each late completion
+# callback costs the card a frame of audio lead that CasparCG never restores;
+# with the lead gone the driver accepts only part of each block (the audible
+# null-sample gaps, SCHED_ACCEPT events) and at 0 the audio mutes (25 Nov
+# 2026). A second is starved when the card held fewer than
+# lead_starved_samples all second (960 = one frame) or the driver cut a block
+# short. lead_starved_seconds starved seconds in the last lead_window_seconds
+# -> the same remedies as a jam (re-create the consumer, then restart), with
+# their own cooldown/backoff. A second with at least lead_healthy_samples and
+# no cut block proves a remedy worked. Empty diag_log: off. Defaults to the
+# casparcg role's CASPAR_DECKLINK_DIAG_LOG, so it follows the diag build.
+caspar_sdi_audio_watchdog_diag_log: "{{ (casparcg_env | default({})).get('CASPAR_DECKLINK_DIAG_LOG', '') }}"
+caspar_sdi_audio_watchdog_lead_starved_samples: 960
+caspar_sdi_audio_watchdog_lead_healthy_samples: 1920
+caspar_sdi_audio_watchdog_lead_window_seconds: 60
+caspar_sdi_audio_watchdog_lead_starved_seconds: 30
+
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
 
