@@ -47,6 +47,17 @@ DROPOUT_SUSTAIN_SECONDS at DROPOUT_PER_MINUTE or more:
     itself) -> CRIT only, or a restart with RESTART_ON_SHARED_DROPOUTS;
   * on the multicast only: the ffmpeg consumer -> CRIT only.
 The layers on air (INFO 1) are logged at the start of each episode.
+Audio lead: with the DeckLink diagnostic CasparCG build (DIAG_LOG set), a
+third detector reads the card's own buffered audio from the per-second S
+lines. Each late completion callback costs the card a frame of audio lead
+that CasparCG never restores; once the lead is gone the driver accepts only
+part of each block (SCHED_ACCEPT events: the audible null-sample gaps) and
+at 0 the audio mutes. A second is "starved" when the card held less than
+LEAD_STARVED_SAMPLES all second or the driver cut a block short; with
+LEAD_STARVED_SECONDS starved seconds in the last LEAD_WINDOW_SECONDS it
+takes the same remedies as a jam (re-create the consumer, then restart),
+with its own cooldown and backoff. This catches the gaps without counting
+them in the decoded audio, and works whatever is on program.
 
 Rate limits: COOLDOWN_SECONDS between remedies for new jams. A remedy that
 leaves the jam in place counts as failed; each failure in a row doubles the
@@ -117,6 +128,12 @@ CFG = {
     "CAPTURE_INTERVAL_SECONDS": int(os.environ.get("CAPTURE_INTERVAL_SECONDS", "900")),
     "CAPTURE_KEEP": int(os.environ.get("CAPTURE_KEEP", "50")),
     "CAPTURE_MAX_BYTES": int(os.environ.get("CAPTURE_MAX_BYTES", str(2 * 1024 ** 3))),
+    "DIAG_LOG": os.environ.get("DIAG_LOG", ""),
+    "LEAD_STARVED_SAMPLES": int(os.environ.get("LEAD_STARVED_SAMPLES", "960")),
+    "LEAD_HEALTHY_SAMPLES": int(os.environ.get("LEAD_HEALTHY_SAMPLES", "1920")),
+    "LEAD_WINDOW_SECONDS": int(os.environ.get("LEAD_WINDOW_SECONDS", "60")),
+    "LEAD_STARVED_SECONDS": int(os.environ.get("LEAD_STARVED_SECONDS", "30")),
+    "LEAD_STALE_SECONDS": float(os.environ.get("LEAD_STALE_SECONDS", "5")),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -700,6 +717,111 @@ class DropoutMonitor:
         self.kind = self.since = None
 
 
+S_LINE = re.compile(r" S .*?\bba=(\d+)\.\.(\d+)\b.*?\bsched_acc=(\d+)\b")
+RESET_LINE = re.compile(r" I (START|STOP|PREROLL)\b")
+
+
+def parse_diag_line(line):
+    """('s', ba_min, ba_max, sched_acc) for a per-second summary, ('reset',)
+    when the consumer (re)starts or stops, else None."""
+    m = S_LINE.search(line)
+    if m:
+        return ("s", int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    if RESET_LINE.search(line):
+        return ("reset",)
+    return None
+
+
+class DiagTail:
+    """Follows the diagnostic build's log from its end, across logrotate
+    (copytruncate shrinks it; a new file changes the inode). Read-only."""
+
+    def __init__(self, path):
+        self.path = path
+        self.f = None
+        self.ino = None
+        self.partial = ""
+        self._open(at_end=True)
+
+    def _open(self, at_end):
+        try:
+            f = open(self.path, "r", errors="replace")
+        except OSError:
+            self.f = None
+            return
+        if self.f:
+            self.f.close()
+        self.f = f
+        self.ino = os.fstat(f.fileno()).st_ino
+        self.partial = ""
+        if at_end:
+            f.seek(0, os.SEEK_END)
+
+    def lines(self):
+        """New complete lines since the last call."""
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return []
+        if self.f is None or st.st_ino != self.ino:
+            self._open(at_end=self.f is None and self.ino is None)
+            if self.f is None:
+                return []
+        elif st.st_size < self.f.tell():
+            self.f.seek(0)  # truncated (copytruncate)
+            self.partial = ""
+        data = self.partial + self.f.read()
+        out = data.split("\n")
+        self.partial = out.pop()
+        return out
+
+
+class LeadMonitor:
+    """The card's audio lead from the diagnostic S lines, one per second.
+
+    feed() takes parsed lines; tick() returns (verdict, starved seconds in the
+    window, last (ba_min, ba_max, sched_acc) or None). verdict: "jam" (enough
+    starved seconds: act), "alive" (a healthy second: proves a remedy worked),
+    or "hold".
+    """
+
+    def __init__(self):
+        self.window = collections.deque()  # (time, starved)
+        self.last = None
+        self.updated = 0.0
+        self.healthy = False
+
+    def starved(self, ba_min, ba_max, sched_acc):
+        return ba_max < CFG["LEAD_STARVED_SAMPLES"] or sched_acc > 0
+
+    def feed(self, parsed, now):
+        for p in parsed:
+            if p[0] == "reset":
+                self.reset()
+                continue
+            _, ba_min, ba_max, sched_acc = p
+            self.last = (ba_min, ba_max, sched_acc)
+            self.updated = now
+            self.window.append((now, self.starved(ba_min, ba_max, sched_acc)))
+            self.healthy = ba_min >= CFG["LEAD_HEALTHY_SAMPLES"] and sched_acc == 0
+
+    def reset(self):
+        self.window.clear()
+        self.last = None
+        self.healthy = False
+
+    def tick(self, now):
+        if now - self.updated > CFG["LEAD_STALE_SECONDS"]:
+            self.window.clear()  # CasparCG stopped or the build isn't logging
+            return "hold", 0, None
+        while self.window and now - self.window[0][0] >= CFG["LEAD_WINDOW_SECONDS"]:
+            self.window.popleft()
+        n = sum(1 for _, st in self.window if st)
+        if n >= CFG["LEAD_STARVED_SECONDS"]:
+            return "jam", n, self.last
+        return ("alive" if self.healthy else "hold"), n, self.last
+
+
 def run_remedy(kind, why, detail, signal_, pre_dbfs, sdi_desc, policy, extra=None):
     """Run a remedy (soft, falling back to restart) and record it on policy."""
     now = time.time()
@@ -797,7 +919,7 @@ def save_state(state):
 
 
 def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart,
-                  dropouts_pre=0, dropouts_post=0):
+                  dropouts_pre=0, dropouts_post=0, lead=None, starved=0):
     path = CFG["METRICS_FILE"]
     if not path or not os.path.isdir(os.path.dirname(path)):
         return
@@ -822,6 +944,20 @@ def write_metrics(pre, post, jammed_for, restarts_in_window, last_restart,
         f'caspar_sdi_audio_dropouts_per_minute{{output="multicast"}} {dropouts_pre}',
         f'caspar_sdi_audio_dropouts_per_minute{{output="return"}} {dropouts_post}',
     ]
+    if CFG["DIAG_LOG"]:
+        ba_min, ba_max, acc = lead if lead else ("NaN", "NaN", "NaN")
+        lines += [
+            "# HELP caspar_decklink_buffered_audio_samples The card's buffered audio over the last second (diag build).",
+            "# TYPE caspar_decklink_buffered_audio_samples gauge",
+            f'caspar_decklink_buffered_audio_samples{{stat="min"}} {ba_min}',
+            f'caspar_decklink_buffered_audio_samples{{stat="max"}} {ba_max}',
+            "# HELP caspar_decklink_sched_accept_events Audio blocks the driver cut short in the last second.",
+            "# TYPE caspar_decklink_sched_accept_events gauge",
+            f"caspar_decklink_sched_accept_events {acc}",
+            "# HELP caspar_decklink_lead_starved_seconds Starved seconds in the lead detector's window.",
+            "# TYPE caspar_decklink_lead_starved_seconds gauge",
+            f"caspar_decklink_lead_starved_seconds {starved}",
+        ]
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         f.write("\n".join(lines) + "\n")
@@ -838,6 +974,10 @@ def main():
     policy = RemedyPolicy(state)
     dpolicy = RemedyPolicy(state.setdefault("dropouts", {"restarts": []}))
     drops = DropoutMonitor()
+    lpolicy = RemedyPolicy(state.setdefault("lead", {"restarts": []}))
+    lead = LeadMonitor()
+    diag = DiagTail(CFG["DIAG_LOG"]) if CFG["DIAG_LOG"] else None
+    lead_was = None
     capturer = Capturer({"multicast": CFG["PRE_URL"], "return": CFG["POST_URL"]})
     last_drop_crit = 0.0
     jam = JamTracker()
@@ -867,8 +1007,13 @@ def main():
         previous = verdict
 
         jammed_for = jam.seconds
+        lverdict, starved, lead_last = "hold", 0, None
+        if diag is not None:
+            lead.feed([p for p in map(parse_diag_line, diag.lines()) if p], now)
+            lverdict, starved, lead_last = lead.tick(now)
+            lpolicy.saw(lverdict, now)
         write_metrics(pre, post, jammed_for, len(policy.state["restarts"]), policy.state["last_remedy"],
-                      pre.dropouts_last(now), post.dropouts_last(now))
+                      pre.dropouts_last(now), post.dropouts_last(now), lead_last, starved)
 
         if now - last_status >= 60:
             last_status = now
@@ -882,7 +1027,9 @@ def main():
                 jammed_s=jammed_for, failures=policy.state["failures"],
                 remedies_24h=len(policy.state["restarts"]),
                 dropouts_multicast_per_min=pre.dropouts_last(now),
-                dropouts_return_per_min=post.dropouts_last(now))
+                dropouts_return_per_min=post.dropouts_last(now),
+                lead=(f"{lead_last[0]}..{lead_last[1]}" if lead_last else "n/a"),
+                sched_acc=(lead_last[2] if lead_last else "n/a"), starved_s=starved)
 
         mc_drops, ret_drops = pre.dropouts_last(now), post.dropouts_last(now)
         dkind, dheld, dstarted = drops.tick(now, mc_drops, ret_drops)
@@ -901,7 +1048,8 @@ def main():
                         multicast_per_min=mc_drops, return_per_min=ret_drops,
                         hint=repr("ffmpeg consumer" if dkind == "multicast"
                                   else "upstream of both consumers, or the source"))
-            elif now - policy.state["last_remedy"] >= CFG["COOLDOWN_SECONDS"]:
+            elif (now - policy.state["last_remedy"] >= CFG["COOLDOWN_SECONDS"]
+                  and now - lpolicy.state["last_remedy"] >= CFG["VERIFY_SECONDS"]):
                 kind, why = dpolicy.decide(now)
                 if kind is not None:
                     if dkind == "shared":
@@ -920,12 +1068,43 @@ def main():
                         drops.reset()
                 save_state(state)
 
+        if lverdict == "jam" and lead_was != "jam":
+            log("WARN", "DeckLink audio lead starved", starved_s=starved,
+                window_s=CFG["LEAD_WINDOW_SECONDS"], ba=f"{lead_last[0]}..{lead_last[1]}",
+                sched_acc=lead_last[2], layers=repr(layers_on_air()))
+            capturer.capture("lead-starved", now, ba_min=lead_last[0], ba_max=lead_last[1],
+                             sched_acc=lead_last[2], starved_s=starved)
+        lead_was = lverdict
+        others = max(policy.state["last_remedy"], dpolicy.state["last_remedy"])
+        if lverdict == "jam" and jammed_for < CFG["JAM_SECONDS"] and now - others >= CFG["VERIFY_SECONDS"]:
+            kind, why = lpolicy.decide(now)
+            if kind is not None:
+                air_verdict, detail = watch.decide("atem", now)
+                if air_verdict == "inhibit":
+                    if now - last_inhibit_log >= 300:
+                        last_inhibit_log = now
+                        log("WARN", "DeckLink audio lead starved; remedy inhibited", reason=repr(detail))
+                else:
+                    run_remedy(kind, f"audio lead starved ({why})", detail, "lead", pre_dbfs, sdi_desc,
+                               lpolicy, extra=dict(starved_s=starved, ba=f"{lead_last[0]}..{lead_last[1]}",
+                                                   sched_acc=lead_last[2]))
+                    lead.reset()
+                    pre.clear_dropouts()
+                    post.clear_dropouts()
+                    drops.reset()
+            elif why in ("backoff", "limit") and now - last_hold_log >= 300:
+                last_hold_log = now
+                log("CRIT", "DeckLink audio lead starved; not acting", why=why,
+                    failures=lpolicy.state["failures"])
+            save_state(state)
+
         if jammed_for < CFG["JAM_SECONDS"]:
             continue
 
         kind, why = policy.decide(now)
-        if kind is not None and now - dpolicy.state["last_remedy"] < CFG["VERIFY_SECONDS"]:
-            kind, why = None, "settling"  # a dropout remedy just ran
+        if kind is not None and now - max(dpolicy.state["last_remedy"],
+                                          lpolicy.state["last_remedy"]) < CFG["VERIFY_SECONDS"]:
+            kind, why = None, "settling"  # a dropout or lead remedy just ran
         save_state(state)
         if kind is None:
             if why == "limit" and now - last_hold_log >= 300:

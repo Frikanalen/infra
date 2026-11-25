@@ -1,0 +1,143 @@
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 15:02:40.882269740 +0000
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 15:02:18.931185174 +0000
+@@ -52,6 +52,9 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
++#include <cmath>
++#include <limits>
++#include <numeric>
+ #include <chrono>
+ #include <climits>
+ #include <common/prec_timer.h>
+@@ -1636,6 +1639,24 @@
+     long long video_scheduled_ = 0;
+     long long audio_scheduled_ = 0;
+ 
++    // Keeps the card's audio queue in step with its video queue (see check_audio_lead()).
++    // excess = buffered video in samples - buffered audio, read together in ScheduledFrameCompleted.
++    struct audio_lead_keeper
++    {
++        static constexpr int settle_frames  = 50; // frames after start before the baseline is taken
++        static constexpr int sustain_frames = 25; // a slip must hold this long (0.5 s at 50p) before it is corrected
++
++        int       frames_seen   = 0;
++        long long baseline      = 0; // excess when playback was healthy
++        long long baseline_min  = std::numeric_limits<long long>::max();
++        int       slip_frames   = 0; // consecutive frames with the same slip
++        long long slip          = 0; // samples to add (> 0) or drop (< 0) at the next block
++        long long padded_total  = 0;
++        long long dropped_total = 0;
++        int       corrections   = 0;
++        caspar::timer since_log;
++    } lead_;
++
+     boost::circular_buffer<std::vector<int32_t>> audio_container_{static_cast<unsigned long>(buffer_size_ + 1)};
+ 
+     spl::shared_ptr<diagnostics::graph> graph_;
+@@ -2036,6 +2057,7 @@
+                                           (decklink_format_desc_.audio_cadence[0] * decklink_format_desc_.field_count *
+                                            config_.buffer_depth()));
+                     ds.buffered_audio = static_cast<std::int32_t>(buffered);
++                    check_audio_lead(static_cast<UINT32>(ds.buffered_video), buffered);
+                 }
+ 
+                 if (diag_) {
+@@ -2168,8 +2190,97 @@
+         return frame;
+     }
+ 
++    double samples_per_frame() const
++    {
++        const auto& cadence = decklink_format_desc_.audio_cadence;
++        return static_cast<double>(std::accumulate(cadence.begin(), cadence.end(), 0)) / cadence.size() *
++               decklink_format_desc_.field_count;
++    }
++
++    // Audio is scheduled with timestamps, open loop: audio_scheduled_ advances by each frame's samples and
++    // is never compared with what the card holds. On a free-running output, a completion callback that
++    // runs late can leave the card holding one frame less audio than video, permanently (seen on a
++    // DeckLink SDI 4K, Desktop Video 16.3, 720p50: no late/dropped result, 960 samples gone per event).
++    // The losses add up. With the audio lead near zero the driver accepts only part of each block (short
++    // gaps on SDI), and at zero it plays nothing until the consumer is re-created.
++    //
++    // The card's buffered video and audio drain and refill together, so (video in samples - audio)
++    // stays constant in normal operation, including across late callbacks. If it moves by three quarters
++    // of a frame or more and stays there for half a second, the next audio block is padded with silence
++    // (or trimmed) by the difference in whole frames. This restores the card's lead and the original A/V alignment, at the
++    // cost of one short silence per slip.
++    void check_audio_lead(UINT32 buffered_video, UINT32 buffered_audio)
++    {
++        const double spf    = samples_per_frame();
++        const auto   excess = static_cast<long long>(buffered_video * spf) - static_cast<long long>(buffered_audio);
++
++        if (lead_.frames_seen < audio_lead_keeper::settle_frames) {
++            // Take the smallest excess during the first second: buffered video reads in whole frames,
++            // so a read can land up to a frame high, never low.
++            ++lead_.frames_seen;
++            lead_.baseline_min = std::min(lead_.baseline_min, excess);
++            if (lead_.frames_seen == audio_lead_keeper::settle_frames) {
++                lead_.baseline = lead_.baseline_min;
++            }
++            return;
++        }
++
++        const auto drift  = excess - lead_.baseline;
++        const auto frames = std::llround(drift / spf);
++        if (std::abs(drift) < spf * 3 / 4 || frames == 0) {
++            lead_.slip_frames = 0;
++            lead_.slip        = 0;
++            return;
++        }
++        const auto slip = static_cast<long long>(frames * spf);
++        if (slip != lead_.slip) {
++            lead_.slip        = slip;
++            lead_.slip_frames = 0;
++        }
++        ++lead_.slip_frames;
++    }
++
++    // Samples of silence to put before the next block (> 0) or to drop from it (< 0), once a slip has held.
++    long long take_audio_correction()
++    {
++        if (lead_.slip == 0 || lead_.slip_frames < audio_lead_keeper::sustain_frames) {
++            return 0;
++        }
++        const auto correction = lead_.slip;
++        lead_.slip            = 0;
++        lead_.slip_frames     = 0;
++        ++lead_.corrections;
++        (correction > 0 ? lead_.padded_total : lead_.dropped_total) += std::abs(correction);
++        graph_->set_tag(diagnostics::tag_severity::WARNING, "audio-lead-corrected");
++        if (diag_) {
++            diag_->post_text("AUDIO_LEAD_CORRECTED " + std::to_string(correction) + " baseline=" +
++                             std::to_string(lead_.baseline) + " corrections=" + std::to_string(lead_.corrections));
++        }
++        if (lead_.corrections == 1 || lead_.since_log.elapsed() > 10.0) {
++            lead_.since_log.restart();
++            CASPAR_LOG(warning) << print() << L" Audio lead slipped " << (correction > 0 ? L"short by " : L"long by ")
++                                << std::abs(correction) << L" samples against video; corrected ("
++                                << lead_.corrections << L" corrections, " << lead_.padded_total
++                                << L" samples padded, " << lead_.dropped_total << L" dropped since start).";
++        }
++        return correction;
++    }
++
+     void schedule_next_audio(std::vector<std::int32_t> audio, int nb_samples)
+     {
++        const auto channels   = decklink_format_desc_.audio_channels;
++        const auto correction = take_audio_correction();
++        if (correction > 0) {
++            // The card is short of audio: insert silence ahead of this block so its timestamp lands where
++            // the card expects it.
++            audio.insert(audio.begin(), static_cast<size_t>(correction) * channels, 0);
++            nb_samples += static_cast<int>(correction);
++        } else if (correction < 0) {
++            const auto drop = std::min<long long>(-correction, nb_samples);
++            audio.erase(audio.begin(), audio.begin() + static_cast<std::ptrdiff_t>(drop * channels));
++            nb_samples -= static_cast<int>(drop);
++        }
++
+         // TODO (refactor) does ScheduleAudioSamples copy data?
+ 
+         audio_container_.push_back(std::move(audio));
