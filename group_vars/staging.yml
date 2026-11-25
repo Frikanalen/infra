@@ -50,6 +50,9 @@ ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 # See data/cluster.yml for what this gates and why prod leaves it false.
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: development
+# Staging's alerts go to their own Telegram channel ("Prometheus dev/staging").
+# Every staging alert uses the quiet receiver, so this moves all of them.
+kube_prometheus_stack_telegram_quiet_chat_id: "{{ vault_alertmanager_telegram_staging_chat_id }}"
 
 # Which OpenBao prefix this cluster reads (kv/staging/...), and the name of its
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
