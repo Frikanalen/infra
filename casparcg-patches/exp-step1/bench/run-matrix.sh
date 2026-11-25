@@ -225,7 +225,10 @@ finish_run() {  # status
     [[ -s "$dir/captures.csv" ]] && ncap=$(( $(wc -l <"$dir/captures.csv") - 1 ))
     echo "$CUR_ID,\"$CUR_MODE\",$CUR_ROUND,$CUR_KIND,$CUR_START,$(utc),$status,$CUR_PID,$CUR_DOFF,$dend,$CUR_COFF,$cend,$ncap" >>"$RUNS_CSV"
     if [[ "$COPY_DIAG" == 1 ]]; then copy_slice "$DIAG_LOG" "$CUR_DOFF" "$dend" "$dir/diag.log"; fi
-    if [[ "$COPY_DIAG_CSV" == 1 && -e "$DIAG_CSV" ]]; then copy_slice "$DIAG_CSV" "$CUR_COFF" "$cend" "$dir/diag.csv"; fi
+    if [[ "$COPY_DIAG_CSV" == 1 && -e "$DIAG_CSV" ]]; then
+        # The slice starts mid-file, so give it the CSV header that summarize.py reads columns by.
+        { head -n 1 "$DIAG_CSV"; copy_slice "$DIAG_CSV" "$CUR_COFF" "$cend" /dev/stdout; } >"$dir/diag.csv"
+    fi
     log "run $CUR_ID ($CUR_MODE) finished: $status"
     CUR_ID=""
 }

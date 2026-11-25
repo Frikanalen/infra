@@ -44,8 +44,9 @@ The existing `CASPAR_DECKLINK_DIAG`, `CASPAR_DECKLINK_DIAG_LOG` and `CASPAR_DECK
 | `pool=sdk` | E2 | The primary port converts straight into frames from `IDeckLinkOutput::CreateVideoFrame` (the strategy's pixel format and row bytes), and those SDK frames are scheduled directly. There is no `decklink_frame` wrapper, so the driver can use its own buffers. A ring of `ring` frames is created at start. A frame is handed out again only when (a) the completion callback has reported it and (b) `AddRef()`/`Release()` shows that only the pool still holds a reference. If no frame is free, that frame falls back to the normal allocate-and-convert path and counts as `pool_miss`. The completed frame's display time, audio time and sample count, which `decklink_frame` stores for the diagnostics and for the late-frame adjustment, are kept per ring slot and found by pointer in the callback. Not available with HDR (the metadata lives on our wrapper), or if `CreateVideoFrame` fails or returns a buffer that is not 16-byte aligned. In those cases it logs a warning and falls back to `pool=heap`. |
 
 Flags combine: `ahead,pool`, `ahead,pool=sdk`, `pool` alone (pooled buffers, still converted in the callback).
-`ring` = buffer depth + (queue with `ahead`, else 1) + 4. With buffer depth 3 that is 10 with `ahead` and the
-default queue, and 8 without it. At 720p BGRA that is about 37 MB.
+`ring` = buffer depth + (queue with `ahead`, else 1) + 4, where buffer depth is what the consumer's
+`buffer_depth()` reports. That is 5 for a configured buffer-depth of 3 (measured on tx3), so the ring is 12 with
+`ahead` and the default queue, and 10 without it. At 720p BGRA that is about 44 MB.
 
 ## New diagnostic output
 
@@ -54,7 +55,7 @@ default queue, and 8 without it. At 720p BGRA that is about 37 MB.
 Written once at start, after `START` and `LEGEND`:
 
 ```
-... I EXP flags=ahead,pool src=env ahead=1 nokeeper=0 queue=3 capacity=3 pool=heap ring=10 frame_bytes=3686400 secondaries=0
+... I EXP flags=ahead,pool src=env ahead=1 nokeeper=0 queue=3 capacity=3 pool=heap ring=12 frame_bytes=3686400 secondaries=0
 ```
 
 `src=` is `env` or `file:<path>`; whitespace is removed from the shown flags. It may also carry `unknown=` and
