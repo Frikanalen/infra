@@ -7,6 +7,10 @@
   ansible.builtin.user:
     name: "{{ item.username }}"
     groups: sudo
+    # Add to sudo, never strip other groups: without append the user module
+    # sets the list to exactly [sudo], which removed toresbe from www-data,
+    # fkweb and docker on tx3 (2026-11-23) the first time this role ran there.
+    append: true
     shell: "{{ item.shell | default('/bin/bash') }}"
     state: present
     create_home: true
