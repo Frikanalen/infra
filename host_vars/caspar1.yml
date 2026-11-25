@@ -31,13 +31,14 @@ caspar_sdi_audio_watchdog_dry_run: false
 caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
 caspar_sdi_audio_watchdog_atem_input_name: caspar1
 
-# Diagnostic CasparCG build: 2.5.0 + casparcg-patches/0002-decklink-diag-v250.patch,
+# Diagnostic CasparCG build: 2.5.0 + casparcg-patches/0002-decklink-diag-v250.patch
+# + 0003-decklink-audio-lead-keeper-on-diag.patch (+fk2, 25 Nov; +fk1 = diag only),
 # built with ~/Frikanalen/caspar-build/build.sh on the controller. It logs the
 # DeckLink consumer's audio lead per second and per event, to find out why the
 # card's audio lead drops a frame at a time. Takes effect at the next CasparCG
 # restart. Rollback: clear casparcg_server_deb_src (reinstalls upstream's deb
 # from casparcg_server_url, downgrades allowed), apply, restart nodm.
-casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk1_amd64.deb"
+casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk2_amd64.deb"
 casparcg_diag_log_dir: /var/log/casparcg
 casparcg_env:
   CASPAR_DECKLINK_DIAG_LOG: /var/log/casparcg/decklink-diag.log
