@@ -83,8 +83,14 @@ class Lead(unittest.TestCase):
         verdicts = [self.second(400, 1124) for _ in range(120)]
         self.assertEqual(set(verdicts), {"hold"})
 
-    def test_partial_accepts_trigger_after_30_of_60(self):
-        verdicts = [self.second(0, 1200, acc=2) for _ in range(30)]
+    def test_short_accepts_with_healthy_lead_never_trigger(self):
+        # 25 Nov, +fk2: SCHED_ACCEPT_8xx_OF_960 many times a minute at ba ~3800
+        verdicts = [self.second(3790, 3830, acc=3) for _ in range(300)]
+        self.assertNotIn("jam", verdicts)
+        self.assertEqual(verdicts[-1], "alive")
+
+    def test_low_lead_triggers_after_30_of_60(self):
+        verdicts = [self.second(0, 900, acc=2) for _ in range(30)]
         self.assertEqual(verdicts[:29], ["hold"] * 29)
         self.assertEqual(verdicts[29], "jam")
 
@@ -92,7 +98,7 @@ class Lead(unittest.TestCase):
         # alternate starved and not: 30 starved seconds within 60
         verdicts = []
         for i in range(60):
-            verdicts.append(self.second(0, 1200, acc=1 if i % 2 else 0))
+            verdicts.append(self.second(0, 900 if i % 2 else 1200))
         self.assertEqual(verdicts[-1], "jam")
 
     def test_zero_lead_mute_triggers(self):

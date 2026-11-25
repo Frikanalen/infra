@@ -64,15 +64,15 @@ consumer is re-created.
   `CASPAR_DECKLINK_DIAG_LOG` in `casparcg_env`), it also watches the card's
   own audio lead, from the per-second `S` lines of that log
   (`_diag_log`, read-only, follows logrotate).
-  - Why: each late completion callback costs the card one frame of audio
-    lead, and CasparCG never tops it back up. Once the lead is gone, the
-    driver accepts only part of each audio block (`SCHED_ACCEPT_x_OF_960`
-    events). Those are the audible null-sample gaps on SDI. At 0, the audio
-    mutes. Seen on 25 Nov 2026: 4 frames after a re-create, about 1 frame
-    11 min later, then 0 and gaps for hours that the dropout counter missed
-    because its rate hovered around the threshold.
+  - Why: a late completion callback can cost the card one frame of audio
+    lead, and CasparCG never tops it back up. At 0, the audio mutes. Seen on
+    25 Nov 2026: 4 frames after a re-create, about 1 frame 11 min later,
+    then 0 with gaps for hours that the dropout counter missed.
   - A second is starved when the card held under `_lead_starved_samples`
-    (960, one frame) all second, or the driver cut a block short.
+    (960, one frame) all second. `SCHED_ACCEPT` ("short accept") events are
+    not used: with the +fk2 build they fire many times a minute while the
+    card holds 4 frames, and counting them caused two false re-creates on
+    25 Nov.
     `_lead_starved_seconds` (30) starved seconds in the last
     `_lead_window_seconds` (60) take the same remedies as a jam (re-create
     the consumer, then restart if that doesn't help), with their own
