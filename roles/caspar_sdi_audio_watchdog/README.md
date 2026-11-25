@@ -60,6 +60,30 @@ consumer is re-created.
   - On both outputs, or the multicast only, it only logs `CRIT`.
     `_restart_on_shared_dropouts` turns on a restart for dropouts on both
     outputs once there's data to trust it.
+- With the DeckLink diagnostic CasparCG build (the casparcg role's
+  `CASPAR_DECKLINK_DIAG_LOG` in `casparcg_env`), it also watches the card's
+  own audio lead, from the per-second `S` lines of that log
+  (`_diag_log`, read-only, follows logrotate).
+  - Why: a late completion callback can cost the card one frame of audio
+    lead, and CasparCG never tops it back up. At 0, the audio mutes. Seen on
+    25 Nov 2026: 4 frames after a re-create, about 1 frame 11 min later,
+    then 0 with gaps for hours that the dropout counter missed.
+  - A second is starved when the card held under `_lead_starved_samples`
+    (960, one frame) all second. `SCHED_ACCEPT` ("short accept") events are
+    not used: with the +fk2 build they fire many times a minute while the
+    card holds 4 frames, and counting them caused two false re-creates on
+    25 Nov.
+    `_lead_starved_seconds` (30) starved seconds in the last
+    `_lead_window_seconds` (60) take the same remedies as a jam (re-create
+    the consumer, then restart if that doesn't help), with their own
+    cooldown and backoff and the same ATEM air check as dropouts. It logs
+    `WARN DeckLink audio lead starved` and records a capture.
+  - It never acts within 60 s of another remedy, and the other detectors
+    wait 60 s after one of its remedies.
+  - Status lines carry `lead=<min>..<max> sched_acc=<n> starved_s=<n>`, and
+    the textfile gauges add `caspar_decklink_buffered_audio_samples`,
+    `caspar_decklink_sched_accept_events` and
+    `caspar_decklink_lead_starved_seconds`.
 - At the start of every jam and every dropout episode, it records 60 s of
   both streams' audio (stream copy) to
   `/var/lib/caspar-sdi-audio-watchdog/captures/<UTC>-<reason>/`. Next to the

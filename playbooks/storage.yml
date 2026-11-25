@@ -19,5 +19,8 @@
       tags: [chwiki_images]
     - role: fk_archive_utils
       tags: [fk_archive_utils]
+    # Before nfs_server: the export needs the datasets to exist.
+    - role: air_log_storage
+      tags: [air_log_storage, nfs]
     - role: nfs_server
       tags: [nfs]
