@@ -1,0 +1,241 @@
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 22:11:51.090985083 +0000
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 22:16:07.102661127 +0000
+@@ -53,6 +53,7 @@
+ #include <array>
+ #include <atomic>
+ #include <cctype>
++#include <cerrno>
+ #include <chrono>
+ #include <climits>
+ #include <cmath>
+@@ -1692,6 +1693,18 @@
+  *   nokeeper      disable the audio lead keeper (check_audio_lead is not called, so no correction is made).
+  *   base | none | off | -   no-op tokens (all experiments off).
+  *
++ * EXPERIMENT 0005 (step 2), realtime priority:
++ *   rt | rt=cb    SCHED_FIFO for the driver's completion callback thread.
++ *   rt=conv       SCHED_FIFO for the consumer executor thread (send(), and the conversion with "ahead").
++ *   rt=all        both.
++ *   rtprio=N      the SCHED_FIFO priority, 1..49 (default 10; upstream's channel thread uses 2). Values of 50
++ *                 and above would reach threaded IRQ handlers, including the DeckLink driver's, so they are
++ *                 rejected (listed as unknown).
++ * Without rt flags, a thread that is still SCHED_FIFO from an earlier consumer (the driver may reuse its
++ * callback thread across REMOVE/ADD) is put back to SCHED_OTHER, so arms don't contaminate each other.
++ * Every change, or failure, is logged as an "RT ..." diag line. TBB worker threads (v210 chunks,
++ * secondary ports) stay SCHED_OTHER.
++ *
+  * The first line of the file CASPAR_DECKLINK_EXP_FILE (default /run/casparcg/decklink-exp), when the file
+  * exists, overrides CASPAR_DECKLINK_EXP; an empty first line means all experiments off. The file is read
+  * when the consumer is created (ADD), so a bench can switch modes with REMOVE/ADD without a restart.
+@@ -1725,6 +1738,9 @@
+     bool        nokeeper = false; // audio lead keeper disabled
+     pool_mode   pool     = pool_mode::off;
+     int         queue    = 3; // ready queue depth with "ahead"
++    bool        rt_cb    = false; // EXPERIMENT 0005: SCHED_FIFO for the completion callback thread
++    bool        rt_conv  = false; // EXPERIMENT 0005: SCHED_FIFO for the send()/conversion thread
++    int         rt_prio  = 10;    // EXPERIMENT 0005: SCHED_FIFO priority (1..49)
+     std::string raw;          // flag string as given (file line or CASPAR_DECKLINK_EXP)
+     std::string source;       // "env" or "file:<path>"
+     std::string unknown;      // tokens that were not understood (ignored)
+@@ -1751,6 +1767,102 @@
+     return true;
+ }
+ 
++// EXPERIMENT 0005 "rt": SCHED_FIFO for one thread, with the outcome reported instead of ignored (the
++// common set_thread_realtime_priority() drops the return code, so on a box without RLIMIT_RTPRIO it silently
++// does nothing).
++inline bool parse_rtprio(const std::string& text, int& prio)
++{
++    if (text.empty())
++        return false;
++    char* tail  = nullptr;
++    auto  value = std::strtol(text.c_str(), &tail, 10);
++    if (tail == nullptr || *tail != '\0' || value < 1 || value > 49)
++        return false;
++    prio = static_cast<int>(value);
++    return true;
++}
++
++// Current policy of the calling thread as "FIFO:10" / "OTHER:0".
++inline std::string this_thread_policy()
++{
++#ifdef _WIN32
++    return "-";
++#else
++    int         policy = 0;
++    sched_param param{};
++    if (pthread_getschedparam(pthread_self(), &policy, &param) != 0)
++        return "?";
++    const char* name = policy == SCHED_FIFO ? "FIFO" : policy == SCHED_RR ? "RR" : "OTHER";
++    return std::string(name) + ":" + std::to_string(param.sched_priority);
++#endif
++}
++
++// Puts the calling thread on SCHED_FIFO:prio (fifo) or back on SCHED_OTHER:0 (!fifo). Returns "ok",
++// "unchanged" (already as wanted; nothing done) or "failed:<reason>".
++inline std::string set_this_thread_policy(bool fifo, int prio)
++{
++#ifdef _WIN32
++    (void)fifo;
++    (void)prio;
++    return "unsupported";
++#else
++    int         policy = 0;
++    sched_param param{};
++    if (pthread_getschedparam(pthread_self(), &policy, &param) != 0)
++        return "failed:getschedparam";
++    const bool is_rt = policy == SCHED_FIFO || policy == SCHED_RR;
++    if (fifo ? (policy == SCHED_FIFO && param.sched_priority == prio) : !is_rt)
++        return "unchanged";
++    param.sched_priority = fifo ? prio : 0;
++    const int rc         = pthread_setschedparam(pthread_self(), fifo ? SCHED_FIFO : SCHED_OTHER, &param);
++    if (rc != 0)
++        return std::string("failed:") + (rc == EPERM ? "EPERM" : rc == EINVAL ? "EINVAL" : std::to_string(rc));
++    if (pthread_getschedparam(pthread_self(), &policy, &param) != 0 || (policy == SCHED_FIFO) != fifo)
++        return "failed:not-applied";
++    return "ok";
++#endif
++}
++
++// Scheduling policy of this process's thread named `comm` (e.g. "channel-1"), for the EXP line.
++inline std::string thread_policy_by_name(const std::string& comm)
++{
++#ifdef _WIN32
++    (void)comm;
++    return "-";
++#else
++    try {
++        for (const auto& entry : boost::filesystem::directory_iterator("/proc/self/task")) {
++            std::ifstream in((entry.path() / "comm").string());
++            std::string   name;
++            std::getline(in, name);
++            if (name != comm)
++                continue;
++            const auto tid = static_cast<pid_t>(std::strtol(entry.path().filename().string().c_str(), nullptr, 10));
++            sched_param param{};
++            const int   policy = sched_getscheduler(tid);
++            if (policy < 0 || sched_getparam(tid, &param) != 0)
++                return "?";
++            const char* name_of = policy == SCHED_FIFO ? "FIFO" : policy == SCHED_RR ? "RR" : "OTHER";
++            return std::string(name_of) + ":" + std::to_string(param.sched_priority);
++        }
++    } catch (...) {
++    }
++    return "-";
++#endif
++}
++
++inline std::string rtprio_limit()
++{
++#ifdef _WIN32
++    return "-";
++#else
++    rlimit lim{};
++    if (getrlimit(RLIMIT_RTPRIO, &lim) != 0)
++        return "?";
++    return lim.rlim_cur == RLIM_INFINITY ? std::string("inf") : std::to_string(lim.rlim_cur);
++#endif
++}
++
+ inline flags parse_env()
+ {
+     flags       result;
+@@ -1795,6 +1907,15 @@
+             result.pool = pool_mode::sdk;
+         } else if (token == "nokeeper") {
+             result.nokeeper = true;
++        } else if (token == "rt" || token == "rt=cb") {
++            result.rt_cb = true;
++        } else if (token == "rt=conv") {
++            result.rt_conv = true;
++        } else if (token == "rt=all") {
++            result.rt_cb   = true;
++            result.rt_conv = true;
++        } else if (token.rfind("rtprio=", 0) == 0 && parse_rtprio(token.substr(7), result.rt_prio)) {
++            // SCHED_FIFO priority for "rt"
+         } else if (token.rfind("queue=", 0) == 0 && parse_queue(token.substr(6), result.queue)) {
+             // ready queue depth for "ahead"
+         } else if (token == "base" || token == "none" || token == "off" || token == "-") {
+@@ -2128,6 +2249,9 @@
+     std::unique_ptr<xp::sdk_pool>    sdk_pool_;
+     std::atomic<std::uint64_t>       exp_pool_hits_{0};
+     std::atomic<std::uint64_t>       exp_pool_misses_{0};
++    std::int32_t                     exp_rt_cb_tid_            = 0; // EXPERIMENT 0005, callback thread only
++    std::int32_t                     exp_rt_conv_tid_          = 0; // EXPERIMENT 0005, send() thread only
++    std::uint32_t                    exp_rt_cb_thread_changes_ = 0; // EXPERIMENT 0005, callback thread only
+ 
+   public:
+     decklink_consumer(const configuration& config, core::video_format_desc channel_format_desc, int channel_index)
+@@ -2441,6 +2565,16 @@
+             set_thread_name(L"decklink_consumer[" + std::to_wstring(config_.primary.device_index) +
+                             L"]-ScheduledFrameCompleted");
+         }
++        // EXPERIMENT 0005 "rt": per consumer, and again whenever the driver delivers on a different thread. The
++        // driver may reuse its thread across re-creates, so without rt a leftover FIFO is undone here. Not real-time
++        // safe (logs), but runs only when the callback thread changes.
++        if (const auto tid = diag::current_tid(); tid != exp_rt_cb_tid_) {
++            const bool first = exp_rt_cb_tid_ == 0;
++            exp_rt_cb_tid_   = tid;
++            if (!first)
++                ++exp_rt_cb_thread_changes_;
++            apply_rt("cb", exp_.rt_cb, first);
++        }
+         const auto         diag_start = diag::steady_clock::now();
+         diag::frame_sample ds;
+         ds.frame_no = ++diag_frame_no_;
+@@ -2745,7 +2879,10 @@
+                            " pool=" + xp::pool_mode_name(exp_.pool) +
+                            " ring=" + (exp_.pool != xp::pool_mode::off ? std::to_string(ring) : std::string("-")) +
+                            " frame_bytes=" + std::to_string(format_strategy_->get_frame_bytes(decklink_format_desc_)) +
+-                           " secondaries=" + std::to_string(secondary_port_contexts_.size());
++                           " secondaries=" + std::to_string(secondary_port_contexts_.size()) +
++                           " rt=" + (exp_.rt_cb && exp_.rt_conv ? "all" : exp_.rt_cb ? "cb" : exp_.rt_conv ? "conv" : "off") +
++                           " rtprio=" + std::to_string(exp_.rt_prio) + " rtlimit=" + xp::rtprio_limit() +
++                           " chan_policy=" + xp::thread_policy_by_name("channel-" + std::to_string(channel_index_));
+         if (!exp_.unknown.empty())
+             line += " unknown=" + exp_.unknown;
+         if (!note.empty())
+@@ -2755,6 +2892,28 @@
+             diag_->post_text(line);
+     }
+ 
++    // EXPERIMENT 0005: applies the wanted policy on the calling thread and writes one "RT thread=<cb|conv> tid=..
++    // want=<FIFO:n|OTHER> before=.. result=<ok|unchanged|failed:..>" line. A first call on a thread that is
++    // already as wanted is still logged (the arm's evidence); later "unchanged" calls are not.
++    void apply_rt(const char* which, bool fifo, bool first)
++    {
++        const auto before = xp::this_thread_policy();
++        const auto result = xp::set_this_thread_policy(fifo, exp_.rt_prio);
++        if (result == "unchanged" && !first)
++            return;
++        std::string line = std::string("RT thread=") + which + " tid=" + std::to_string(diag::current_tid()) +
++                           " want=" + (fifo ? "FIFO:" + std::to_string(exp_.rt_prio) : std::string("OTHER")) +
++                           " before=" + before + " result=" + result + " rtlimit=" + xp::rtprio_limit();
++        if (std::string(which) == "cb")
++            line += " thread_changes=" + std::to_string(exp_rt_cb_thread_changes_);
++        if (result.rfind("failed", 0) == 0)
++            CASPAR_LOG(warning) << print() << L" " << u16(line);
++        else
++            CASPAR_LOG(info) << print() << L" " << u16(line);
++        if (diag_)
++            diag_->post_text(line);
++    }
++
+     // EXPERIMENT 0004: converts one primary port frame (both fields when interlaced), timed. Without "pool" this
+     // is exactly the original convert_frame_for_port call.
+     xp::converted convert_primary(const core::const_frame& frame1, const core::const_frame& frame2)
+@@ -3021,6 +3180,14 @@
+             }
+         }
+ 
++        // EXPERIMENT 0005 "rt=conv": the proxy's executor thread, which runs send() and, with "ahead", the
++        // conversion.
++        if (const auto tid = diag::current_tid(); tid != exp_rt_conv_tid_) {
++            const bool first = exp_rt_conv_tid_ == 0;
++            exp_rt_conv_tid_ = tid;
++            apply_rt("conv", exp_.rt_conv, first);
++        }
++
+         if (exp_.ahead) {
+             return send_ahead(std::move(frame));
+         }
