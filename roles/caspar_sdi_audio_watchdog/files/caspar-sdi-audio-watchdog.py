@@ -49,11 +49,10 @@ DROPOUT_SUSTAIN_SECONDS at DROPOUT_PER_MINUTE or more:
 The layers on air (INFO 1) are logged at the start of each episode.
 Audio lead: with the DeckLink diagnostic CasparCG build (DIAG_LOG set), a
 third detector reads the card's own buffered audio from the per-second S
-lines. Each late completion callback costs the card a frame of audio lead
-that CasparCG never restores; once the lead is gone the driver accepts only
-part of each block (SCHED_ACCEPT events: the audible null-sample gaps) and
-at 0 the audio mutes. A second is "starved" when the card held less than
-LEAD_STARVED_SAMPLES all second or the driver cut a block short; with
+lines. Each late completion callback can cost the card a frame of audio
+lead that CasparCG never restores; at 0 the audio mutes. A second is
+"starved" when the card held less than LEAD_STARVED_SAMPLES all second
+(SCHED_ACCEPT events are not used: they also fire with a healthy lead); with
 LEAD_STARVED_SECONDS starved seconds in the last LEAD_WINDOW_SECONDS it
 takes the same remedies as a jam (re-create the consumer, then restart),
 with its own cooldown and backoff. This catches the gaps without counting
@@ -792,7 +791,10 @@ class LeadMonitor:
         self.healthy = False
 
     def starved(self, ba_min, ba_max, sched_acc):
-        return ba_max < CFG["LEAD_STARVED_SAMPLES"] or sched_acc > 0
+        # Only an actually low buffer counts. SCHED_ACCEPT ("short accept") events also fire many times a
+        # minute with a healthy 4-frame lead (25 Nov, +fk2): the card's count moves between the reads
+        # around ScheduleAudioSamples, so they are not evidence of lost samples.
+        return ba_max < CFG["LEAD_STARVED_SAMPLES"]
 
     def feed(self, parsed, now):
         for p in parsed:
@@ -803,7 +805,7 @@ class LeadMonitor:
             self.last = (ba_min, ba_max, sched_acc)
             self.updated = now
             self.window.append((now, self.starved(ba_min, ba_max, sched_acc)))
-            self.healthy = ba_min >= CFG["LEAD_HEALTHY_SAMPLES"] and sched_acc == 0
+            self.healthy = ba_min >= CFG["LEAD_HEALTHY_SAMPLES"]
 
     def reset(self):
         self.window.clear()
