@@ -1,0 +1,1300 @@
+diff -ruN a/src/modules/decklink/consumer/decklink_consumer.cpp b/src/modules/decklink/consumer/decklink_consumer.cpp
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 15:02:18.931185174 +0000
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-25 16:38:03.318334334 +0000
+@@ -52,21 +52,23 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
+-#include <cmath>
+-#include <limits>
+-#include <numeric>
++#include <cctype>
+ #include <chrono>
+ #include <climits>
++#include <cmath>
+ #include <common/prec_timer.h>
+ #include <condition_variable>
+ #include <cstdint>
+ #include <cstdio>
+ #include <cstdlib>
+ #include <ctime>
++#include <deque>
+ #include <fstream>
+ #include <future>
++#include <limits>
+ #include <memory>
+ #include <mutex>
++#include <numeric>
+ #include <optional>
+ #include <queue>
+ #include <string>
+@@ -782,6 +784,16 @@
+     std::int32_t sched_video_us   = 0;
+     std::int32_t sched_audio_us   = 0;
+     std::int32_t callback_us      = 0;
++
++    // EXPERIMENT 0004 (CASPAR_DECKLINK_EXP). Timing of the primary port conversion of the frame scheduled
++    // in this callback, wherever it ran (callback or, with "ahead", the send thread).
++    std::int32_t convert_us    = -1; // conversion incl. buffer acquisition; -1 = no conversion (abort)
++    std::int32_t alloc_us      = -1; // buffer acquisition only (pool modes); -1 = not separable (inside conversion)
++    std::int32_t send_wait_us  = -1; // ahead: send() waited this long for queue space before converting
++    std::int32_t item_age_us   = -1; // ahead: conversion finished -> callback popped the item
++    std::int8_t  convert_where = 0;  // 0 = callback (primary task), 1 = send thread
++    std::int8_t  pool_hit      = 0;  // destination buffer reused from the pool
++    std::int8_t  pool_miss     = 0;  // pool had no free buffer (fresh allocation / fallback)
+ };
+ 
+ // Single producer (completion callback) / single consumer (diag thread). Preallocated, lock free.
+@@ -862,6 +874,17 @@
+         int          sched_accept      = 0;
+         int          ns_cadence        = 0;
+         int          sched_on_cb       = 0; // primary task ran on the callback thread
++        // EXPERIMENT 0004
++        static constexpr int cv_keep     = 256;
++        std::int32_t         cv[cv_keep] = {};
++        int                  cv_n        = 0;
++        std::int32_t         cv_max      = 0;
++        std::int32_t         al_max      = 0;
++        std::int32_t         swait_max   = 0;
++        std::int32_t         age_max     = 0;
++        int                  cv_on_cb    = 0;
++        int                  pool_hits   = 0;
++        int                  pool_misses = 0;
+         frame_sample last;
+     };
+ 
+@@ -980,11 +1003,11 @@
+     {
+         if (!use_csv_)
+             return;
+-        char buf[640];
++        char buf[896];
+         std::snprintf(buf,
+                       sizeof(buf),
+                       "%lld,%s,%lld,%d,%d,%lld,%lld,%d,%lld,%lld,%lld,%lld,%d,%d,%d,%d,%d,%lld,%lld,%lld,%lld,%lld,%d,%"
+-                      "d,0x%08x,0x%08x,%lld,%lld,%d,%d,%d,%d,%d,%d,%d,%d\n",
++                      "d,0x%08x,0x%08x,%lld,%lld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+                       static_cast<long long>(s.wall_ms),
+                       name_.c_str(),
+                       static_cast<long long>(s.frame_no),
+@@ -1020,7 +1043,14 @@
+                       s.pop_us,
+                       s.sched_video_us,
+                       s.sched_audio_us,
+-                      s.callback_us);
++                      s.callback_us,
++                      s.convert_us,
++                      s.alloc_us,
++                      static_cast<int>(s.convert_where),
++                      s.send_wait_us,
++                      s.item_age_us,
++                      static_cast<int>(s.pool_hit),
++                      static_cast<int>(s.pool_miss));
+         std::lock_guard<std::mutex> lock(file_mutex());
+         csv_ << buf;
+         csv_.flush();
+@@ -1032,13 +1062,13 @@
+ 
+     std::string format_frame(const frame_sample& s) const
+     {
+-        char buf[768];
++        char buf[1024];
+         std::snprintf(buf,
+                       sizeof(buf),
+                       "  f=%lld t=%s r=%s%s%s cft=%lld cat=%lld cns=%d ba=%d/%d/%d/%d bv=%d ph=%lld spd=%.2f "
+                       "hw=%lld/%lld/%lld hwhr=0x%08x vt=%lld at=%lld a_lead=%lld v_lead=%lld a_unacc=%lld av_skew=%lld "
+                       "s_ph=%lld s_inf=%lld s_lead=%lld ns=%d sw=%d ahr=0x%08x vhr=0x%08x shr=0x%08x q=%d cpu=%d%s "
+-                      "ia=%d pop=%d sv=%d sa=%d cb=%d\n",
++                      "ia=%d pop=%d sv=%d sa=%d cb=%d cv=%d al=%d cvw=%s swt=%d age=%d%s%s\n",
+                       static_cast<long long>(s.frame_no),
+                       format_utc(s.wall_ms).c_str() + 11,
+                       result_name(s.result),
+@@ -1079,7 +1109,14 @@
+                       s.pop_us,
+                       s.sched_video_us,
+                       s.sched_audio_us,
+-                      s.callback_us);
++                      s.callback_us,
++                      s.convert_us,
++                      s.alloc_us,
++                      s.convert_where != 0 ? "snd" : "cb",
++                      s.send_wait_us,
++                      s.item_age_us,
++                      s.pool_hit != 0 ? " phit" : "",
++                      s.pool_miss != 0 ? " pmiss" : "");
+         return buf;
+     }
+ 
+@@ -1153,7 +1190,17 @@
+         const bool  has_unacc = agg_.unacc_min <= agg_.unacc_max;
+         const bool  has_lead  = agg_.sched_lead_min <= agg_.sched_lead_max;
+ 
+-        char buf[1280];
++        // EXPERIMENT 0004: approximate 95th percentile of the conversion time over this second.
++        std::int32_t cv_p95 = 0;
++        if (agg_.cv_n > 0) {
++            std::int32_t sorted[second_aggregate::cv_keep];
++            std::copy(agg_.cv, agg_.cv + agg_.cv_n, sorted);
++            const int idx = std::max(0, (agg_.cv_n * 95 + 99) / 100 - 1);
++            std::nth_element(sorted, sorted + idx, sorted + agg_.cv_n);
++            cv_p95 = sorted[idx];
++        }
++
++        char buf[1600];
+         std::snprintf(
+             buf,
+             sizeof(buf),
+@@ -1161,7 +1208,8 @@
+             "a_unacc=%lld..%lld av_skew=%lld..%lld s_lead=%lld..%lld ia=%.1f..%.1fms pop_max=%.1fms sv_max=%.1fms "
+             "sa_max=%.1fms cb_max=%.1fms ph=%lld spd=%.2f hw=%lld/%lld/%lld a_sched=%lld v_sched=%lld a_lead=%lld "
+             "v_lead=%lld late_adj=%d ph_jump=%d cft_step=%d sched_acc=%d ns_cad=%d short=%d ahr_fail=%d vhr_fail=%d "
+-            "oncb=%d ovf=%llu sup=%d\n",
++            "oncb=%d ovf=%llu sup=%d cv_max=%.1fms cv_p95=%.1fms al_max=%.1fms swait_max=%.1fms age_max=%.1fms "
++            "cv_cb=%d pool_hit=%d pool_miss=%d\n",
+             static_cast<long long>(l.frame_no),
+             agg_.n,
+             agg_.results[0],
+@@ -1206,7 +1254,15 @@
+             agg_.video_hr_failures,
+             agg_.sched_on_cb,
+             static_cast<unsigned long long>(overflow - reported_overflow_),
+-            suppressed_events_);
++            suppressed_events_,
++            agg_.cv_max / 1000.0,
++            cv_p95 / 1000.0,
++            agg_.al_max / 1000.0,
++            agg_.swait_max / 1000.0,
++            agg_.age_max / 1000.0,
++            agg_.cv_on_cb,
++            agg_.pool_hits,
++            agg_.pool_misses);
+         reported_overflow_ = overflow;
+         suppressed_events_ = 0;
+ 
+@@ -1344,6 +1400,17 @@
+         agg_.callback_max    = std::max(agg_.callback_max, s.callback_us);
+         agg_.late_adjustments += s.late_adj ? 1 : 0;
+         agg_.sched_on_cb += s.sched_tid != 0 && s.sched_tid == s.cb_tid ? 1 : 0;
++        if (s.convert_us >= 0) {
++            if (agg_.cv_n < second_aggregate::cv_keep)
++                agg_.cv[agg_.cv_n++] = s.convert_us;
++            agg_.cv_max = std::max(agg_.cv_max, s.convert_us);
++            agg_.cv_on_cb += s.convert_where == 0 ? 1 : 0;
++        }
++        agg_.al_max    = std::max(agg_.al_max, s.alloc_us);
++        agg_.swait_max = std::max(agg_.swait_max, s.send_wait_us);
++        agg_.age_max   = std::max(agg_.age_max, s.item_age_us);
++        agg_.pool_hits += s.pool_hit;
++        agg_.pool_misses += s.pool_miss;
+         agg_.last = s;
+ 
+         if (!warned_per_frame_ && SUCCEEDED(s.hw_hr) && s.hw_per_frame != 0 && s.hw_per_frame != duration_) {
+@@ -1543,7 +1610,8 @@
+                 if (use_csv_ && fresh)
+                     csv_ << "wall_ms,consumer,frame_no,result,late_adj,cft,cat,cns,ph,hw,hw_in_frame,sched_ph,bv,ba,"
+                             "ba_pre_sched,ba_post_sched,ba_post,a_sched,v_sched,at,vt,sched_in_frame,ns,sw,ahr,vhr,"
+-                            "a_unacc,av_skew,q,cpu,oncb,ia_us,pop_us,sv_us,sa_us,cb_us\n";
++                            "a_unacc,av_skew,q,cpu,oncb,ia_us,pop_us,sv_us,sa_us,cb_us,cv_us,al_us,cv_where,"
++                            "swait_us,age_us,pool_hit,pool_miss\n";
+             } catch (...) {
+                 use_csv_ = false;
+             }
+@@ -1610,6 +1678,362 @@
+ 
+ } // namespace diag
+ 
++/*
++ * EXPERIMENT BUILD (0004, step 1): runtime switchable changes to where and into what the primary port
++ * frame is converted. CASPAR_DECKLINK_EXP is a comma separated list of flags, read once per consumer:
++ *
++ *   ahead         convert in send() (consumer executor thread) and hand ready frames to the completion
++ *                 callback, which then only schedules. Queue depth: CASPAR_DECKLINK_EXP_QUEUE (default 3).
++ *   pool | pool=heap  convert into reused 128-byte aligned heap buffers (returned when the driver releases
++ *                 the frame) instead of allocating a new buffer per frame.
++ *   pool=sdk      convert into frames created with IDeckLinkOutput::CreateVideoFrame and schedule those
++ *                 directly (SDR only; falls back to pool=heap otherwise).
++ *   queue=N       ready queue depth for "ahead" (1..16); overrides CASPAR_DECKLINK_EXP_QUEUE.
++ *   nokeeper      disable the audio lead keeper (check_audio_lead is not called, so no correction is made).
++ *   base | none | off | -   no-op tokens (all experiments off).
++ *
++ * The first line of the file CASPAR_DECKLINK_EXP_FILE (default /run/casparcg/decklink-exp), when the file
++ * exists, overrides CASPAR_DECKLINK_EXP; an empty first line means all experiments off. The file is read
++ * when the consumer is created (ADD), so a bench can switch modes with REMOVE/ADD without a restart.
++ *
++ * Empty or unset: unchanged behaviour (only the cv_us timing is added to the diagnostics).
++ */
++namespace xp {
++
++enum class pool_mode
++{
++    off,
++    heap,
++    sdk
++};
++
++inline const char* pool_mode_name(pool_mode mode)
++{
++    switch (mode) {
++        case pool_mode::heap:
++            return "heap";
++        case pool_mode::sdk:
++            return "sdk";
++        default:
++            return "off";
++    }
++}
++
++struct flags
++{
++    bool        ahead    = false;
++    bool        nokeeper = false; // audio lead keeper disabled
++    pool_mode   pool     = pool_mode::off;
++    int         queue    = 3; // ready queue depth with "ahead"
++    std::string raw;          // flag string as given (file line or CASPAR_DECKLINK_EXP)
++    std::string source;       // "env" or "file:<path>"
++    std::string unknown;      // tokens that were not understood (ignored)
++};
++
++inline std::string trim(const std::string& value)
++{
++    const auto first = value.find_first_not_of(" \t");
++    if (first == std::string::npos)
++        return {};
++    const auto last = value.find_last_not_of(" \t");
++    return value.substr(first, last - first + 1);
++}
++
++inline bool parse_queue(const std::string& text, int& queue)
++{
++    if (text.empty())
++        return false;
++    char* tail  = nullptr;
++    auto  value = std::strtol(text.c_str(), &tail, 10);
++    if (tail == text.c_str() || *tail != '\0')
++        return false;
++    queue = static_cast<int>(std::clamp<long>(value, 1, 16));
++    return true;
++}
++
++inline flags parse_env()
++{
++    flags       result;
++    const char* env = std::getenv("CASPAR_DECKLINK_EXP");
++    result.raw      = env != nullptr ? env : "";
++    result.source   = "env";
++
++    // The bench writes the mode as the first line of this file; when it exists it wins over the environment.
++    const char*       file_env = std::getenv("CASPAR_DECKLINK_EXP_FILE");
++    const std::string path     = file_env != nullptr && *file_env != '\0' ? file_env : "/run/casparcg/decklink-exp";
++    try {
++        std::ifstream in(path);
++        if (in.is_open()) {
++            std::string line;
++            std::getline(in, line);
++            while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
++                line.pop_back();
++            result.raw    = line;
++            result.source = "file:" + path;
++        }
++    } catch (...) {
++        // unreadable: keep the environment value
++    }
++
++    if (const char* queue = std::getenv("CASPAR_DECKLINK_EXP_QUEUE"); queue != nullptr)
++        parse_queue(queue, result.queue);
++
++    std::size_t start = 0;
++    while (start <= result.raw.size()) {
++        auto end = result.raw.find(',', start);
++        if (end == std::string::npos)
++            end = result.raw.size();
++        auto token = trim(result.raw.substr(start, end - start));
++        std::transform(token.begin(), token.end(), token.begin(), [](unsigned char c) {
++            return static_cast<char>(std::tolower(c));
++        });
++        if (token == "ahead") {
++            result.ahead = true;
++        } else if (token == "pool" || token == "pool=heap") {
++            result.pool = pool_mode::heap;
++        } else if (token == "pool=sdk") {
++            result.pool = pool_mode::sdk;
++        } else if (token == "nokeeper") {
++            result.nokeeper = true;
++        } else if (token.rfind("queue=", 0) == 0 && parse_queue(token.substr(6), result.queue)) {
++            // ready queue depth for "ahead"
++        } else if (token == "base" || token == "none" || token == "off" || token == "-") {
++            // explicit "all experiments off"
++        } else if (!token.empty()) {
++            result.unknown += (result.unknown.empty() ? "" : ",") + token;
++        }
++        start = end + 1;
++    }
++    return result;
++}
++
++inline void* aligned_malloc(std::size_t bytes, std::size_t alignment)
++{
++    bytes = (bytes + alignment - 1) / alignment * alignment;
++#ifdef _MSC_VER
++    return _aligned_malloc(bytes, alignment);
++#else
++    return std::aligned_alloc(alignment, bytes);
++#endif
++}
++
++inline void aligned_free(void* ptr)
++{
++#ifdef _MSC_VER
++    _aligned_free(ptr);
++#else
++    std::free(ptr);
++#endif
++}
++
++// Free list of equally sized aligned buffers. A buffer goes back to the list when the last shared_ptr to it is
++// released, i.e. when the decklink_frame that wraps it is destroyed after the driver released it. The state is
++// shared with every outstanding buffer, so the pool may be destroyed before the driver lets go of its frames.
++class heap_pool
++{
++    struct state
++    {
++        std::mutex         mutex;
++        std::vector<void*> free_list;
++        std::size_t        bytes = 0;
++        std::size_t        keep  = 0; // at most this many idle buffers are kept
++
++        ~state()
++        {
++            for (auto ptr : free_list)
++                aligned_free(ptr);
++        }
++    };
++    std::shared_ptr<state> state_ = std::make_shared<state>();
++
++  public:
++    static constexpr std::size_t alignment = 128;
++
++    heap_pool(std::size_t bytes, std::size_t keep)
++    {
++        state_->bytes = bytes;
++        state_->keep  = keep;
++        state_->free_list.reserve(keep);
++    }
++
++    [[nodiscard]] std::size_t bytes() const { return state_->bytes; }
++
++    // hit = true when a buffer was reused, false when a new one had to be allocated.
++    std::shared_ptr<void> acquire(bool& hit)
++    {
++        void* ptr = nullptr;
++        {
++            std::lock_guard<std::mutex> lock(state_->mutex);
++            if (!state_->free_list.empty()) {
++                ptr = state_->free_list.back();
++                state_->free_list.pop_back();
++            }
++        }
++        hit = ptr != nullptr;
++        if (ptr == nullptr) {
++            ptr = aligned_malloc(state_->bytes, alignment);
++            if (ptr == nullptr)
++                throw std::bad_alloc();
++        }
++        auto st = state_;
++        return std::shared_ptr<void>(ptr, [st](void* p) {
++            {
++                std::lock_guard<std::mutex> lock(st->mutex);
++                if (st->free_list.size() < st->keep) {
++                    st->free_list.push_back(p);
++                    return;
++                }
++            }
++            aligned_free(p);
++        });
++    }
++};
++
++// Ring of driver allocated frames (IDeckLinkOutput::CreateVideoFrame). A slot is handed out again only when
++// the completion callback has reported its frame and the SDK reference count shows that only the pool holds it.
++// The slot also stores the schedule info that decklink_frame keeps for the diagnostics.
++class sdk_pool
++{
++    struct slot
++    {
++        com_ptr<IDeckLinkMutableVideoFrame> frame;
++        IDeckLinkVideoFrame*                raw          = nullptr;
++        void*                               bytes        = nullptr;
++        bool                                busy         = false;
++        BMDTimeValue                        display_time = -1;
++        BMDTimeValue                        audio_time   = -1;
++        int                                 nb_samples   = 0;
++    };
++    mutable std::mutex mutex_;
++    std::vector<slot>  slots_;
++    std::size_t        bytes_    = 0;
++    std::uint64_t      ref_busy_ = 0; // free by completion, but the SDK still held a reference
++    std::size_t        next_     = 0;
++
++  public:
++    // Returns an empty string on success, else the reason.
++    std::string
++    init(IDeckLinkOutput* output, int width, int height, int row_bytes, BMDPixelFormat pixel_format, std::size_t count)
++    {
++        bytes_ = static_cast<std::size_t>(row_bytes) * height;
++        for (std::size_t n = 0; n < count; ++n) {
++            IDeckLinkMutableVideoFrame* frame = nullptr;
++            if (FAILED(output->CreateVideoFrame(width, height, row_bytes, pixel_format, bmdFrameFlagDefault, &frame)) ||
++                frame == nullptr) {
++                return "CreateVideoFrame failed";
++            }
++            slot s;
++            s.frame = wrap_raw<com_ptr, IDeckLinkMutableVideoFrame>(frame, true);
++            s.raw   = static_cast<IDeckLinkVideoFrame*>(frame);
++            if (FAILED(frame->GetBytes(&s.bytes)) || s.bytes == nullptr)
++                return "GetBytes failed";
++            if ((reinterpret_cast<std::uintptr_t>(s.bytes) & 15) != 0)
++                return "frame buffer is not 16 byte aligned";
++            slots_.push_back(std::move(s));
++        }
++        return {};
++    }
++
++    [[nodiscard]] std::size_t bytes() const { return bytes_; }
++
++    [[nodiscard]] std::uint64_t ref_busy() const
++    {
++        std::lock_guard<std::mutex> lock(mutex_);
++        return ref_busy_;
++    }
++
++    // Returns a slot index, or -1 when every frame is still in use.
++    int acquire()
++    {
++        std::lock_guard<std::mutex> lock(mutex_);
++        for (std::size_t i = 0; i < slots_.size(); ++i) {
++            const auto n = (next_ + i) % slots_.size();
++            auto&      s = slots_[n];
++            if (s.busy)
++                continue;
++            s.raw->AddRef();
++            if (s.raw->Release() > 1) {
++                ++ref_busy_;
++                continue;
++            }
++            s.busy         = true;
++            s.display_time = -1;
++            s.audio_time   = -1;
++            s.nb_samples   = 0;
++            next_          = (n + 1) % slots_.size();
++            return static_cast<int>(n);
++        }
++        return -1;
++    }
++
++    void* bytes(int index) const { return slots_.at(index).bytes; }
++
++    IDeckLinkVideoFrame* frame(int index) const { return slots_.at(index).raw; }
++
++    void set_schedule_info(int index, BMDTimeValue display_time, BMDTimeValue audio_time, int nb_samples)
++    {
++        std::lock_guard<std::mutex> lock(mutex_);
++        auto&                       s = slots_.at(index);
++        s.display_time                = display_time;
++        s.audio_time                  = audio_time;
++        s.nb_samples                  = nb_samples;
++    }
++
++    void release(int index)
++    {
++        std::lock_guard<std::mutex> lock(mutex_);
++        slots_.at(index).busy = false;
++    }
++
++    // Called from the completion callback. Returns true (and the schedule info) if the frame is one of ours.
++    bool complete(IDeckLinkVideoFrame* frame, BMDTimeValue& display_time, BMDTimeValue& audio_time, int& nb_samples)
++    {
++        if (frame == nullptr)
++            return false;
++        // The driver should hand back the pointer we scheduled, but match the buffer too: if a frame of ours
++        // were not recognised, the caller would treat a driver frame as a decklink_frame.
++        void* frame_bytes = nullptr;
++        if (FAILED(frame->GetBytes(&frame_bytes)))
++            frame_bytes = nullptr;
++        std::lock_guard<std::mutex> lock(mutex_);
++        for (auto& s : slots_) {
++            if (s.raw == frame || (frame_bytes != nullptr && s.bytes == frame_bytes)) {
++                display_time = s.display_time;
++                audio_time   = s.audio_time;
++                nb_samples   = s.nb_samples;
++                s.busy       = false;
++                return true;
++            }
++        }
++        return false;
++    }
++};
++
++// Result of converting one primary port frame (one decklink frame; both fields when interlaced).
++struct converted
++{
++    std::shared_ptr<void> image_data;      // heap data (wrapped in a decklink_frame at schedule time)
++    int                   sdk_slot   = -1; // >= 0: converted into this sdk_pool frame instead
++    std::int32_t          convert_us = 0;
++    std::int32_t          alloc_us   = -1;
++    std::int8_t           pool_hit   = 0;
++    std::int8_t           pool_miss  = 0;
++};
++
++// What send() hands to the completion callback with "ahead".
++struct ready_item
++{
++    converted                      video;
++    std::vector<std::int32_t>      audio;
++    int                            nb_samples = 0;
++    core::const_frame              frame1; // kept only when there are secondary ports
++    core::const_frame              frame2;
++    std::int32_t                   send_wait_us = 0;
++    diag::steady_clock::time_point ready_at{};
++};
++
++} // namespace xp
++
+ struct decklink_consumer final : public IDeckLinkVideoOutputCallback
+ {
+     const int                        channel_index_;
+@@ -1695,6 +2119,16 @@
+     std::int32_t                   diag_last_sched_cpu_       = -1;
+     std::int32_t                   diag_last_buffer_size_     = -1; // written in pop() (callback thread only)
+ 
++    // EXPERIMENT 0004 state (see namespace xp). exp_ is set once in the constructor before anything runs.
++    xp::flags                        exp_;
++    std::deque<xp::ready_item>       ready_; // "ahead": guarded by buffer_mutex_/buffer_cond_
++    std::size_t                      ready_capacity_ = 0;
++    std::optional<core::const_frame> pending_field_; // "ahead", interlaced: first field (send thread only)
++    std::unique_ptr<xp::heap_pool>   heap_pool_;
++    std::unique_ptr<xp::sdk_pool>    sdk_pool_;
++    std::atomic<std::uint64_t>       exp_pool_hits_{0};
++    std::atomic<std::uint64_t>       exp_pool_misses_{0};
++
+   public:
+     decklink_consumer(const configuration& config, core::video_format_desc channel_format_desc, int channel_index)
+         : channel_index_(channel_index)
+@@ -1702,6 +2136,7 @@
+         , format_strategy_(create_format_strategy(config))
+         , channel_format_desc_(std::move(channel_format_desc))
+         , decklink_format_desc_(get_decklink_format(config.primary, channel_format_desc_))
++        , exp_(xp::parse_env())
+     {
+         graph_->set_color("tick-time", diagnostics::color(0.0f, 0.6f, 0.9f));
+         graph_->set_color("late-frame", diagnostics::color(0.6f, 0.3f, 0.3f));
+@@ -1765,7 +2200,9 @@
+                 "caspar thinks the driver holds but it does not report), av_skew=audio_scheduled_-video_scheduled_ "
+                 "in samples, s_ph/s_inf=ph and hw timeInFrame read right before ScheduleAudioSamples, "
+                 "s_lead=at-s_ph_in_samples, q=caspar frame queue size after pop, cpu=CPU of the primary task, "
+-                "oncb=primary task ran on the callback thread, sw=samplesWritten, ia/pop/sv/sa/cb=us");
++                "oncb=primary task ran on the callback thread, sw=samplesWritten, ia/pop/sv/sa/cb=us, "
++                "cv/al/swt/age=us (EXPERIMENT 0004: primary conversion, its buffer acquisition, send() wait for "
++                "queue space, ready item age), cvw=where the conversion ran (cb or snd), phit/pmiss=pool hit/miss");
+         }
+ 
+         // If there are additional ports devices, then enable the sync group
+@@ -1808,6 +2245,8 @@
+                 CASPAR_LOG(warning) << print() << L" Device does not support colorspace metadata.";
+         }
+ 
++        setup_experiment();
++
+         if (config.embedded_audio) {
+             output_->BeginAudioPreroll();
+         }
+@@ -1864,7 +2303,11 @@
+ 
+     ~decklink_consumer()
+     {
+-        abort_request_ = true;
++        {
++            // Under the lock, so a waiter between its predicate check and its wait cannot miss the wake up.
++            std::lock_guard<std::mutex> lock(buffer_mutex_);
++            abort_request_ = true;
++        }
+         buffer_cond_.notify_all();
+ 
+         if (output_ != nullptr) {
+@@ -1872,8 +2315,9 @@
+             if (config_.embedded_audio) {
+                 output_->DisableAudioOutput();
+             }
+-            if (diag_) {
+-                // DIAGNOSTIC BUILD: make sure no completion callback can reach diag_ after it is destroyed.
++            if (diag_ || sdk_pool_) {
++                // DIAGNOSTIC BUILD: make sure no completion callback can reach diag_ (or the EXPERIMENT 0004
++                // sdk_pool_) after it is destroyed.
+                 output_->SetScheduledFrameCompletionCallback(nullptr);
+             }
+             output_->DisableVideoOutput();
+@@ -1883,7 +2327,10 @@
+ 
+         if (diag_) {
+             diag_->post_text("STOP frames=" + std::to_string(diag_frame_no_.load()) + " video_scheduled=" +
+-                             std::to_string(video_scheduled_) + " audio_scheduled=" + std::to_string(audio_scheduled_));
++                             std::to_string(video_scheduled_) + " audio_scheduled=" + std::to_string(audio_scheduled_) +
++                             " pool_hits=" + std::to_string(exp_pool_hits_.load()) +
++                             " pool_misses=" + std::to_string(exp_pool_misses_.load()) +
++                             " sdk_ref_busy=" + std::to_string(sdk_pool_ ? sdk_pool_->ref_busy() : 0));
+         }
+     }
+ 
+@@ -2013,8 +2460,22 @@
+             reference_signal_detector_.detect_change([this]() { return print(); });
+ 
+             auto dframe = reinterpret_cast<decklink_frame*>(completed_frame);
++            // EXPERIMENT 0004: with pool=sdk the completed frame may be a driver frame, not a decklink_frame.
++            bool completed_sdk        = false;
++            int  completed_nb_samples = 0;
++            if (sdk_pool_) {
++                BMDTimeValue cf_display_time = -1;
++                BMDTimeValue cf_audio_time   = -1;
++                completed_sdk =
++                    sdk_pool_->complete(completed_frame, cf_display_time, cf_audio_time, completed_nb_samples);
++                if (completed_sdk) {
++                    ds.cf_display_time = cf_display_time;
++                    ds.cf_audio_time   = cf_audio_time;
++                    ds.cf_nb_samples   = completed_nb_samples;
++                }
++            }
+             // ++scheduled_frames_completed_;
+-            if (dframe != nullptr) {
++            if (!completed_sdk && dframe != nullptr) {
+                 ds.cf_display_time = dframe->display_time();
+                 ds.cf_audio_time   = dframe->audio_time();
+                 ds.cf_nb_samples   = dframe->nb_samples();
+@@ -2036,7 +2497,7 @@
+             if (result == bmdOutputFrameDisplayedLate) {
+                 graph_->set_tag(diagnostics::tag_severity::WARNING, "late-frame");
+                 video_scheduled_ += decklink_format_desc_.duration;
+-                audio_scheduled_ += dframe->nb_samples();
++                audio_scheduled_ += completed_sdk ? completed_nb_samples : dframe->nb_samples();
+                 ds.late_adj = true;
+             } else if (result == bmdOutputFrameDropped) {
+                 graph_->set_tag(diagnostics::tag_severity::WARNING, "dropped-frame");
+@@ -2057,7 +2518,8 @@
+                                           (decklink_format_desc_.audio_cadence[0] * decklink_format_desc_.field_count *
+                                            config_.buffer_depth()));
+                     ds.buffered_audio = static_cast<std::int32_t>(buffered);
+-                    check_audio_lead(static_cast<UINT32>(ds.buffered_video), buffered);
++                    if (!exp_.nokeeper) // EXPERIMENT 0004 "nokeeper"
++                        check_audio_lead(static_cast<UINT32>(ds.buffered_video), buffered);
+                 }
+ 
+                 if (diag_) {
+@@ -2080,15 +2542,24 @@
+             }
+ 
+             const auto        diag_pop_start = diag::steady_clock::now();
+-            core::const_frame frame1         = pop();
++            core::const_frame frame1;
+             core::const_frame frame2;
++            xp::ready_item    item; // EXPERIMENT 0004 "ahead": frame converted by send()
+ 
+             bool isInterlaced = mode_->GetFieldDominance() != bmdProgressiveFrame;
+-            if (mode_->GetFieldDominance() != bmdProgressiveFrame) {
+-                // If the main is not progressive, then pop the second frame
+-                frame2 = pop();
++            if (exp_.ahead) {
++                item   = pop_ready();
++                frame1 = item.frame1;
++                frame2 = item.frame2;
++            } else {
++                frame1 = pop();
++                if (mode_->GetFieldDominance() != bmdProgressiveFrame) {
++                    // If the main is not progressive, then pop the second frame
++                    frame2 = pop();
++                }
+             }
+-            ds.pop_us                = diag::us_between(diag_pop_start, diag::steady_clock::now());
++            const auto diag_pop_end  = diag::steady_clock::now();
++            ds.pop_us                = diag::us_between(diag_pop_start, diag_pop_end);
+             ds.buffer_size_after_pop = diag_last_buffer_size_;
+ 
+             if (abort_request_) {
+@@ -2100,28 +2571,36 @@
+             video_scheduled_ += decklink_format_desc_.duration;
+ 
+             std::vector<std::int32_t> audio_data;
+-            if (config_.embedded_audio) {
+-                audio_data.insert(audio_data.end(), frame1.audio_data().begin(), frame1.audio_data().end());
+-                if (isInterlaced) {
+-                    audio_data.insert(audio_data.end(), frame2.audio_data().begin(), frame2.audio_data().end());
++            int                       nb_samples = 0;
++            if (exp_.ahead) {
++                audio_data       = std::move(item.audio);
++                nb_samples       = item.nb_samples;
++                ds.send_wait_us  = item.send_wait_us;
++                ds.item_age_us   = diag::us_between(item.ready_at, diag_pop_end);
++                ds.convert_where = 1;
++            } else {
++                if (config_.embedded_audio) {
++                    audio_data.insert(audio_data.end(), frame1.audio_data().begin(), frame1.audio_data().end());
++                    if (isInterlaced) {
++                        audio_data.insert(audio_data.end(), frame2.audio_data().begin(), frame2.audio_data().end());
++                    }
+                 }
++                // TODO: is this reliable?
++                nb_samples = static_cast<int>(audio_data.size()) / decklink_format_desc_.audio_channels;
+             }
+-            // TODO: is this reliable?
+-            const int nb_samples = static_cast<int>(audio_data.size()) / decklink_format_desc_.audio_channels;
+ 
+             // Schedule video
++            xp::converted primary;
+             tbb::parallel_for(-1, static_cast<int>(secondary_port_contexts_.size()), [&](int i) {
+                 if (i == -1) {
+                     // Primary port
+-                    std::shared_ptr<void> image_data =
+-                        format_strategy_->convert_frame_for_port(channel_format_desc_,
+-                                                                 decklink_format_desc_,
+-                                                                 config_.primary,
+-                                                                 frame1,
+-                                                                 frame2,
+-                                                                 mode_->GetFieldDominance());
++                    if (exp_.ahead) {
++                        primary = std::move(item.video);
++                    } else {
++                        primary = convert_primary(frame1, frame2);
++                    }
+ 
+-                    schedule_next_video(image_data, nb_samples, video_display_time, audio_scheduled_);
++                    schedule_primary_video(primary, nb_samples, video_display_time, audio_scheduled_);
+ 
+                     if (config_.embedded_audio) {
+                         schedule_next_audio(std::move(audio_data), nb_samples);
+@@ -2140,6 +2619,10 @@
+                 }
+             });
+ 
++            ds.convert_us         = primary.convert_us;
++            ds.alloc_us           = primary.alloc_us;
++            ds.pool_hit           = primary.pool_hit;
++            ds.pool_miss          = primary.pool_miss;
+             ds.video_display_time = video_display_time;
+             ds.video_hr           = diag_last_video_hr_;
+             ds.sched_video_us     = diag_last_video_us_;
+@@ -2190,6 +2673,178 @@
+         return frame;
+     }
+ 
++    // EXPERIMENT 0004 "ahead": callback side of the ready queue. Blocks like pop() when it is empty.
++    xp::ready_item pop_ready()
++    {
++        xp::ready_item item;
++        {
++            std::unique_lock<std::mutex> lock(buffer_mutex_);
++            buffer_cond_.wait(lock, [&] { return !ready_.empty() || abort_request_; });
++            if (!abort_request_) {
++                item = std::move(ready_.front());
++                ready_.pop_front();
++            }
++            diag_last_buffer_size_ = static_cast<std::int32_t>(ready_.size());
++        }
++        buffer_cond_.notify_all();
++        return item;
++    }
++
++    // EXPERIMENT 0004: called once from the constructor, after the outputs are enabled and before preroll.
++    void setup_experiment()
++    {
++        std::string note;
++        if (exp_.ahead) {
++            ready_capacity_ = static_cast<std::size_t>(exp_.queue);
++        }
++
++        // Frames that can be alive at once: the driver's queue, the ready queue (or the one being converted),
++        // the frame on screen and some slack.
++        const auto ring =
++            static_cast<std::size_t>(buffer_size_) + static_cast<std::size_t>(exp_.ahead ? exp_.queue : 1) + 4;
++
++        if (exp_.pool == xp::pool_mode::sdk) {
++            if (config_.hdr) {
++                note = "pool=sdk is not supported with HDR output";
++            } else {
++                auto       pool = std::make_unique<xp::sdk_pool>();
++                const auto err  = pool->init(get_raw(output_),
++                                            decklink_format_desc_.width,
++                                            decklink_format_desc_.height,
++                                            format_strategy_->get_row_bytes(decklink_format_desc_.width),
++                                            format_strategy_->get_pixel_format(),
++                                            ring);
++                if (err.empty()) {
++                    sdk_pool_ = std::move(pool);
++                } else {
++                    note = "pool=sdk: " + err;
++                }
++            }
++            if (!sdk_pool_) {
++                CASPAR_LOG(warning) << print() << L" CASPAR_DECKLINK_EXP: " << u16(note)
++                                    << L", falling back to pool=heap";
++                exp_.pool = xp::pool_mode::heap;
++            }
++        }
++        if (exp_.pool == xp::pool_mode::heap) {
++            heap_pool_ =
++                std::make_unique<xp::heap_pool>(format_strategy_->get_frame_bytes(decklink_format_desc_), ring);
++        }
++
++        if (!exp_.unknown.empty()) {
++            CASPAR_LOG(warning) << print() << L" CASPAR_DECKLINK_EXP: ignoring unknown flag(s) " << u16(exp_.unknown);
++        }
++
++        std::string shown = exp_.raw;
++        shown.erase(std::remove_if(shown.begin(), shown.end(), [](unsigned char c) { return std::isspace(c) != 0; }),
++                    shown.end());
++        std::string line = "EXP flags=" + (shown.empty() ? std::string("-") : shown) + " src=" + exp_.source +
++                           " ahead=" + (exp_.ahead ? "1" : "0") + " nokeeper=" + (exp_.nokeeper ? "1" : "0") +
++                           " queue=" + (exp_.ahead ? std::to_string(exp_.queue) : std::string("-")) +
++                           " capacity=" + std::to_string(exp_.ahead ? ready_capacity_ : buffer_capacity_) +
++                           " pool=" + xp::pool_mode_name(exp_.pool) +
++                           " ring=" + (exp_.pool != xp::pool_mode::off ? std::to_string(ring) : std::string("-")) +
++                           " frame_bytes=" + std::to_string(format_strategy_->get_frame_bytes(decklink_format_desc_)) +
++                           " secondaries=" + std::to_string(secondary_port_contexts_.size());
++        if (!exp_.unknown.empty())
++            line += " unknown=" + exp_.unknown;
++        if (!note.empty())
++            line += " note=\"" + note + "\"";
++        CASPAR_LOG(info) << print() << L" " << u16(line);
++        if (diag_)
++            diag_->post_text(line);
++    }
++
++    // EXPERIMENT 0004: converts one primary port frame (both fields when interlaced), timed. Without "pool" this
++    // is exactly the original convert_frame_for_port call.
++    xp::converted convert_primary(const core::const_frame& frame1, const core::const_frame& frame2)
++    {
++        xp::converted out;
++        const auto    start     = diag::steady_clock::now();
++        const auto    dominance = mode_->GetFieldDominance();
++
++        if (sdk_pool_) {
++            const int slot = sdk_pool_->acquire();
++            out.alloc_us   = diag::us_between(start, diag::steady_clock::now());
++            if (slot >= 0) {
++                bool ok = false;
++                try {
++                    ok = format_strategy_->convert_frame_for_port_into(sdk_pool_->bytes(slot),
++                                                                       sdk_pool_->bytes(),
++                                                                       channel_format_desc_,
++                                                                       decklink_format_desc_,
++                                                                       config_.primary,
++                                                                       frame1,
++                                                                       frame2,
++                                                                       dominance);
++                } catch (...) {
++                    sdk_pool_->release(slot);
++                    throw;
++                }
++                if (ok) {
++                    out.sdk_slot = slot;
++                } else {
++                    sdk_pool_->release(slot);
++                }
++            }
++            (out.sdk_slot >= 0 ? out.pool_hit : out.pool_miss) = 1;
++        } else if (heap_pool_) {
++            bool hit     = false;
++            auto buffer  = heap_pool_->acquire(hit);
++            out.alloc_us = diag::us_between(start, diag::steady_clock::now());
++            if (format_strategy_->convert_frame_for_port_into(buffer.get(),
++                                                              heap_pool_->bytes(),
++                                                              channel_format_desc_,
++                                                              decklink_format_desc_,
++                                                              config_.primary,
++                                                              frame1,
++                                                              frame2,
++                                                              dominance)) {
++                out.image_data                       = std::move(buffer);
++                (hit ? out.pool_hit : out.pool_miss) = 1;
++            } else {
++                out.pool_miss = 1; // strategy cannot convert in place; buffer goes back to the pool
++            }
++        }
++
++        if (out.sdk_slot < 0 && !out.image_data) {
++            out.image_data = format_strategy_->convert_frame_for_port(
++                channel_format_desc_, decklink_format_desc_, config_.primary, frame1, frame2, dominance);
++        }
++
++        out.convert_us = diag::us_between(start, diag::steady_clock::now());
++        if (out.pool_hit)
++            exp_pool_hits_.fetch_add(1, std::memory_order_relaxed);
++        if (out.pool_miss)
++            exp_pool_misses_.fetch_add(1, std::memory_order_relaxed);
++        return out;
++    }
++
++    // EXPERIMENT 0004: schedules a converted primary frame (heap data in a decklink_frame, or a pool=sdk frame).
++    void
++    schedule_primary_video(xp::converted& video, int nb_samples, BMDTimeValue display_time, BMDTimeValue audio_time)
++    {
++        if (video.sdk_slot < 0) {
++            schedule_next_video(std::move(video.image_data), nb_samples, display_time, audio_time);
++            return;
++        }
++
++        sdk_pool_->set_schedule_info(video.sdk_slot, display_time, audio_time, nb_samples);
++        const auto diag_start = diag::steady_clock::now();
++        const auto hr         = output_->ScheduleVideoFrame(sdk_pool_->frame(video.sdk_slot),
++                                                    display_time,
++                                                    decklink_format_desc_.duration,
++                                                    decklink_format_desc_.time_scale);
++        diag_last_video_us_   = diag::us_between(diag_start, diag::steady_clock::now());
++        diag_last_video_hr_   = hr;
++
++        if (FAILED(hr)) {
++            sdk_pool_->release(video.sdk_slot);
++            CASPAR_LOG(error) << print() << L" Failed to schedule primary video.";
++        }
++        video.sdk_slot = -1;
++    }
++
+     double samples_per_frame() const
+     {
+         const auto& cadence = decklink_format_desc_.audio_cadence;
+@@ -2366,6 +3021,10 @@
+             }
+         }
+ 
++        if (exp_.ahead) {
++            return send_ahead(std::move(frame));
++        }
++
+         if (frame) {
+             std::unique_lock<std::mutex> lock(buffer_mutex_);
+             if (field != core::video_field::b) {
+@@ -2376,6 +3035,74 @@
+         }
+         buffer_cond_.notify_all();
+ 
++        return !abort_request_;
++    }
++
++    // EXPERIMENT 0004 "ahead": convert here (consumer executor thread) and queue the result for the callback.
++    // Interlaced: the first field is held until the second arrives, then both become one ready item, which
++    // matches the callback popping two frames today.
++    bool send_ahead(core::const_frame frame)
++    {
++        if (!frame) {
++            buffer_cond_.notify_all();
++            return !abort_request_;
++        }
++
++        const bool interlaced = mode_->GetFieldDominance() != bmdProgressiveFrame;
++        if (interlaced && !pending_field_) {
++            pending_field_ = std::move(frame);
++            return !abort_request_;
++        }
++
++        core::const_frame frame1;
++        core::const_frame frame2;
++        if (interlaced) {
++            frame1 = std::move(*pending_field_);
++            pending_field_.reset();
++            frame2 = std::move(frame);
++        } else {
++            frame1 = std::move(frame);
++        }
++
++        const auto wait_start = diag::steady_clock::now();
++        {
++            std::unique_lock<std::mutex> lock(buffer_mutex_);
++            buffer_cond_.wait(lock, [&] { return ready_.size() < ready_capacity_ || abort_request_; });
++        }
++        if (abort_request_) {
++            return false;
++        }
++
++        xp::ready_item item;
++        item.send_wait_us = diag::us_between(wait_start, diag::steady_clock::now());
++        if (config_.embedded_audio) {
++            item.audio.insert(item.audio.end(), frame1.audio_data().begin(), frame1.audio_data().end());
++            if (interlaced) {
++                item.audio.insert(item.audio.end(), frame2.audio_data().begin(), frame2.audio_data().end());
++            }
++        }
++        item.nb_samples = static_cast<int>(item.audio.size()) / decklink_format_desc_.audio_channels;
++        try {
++            item.video = convert_primary(frame1, frame2);
++        } catch (...) {
++            // Today a conversion error is stored by the callback and rethrown by every later send(); keep that.
++            std::lock_guard<std::mutex> lock(exception_mutex_);
++            exception_ = std::current_exception();
++            throw;
++        }
++        item.ready_at   = diag::steady_clock::now();
++        if (!secondary_port_contexts_.empty()) {
++            // Secondary ports still convert in the callback, as today.
++            item.frame1 = std::move(frame1);
++            item.frame2 = std::move(frame2);
++        }
++
++        {
++            std::lock_guard<std::mutex> lock(buffer_mutex_);
++            ready_.push_back(std::move(item));
++        }
++        buffer_cond_.notify_all();
++
+         return !abort_request_;
+     }
+ 
+diff -ruN a/src/modules/decklink/consumer/format_strategy.h b/src/modules/decklink/consumer/format_strategy.h
+--- a/src/modules/decklink/consumer/format_strategy.h	2026-11-23 17:45:36.000000000 +0000
++++ b/src/modules/decklink/consumer/format_strategy.h	2026-11-25 16:26:26.411655203 +0000
+@@ -30,6 +30,7 @@
+ #include <core/frame/frame.h>
+ #include <core/video_format.h>
+ 
++#include <cstddef>
+ #include <memory>
+ 
+ namespace caspar { namespace decklink {
+@@ -54,6 +55,27 @@
+                                                          const core::const_frame&       frame1,
+                                                          const core::const_frame&       frame2,
+                                                          BMDFieldDominance              field_dominance)       = 0;
++
++    // EXPERIMENT (CASPAR_DECKLINK_EXP=pool): bytes a converted frame occupies (row bytes * height).
++    virtual std::size_t get_frame_bytes(const core::video_format_desc& format_desc)
++    {
++        return static_cast<std::size_t>(get_row_bytes(format_desc.width)) * format_desc.height;
++    }
++
++    // EXPERIMENT (CASPAR_DECKLINK_EXP=pool): same conversion as convert_frame_for_port, but into a caller owned
++    // buffer of at least get_frame_bytes(decklink_format_desc) bytes, aligned to at least 16 bytes. Returns false
++    // when the strategy cannot convert in place; the caller then falls back to convert_frame_for_port.
++    virtual bool convert_frame_for_port_into(void* /*dest*/,
++                                             std::size_t /*dest_bytes*/,
++                                             const core::video_format_desc& /*channel_format_desc*/,
++                                             const core::video_format_desc& /*decklink_format_desc*/,
++                                             const port_configuration& /*config*/,
++                                             const core::const_frame& /*frame1*/,
++                                             const core::const_frame& /*frame2*/,
++                                             BMDFieldDominance /*field_dominance*/)
++    {
++        return false;
++    }
+ };
+ 
+ spl::shared_ptr<format_strategy> create_sdr_bgra_strategy();
+diff -ruN a/src/modules/decklink/consumer/sdr_bgra_strategy.cpp b/src/modules/decklink/consumer/sdr_bgra_strategy.cpp
+--- a/src/modules/decklink/consumer/sdr_bgra_strategy.cpp	2026-11-23 17:45:36.000000000 +0000
++++ b/src/modules/decklink/consumer/sdr_bgra_strategy.cpp	2026-11-25 16:25:19.466288819 +0000
+@@ -27,6 +27,8 @@
+ #include <common/memshfl.h>
+ 
+ #include <tbb/parallel_for.h>
++
++#include <cstdint>
+ #include <tbb/scalable_allocator.h>
+ 
+ namespace caspar { namespace decklink {
+@@ -68,19 +70,20 @@
+             convert_frame(channel_format_desc,
+                           decklink_format_desc,
+                           config,
+-                          image_data,
++                          static_cast<char*>(image_data.get()),
+                           field_dominance == bmdUpperFieldFirst,
+                           frame1);
+ 
+             convert_frame(channel_format_desc,
+                           decklink_format_desc,
+                           config,
+-                          image_data,
++                          static_cast<char*>(image_data.get()),
+                           field_dominance != bmdUpperFieldFirst,
+                           frame2);
+ 
+         } else {
+-            convert_frame(channel_format_desc, decklink_format_desc, config, image_data, true, frame1);
++            convert_frame(
++                channel_format_desc, decklink_format_desc, config, static_cast<char*>(image_data.get()), true, frame1);
+         }
+ 
+         if (config.key_only) {
+@@ -90,11 +93,44 @@
+         return image_data;
+     }
+ 
++    // EXPERIMENT (CASPAR_DECKLINK_EXP=pool): convert into a caller owned buffer.
++    bool convert_frame_for_port_into(void*                          dest,
++                                     std::size_t                    dest_bytes,
++                                     const core::video_format_desc& channel_format_desc,
++                                     const core::video_format_desc& decklink_format_desc,
++                                     const port_configuration&      config,
++                                     const core::const_frame&       frame1,
++                                     const core::const_frame&       frame2,
++                                     BMDFieldDominance              field_dominance) override
++    {
++        if (dest == nullptr || dest_bytes < decklink_format_desc.size ||
++            (reinterpret_cast<std::uintptr_t>(dest) & 15) != 0) {
++            return false;
++        }
++
++        auto dst = static_cast<char*>(dest);
++        if (field_dominance != bmdProgressiveFrame) {
++            convert_frame(
++                channel_format_desc, decklink_format_desc, config, dst, field_dominance == bmdUpperFieldFirst, frame1);
++            convert_frame(
++                channel_format_desc, decklink_format_desc, config, dst, field_dominance != bmdUpperFieldFirst, frame2);
++        } else {
++            convert_frame(channel_format_desc, decklink_format_desc, config, dst, true, frame1);
++        }
++
++        if (config.key_only) {
++            // In place: aligned_memshfl reads each 64 byte block before it writes it back.
++            aligned_memshfl(dst, dst, decklink_format_desc.size, 0x0F0F0F0F, 0x0B0B0B0B, 0x07070707, 0x03030303);
++        }
++
++        return true;
++    }
++
+   private:
+     void convert_frame(const core::video_format_desc& channel_format_desc,
+                        const core::video_format_desc& decklink_format_desc,
+                        const port_configuration&      config,
+-                       std::shared_ptr<void>&         image_data,
++                       char*                          image_data,
+                        bool                           topField,
+                        const core::const_frame&       frame)
+     {
+@@ -110,7 +146,7 @@
+ 
+             size_t byte_count_line = (size_t)decklink_format_desc.width * 4;
+             for (int y = firstLine; y < decklink_format_desc.height; y += decklink_format_desc.field_count) {
+-                std::memcpy(reinterpret_cast<char*>(image_data.get()) + (long long)y * byte_count_line,
++                std::memcpy(image_data + (long long)y * byte_count_line,
+                             frame.image_data(0).data() + (long long)y * byte_count_line,
+                             byte_count_line);
+             }
+@@ -142,15 +178,14 @@
+ 
+             for (int y = firstLine; y < y_skip_dest_lines; y += decklink_format_desc.field_count) {
+                 // Fill the line with black
+-                std::memset(
+-                    reinterpret_cast<char*>(image_data.get()) + (byte_count_dest_line * y), 0, byte_count_dest_line);
++                std::memset(image_data + (byte_count_dest_line * y), 0, byte_count_dest_line);
+             }
+ 
+             int firstFillLine = y_skip_dest_lines;
+             if (decklink_format_desc.field_count != 1 && firstFillLine % 2 != firstLine)
+                 firstFillLine += 1;
+             for (int y = firstFillLine; y < max_y_content; y += decklink_format_desc.field_count) {
+-                auto line_start_ptr   = reinterpret_cast<char*>(image_data.get()) + (long long)y * byte_count_dest_line;
++                auto line_start_ptr   = image_data + (long long)y * byte_count_dest_line;
+                 auto line_content_ptr = line_start_ptr + byte_offset_dest_line;
+ 
+                 // Fill the start with black
+@@ -175,8 +210,7 @@
+                 max_y_content += 1;
+             for (int y = max_y_content; y < decklink_format_desc.height; y += decklink_format_desc.field_count) {
+                 // Fill the line with black
+-                std::memset(
+-                    reinterpret_cast<char*>(image_data.get()) + (byte_count_dest_line * y), 0, byte_count_dest_line);
++                std::memset(image_data + (byte_count_dest_line * y), 0, byte_count_dest_line);
+             }
+         }
+     }
+diff -ruN a/src/modules/decklink/consumer/v210_strategies.cpp b/src/modules/decklink/consumer/v210_strategies.cpp
+--- a/src/modules/decklink/consumer/v210_strategies.cpp	2026-11-23 17:45:36.000000000 +0000
++++ b/src/modules/decklink/consumer/v210_strategies.cpp	2026-11-25 16:25:19.509020705 +0000
+@@ -26,6 +26,7 @@
+ #include <simde/x86/avx2.h>
+ #endif
+ 
++#include <cstdint>
+ #include <type_traits>
+ 
+ #include "format_strategy.h"
+@@ -267,6 +268,30 @@
+                               channel_format_desc, decklink_format_desc, config, frame1, frame2, field_dominance);
+     }
+ 
++    // EXPERIMENT (CASPAR_DECKLINK_EXP=pool): convert into a caller owned buffer.
++    bool convert_frame_for_port_into(void*                          dest,
++                                     std::size_t                    dest_bytes,
++                                     const core::video_format_desc& channel_format_desc,
++                                     const core::video_format_desc& decklink_format_desc,
++                                     const port_configuration&      config,
++                                     const core::const_frame&       frame1,
++                                     const core::const_frame&       frame2,
++                                     BMDFieldDominance              field_dominance) override
++    {
++        if (dest == nullptr || dest_bytes < get_frame_bytes(decklink_format_desc) ||
++            (reinterpret_cast<std::uintptr_t>(dest) & 15) != 0) {
++            return false;
++        }
++        auto dst = static_cast<uint8_t*>(dest);
++        if (bpc == 1)
++            convert_fields<uint8_t>(
++                dst, channel_format_desc, decklink_format_desc, config, frame1, frame2, field_dominance);
++        else
++            convert_fields<uint16_t>(
++                dst, channel_format_desc, decklink_format_desc, config, frame1, frame2, field_dominance);
++        return true;
++    }
++
+   private:
+     template <typename T>
+     std::shared_ptr<void> do_convert_frame_for_port(const core::video_format_desc& channel_format_desc,
+@@ -278,6 +303,26 @@
+     {
+         std::shared_ptr<void> image_data = allocate_frame_data(decklink_format_desc);
+ 
++        convert_fields<T>(static_cast<uint8_t*>(image_data.get()),
++                          channel_format_desc,
++                          decklink_format_desc,
++                          config,
++                          frame1,
++                          frame2,
++                          field_dominance);
++
++        return image_data;
++    }
++
++    template <typename T>
++    void convert_fields(uint8_t*                       image_data,
++                        const core::video_format_desc& channel_format_desc,
++                        const core::video_format_desc& decklink_format_desc,
++                        const port_configuration&      config,
++                        const core::const_frame&       frame1,
++                        const core::const_frame&       frame2,
++                        BMDFieldDominance              field_dominance)
++    {
+         if (field_dominance != bmdProgressiveFrame) {
+             convert_frame<T>(channel_format_desc,
+                              decklink_format_desc,
+@@ -300,15 +345,13 @@
+         if (config.key_only) {
+             // TODO: Add support for hdr frames
+         }
+-
+-        return image_data;
+     }
+ 
+     template <typename T>
+     void convert_frame(const core::video_format_desc& channel_format_desc,
+                        const core::video_format_desc& decklink_format_desc,
+                        const port_configuration&      config,
+-                       std::shared_ptr<void>&         image_data,
++                       uint8_t*                       image_data,
+                        bool                           topField,
+                        const core::const_frame&       frame)
+     {
+@@ -333,8 +376,7 @@
+                 auto end_y   = (thread_index + 1) * rows_per_thread;
+ 
+                 for (uint64_t y = start_y; y < end_y; y += decklink_format_desc.field_count) {
+-                    auto dest_row =
+-                        reinterpret_cast<uint8_t*>(image_data.get()) + y * dest_line_bytes; // start of dest row
++                    auto     dest_row  = image_data + y * dest_line_bytes;     // start of dest row
+                     __m128i* v210_dest = reinterpret_cast<__m128i*>(dest_row); // current position in dest row
+ 
+                     if (y < config.dest_y) {
