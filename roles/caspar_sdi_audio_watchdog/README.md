@@ -90,14 +90,24 @@ consumer is re-created.
     and the ATEM all went to digital zero for 10 minutes while the card's
     lead stayed healthy. The jam check holds when the multicast is silent,
     so nothing acted until a manual restart. The file itself decodes fine.
-  - It acts when, for `_source_dead_seconds` (30): the multicast is at or
-    below `_source_dead_dbfs` (-100; a dead producer reads -120), the SDI
-    isn't alive either (a silent multicast with SDI audio is the multicast
-    consumer, not this), an `ffmpeg` file layer is playing with its time
-    advancing, and the file's own audio over that stretch peaks above
-    `_source_dead_file_min_db` (-60, by `ffmpeg -af volumedetect` on the
-    file under `_source_dead_media_dir`). Real silence in the file, a file
-    without audio, or an unreadable file never acts.
+  - It acts when all of these hold:
+    - the multicast is at or below `_source_dead_dbfs` (-100; a dead
+      producer reads -120);
+    - SDI is shown silent too: the ATEM meter at its floor, or the program
+      return silent while caspar1 is on program. A silent multicast with
+      SDI audio is the multicast consumer, not this, and with no SDI
+      evidence either way nothing counts;
+    - an `ffmpeg` file layer has itself played on through
+      `_source_dead_seconds` (30) of the silence, so a programme that starts
+      after a silent gap gets its full 30 s;
+    - the file's own audio over the latest stretch the multicast has
+      certainly heard (up to 20 s, ending 3 s before the current position)
+      peaks above `_source_dead_file_min_db` (-60), by `ffmpeg -af
+      volumedetect` on the file under `_source_dead_media_dir`. Every file
+      layer is checked on its own, in a background thread (15 s timeout),
+      and a silent or unreadable result is checked again each minute over
+      the newer stretch. Real silence, a file without audio, or an
+      unreadable file never acts.
   - Remedy: restart CasparCG (re-creating the DeckLink consumer can't help,
     the audio is gone before the mixer); playout re-cues the item. Own
     cooldown and backoff, the same ATEM air check, and the 60 s gap to the

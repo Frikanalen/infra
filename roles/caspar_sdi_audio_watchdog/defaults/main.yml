@@ -129,11 +129,12 @@ caspar_sdi_audio_watchdog_lead_starved_seconds: 30
 # jam nor the lead detector could see it). Acts when, for
 # source_dead_seconds: the multicast is at or below source_dead_dbfs (a dead
 # producer gives exact digital zero, -120 here; the quietest programme is far
-# above -100), the SDI isn't alive either, an ffmpeg file layer is playing
-# with its time advancing, and the file's own audio over that stretch peaks
-# above source_dead_file_min_db (ffmpeg volumedetect on the file under
-# source_dead_media_dir; a file without audio, real silence or an unreadable
-# file never acts). Remedy: restart CasparCG (re-creating the DeckLink
+# above -100), SDI is shown silent too (ATEM floor, or the return while on
+# program), an ffmpeg file layer has itself played on that long in the
+# silence, and the file's own audio over the latest heard stretch (up to
+# 20 s) peaks above source_dead_file_min_db (ffmpeg volumedetect on the file
+# under source_dead_media_dir, re-checked each minute; a file without audio,
+# real silence or an unreadable file never acts). Remedy: restart CasparCG (re-creating the DeckLink
 # consumer can't help), playout re-cues the item. Own cooldown/backoff; the
 # file is named in the log. source_dead_layers: comma-separated layers to
 # watch (empty: any). 0 seconds: off.

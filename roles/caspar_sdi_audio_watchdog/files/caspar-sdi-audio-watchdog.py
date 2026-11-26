@@ -62,10 +62,13 @@ Source dead: CasparCG's ffmpeg producer can lose a file's audio mid-play
 digitally silent, the card's lead stays healthy, and the jam check holds
 because the multicast is silent too. A fourth detector catches this: the
 multicast at or below SOURCE_DEAD_DBFS for SOURCE_DEAD_SECONDS, the SDI not
-alive either, a file layer (ffmpeg producer, local path) playing with its
-time advancing, and the file's own audio over that stretch not silent
-(ffmpeg volumedetect, max above SOURCE_DEAD_FILE_MIN_DB; a file without
-audio or with real silence there never acts). Then it restarts CasparCG
+shown silent too (ATEM floor, or the program return while on program), a
+file layer (ffmpeg producer, local path) that has itself played on through
+SOURCE_DEAD_SECONDS of the silence, and the file's own audio over the
+latest stretch the multicast has heard not silent (ffmpeg volumedetect in
+a background thread, max above SOURCE_DEAD_FILE_MIN_DB, re-checked each
+minute; a file without audio, real silence or an unreadable file never
+acts). Then it restarts CasparCG
 (playout re-cues the item), with its own cooldown and backoff, and names
 the file in the log. SOURCE_DEAD_SECONDS 0 turns it off.
 
@@ -150,6 +153,8 @@ CFG = {
     "SOURCE_DEAD_MEDIA_DIR": os.environ.get("SOURCE_DEAD_MEDIA_DIR", "/mnt/media"),
     "SOURCE_DEAD_LAYERS": os.environ.get("SOURCE_DEAD_LAYERS", ""),
     "SOURCE_DEAD_POLL_SECONDS": float(os.environ.get("SOURCE_DEAD_POLL_SECONDS", "5")),
+    "SOURCE_DEAD_MARGIN_SECONDS": float(os.environ.get("SOURCE_DEAD_MARGIN_SECONDS", "3")),
+    "SOURCE_DEAD_RECHECK_SECONDS": float(os.environ.get("SOURCE_DEAD_RECHECK_SECONDS", "60")),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -841,7 +846,7 @@ class LeadMonitor:
         return ("alive" if self.healthy else "hold"), n, self.last
 
 
-def file_audio_max_db(path, start, seconds, timeout=30):
+def file_audio_max_db(path, start, seconds, timeout=15):
     """The loudest sample (dB) of path's first audio stream from start for
     seconds, by ffmpeg volumedetect: a float, "noaudio" if the file has no
     audio stream, or None if it couldn't be read."""
@@ -867,23 +872,41 @@ def parse_volumedetect(stderr, returncode=0):
 class SourceDeadMonitor:
     """The 26 Nov case: a file plays on, but its audio is gone everywhere.
 
-    tick() once a second returns (verdict, held seconds, info). verdict:
-    "dead" (act), "alive" (the multicast has audio: proves a remedy worked)
-    or "hold". info: {layer, path, start, max_db} for the log.
+    tick(now, pre_dbfs, sdi) once a second, sdi being "alive", "silent" or
+    "unknown", returns (verdict, held seconds, info). verdict: "dead" (act),
+    "alive" (the multicast has audio: proves a remedy worked) or "hold".
+    info: {layer, path, start, max_db} for the log.
+
+    Every file layer (ffmpeg producer, local path) is tracked on its own:
+    where it was when the silence began for it (or when it appeared), and
+    where it is now. A layer counts once it has itself played on for
+    SOURCE_DEAD_SECONDS of the silence, so a programme starting after a
+    silent gap gets its full time. Its file is then checked over the latest
+    stretch the multicast has certainly heard (ending SOURCE_DEAD_MARGIN
+    seconds before the current position, at most 20 s long), in a background
+    thread so a slow mount can't stall the loop. A silent result is checked
+    again every SOURCE_DEAD_RECHECK_SECONDS over the newer stretch; an
+    unreadable file is retried then too; a file without audio is final.
+    SDI must be shown silent (ATEM floor, or the program return): without
+    evidence either way, nothing counts.
     layers_fn() returns layer_details() (or raises OSError); audio_fn(path,
     start, seconds) returns file_audio_max_db().
     """
 
-    def __init__(self, layers_fn, audio_fn):
+    def __init__(self, layers_fn, audio_fn, run_async=True):
         self.layers_fn = layers_fn
         self.audio_fn = audio_fn
+        self.run_async = run_async
+        self.lock = threading.Lock()
         self.reset()
 
     def reset(self):
         self.since = None      # first silent second of the episode
         self.last_poll = 0.0
-        self.playing = {}      # layer -> (path, time at episode start, last time)
-        self.checked = None    # file-audio result for this episode
+        # layer -> {"path", "start", "last", "seen": wall time of start}
+        self.playing = {}
+        # (layer, path) -> {"result", "at": wall time, "window": (a, b), "busy"}
+        self.checks = {}
         self.info = {}
 
     def _poll(self, now):
@@ -900,50 +923,88 @@ class SourceDeadMonitor:
             if wanted and l["layer"] not in wanted:
                 continue
             old = self.playing.get(l["layer"])
-            if old and old[0] == l["path"]:
-                seen[l["layer"]] = (old[0], old[1], l["time"])
-            else:
-                seen[l["layer"]] = (l["path"], l["time"], l["time"])
-        if seen.keys() != self.playing.keys() or any(
-                seen[k][0] != self.playing[k][0] for k in seen):
-            self.checked = None  # a different file: check its audio afresh
+            if old and old["path"] == l["path"] and l["time"] >= old["last"]:
+                seen[l["layer"]] = dict(old, last=l["time"])
+            else:  # new item, or it went back (re-cued, looped): start over
+                seen[l["layer"]] = {"path": l["path"], "start": l["time"], "last": l["time"],
+                                    "seen": now}
         self.playing = seen
+        with self.lock:
+            for key in [k for k in self.checks if self.playing.get(k[0], {}).get("path") != k[1]]:
+                if not self.checks[key]["busy"]:
+                    del self.checks[key]
 
-    def advancing(self):
-        """(layer, path, start) of a file layer whose time has moved on."""
-        for layer, (path, start, last) in sorted(self.playing.items()):
-            if last > start:
-                return layer, path, start
-        return None
+    def _full(self, path):
+        return path if os.path.isabs(path) else os.path.join(CFG["SOURCE_DEAD_MEDIA_DIR"], path)
 
-    def tick(self, now, pre_dbfs, sdi_alive):
+    def _run_check(self, key, path, a, b):
+        try:
+            result = self.audio_fn(self._full(path), a, b - a)
+        except Exception as e:  # never let a check kill the watchdog
+            log("WARN", "source dead? file check failed", path=path, error=repr(e))
+            result = None
+        with self.lock:
+            c = self.checks.get(key)
+            if c is not None:
+                c.update(result=result, busy=False)
+        log("INFO", "source dead? checked the file's own audio", layer=key[0], path=path,
+            window=f"{a:.1f}-{b:.1f}", max_db=result if result is not None else "unreadable")
+
+    def _maybe_check(self, now, layer, st):
+        """Start a check of st's newest heard stretch if one is due."""
+        key = (layer, st["path"])
+        b = st["last"] - CFG["SOURCE_DEAD_MARGIN_SECONDS"]
+        a = max(st["start"], b - 20.0)
+        if b - a < 1.0:
+            return
+        with self.lock:
+            c = self.checks.get(key)
+            if c is not None:
+                if c["busy"] or c["result"] == "noaudio":
+                    return
+                if isinstance(c["result"], float) and c["result"] > CFG["SOURCE_DEAD_FILE_MIN_DB"]:
+                    return  # already proven: it has audio there
+                if now - c["at"] < CFG["SOURCE_DEAD_RECHECK_SECONDS"]:
+                    return
+            self.checks[key] = {"result": None, "at": now, "window": (a, b), "busy": True}
+        if self.run_async:
+            threading.Thread(target=self._run_check, args=(key, st["path"], a, b), daemon=True,
+                             name="source-dead-check").start()
+        else:
+            self._run_check(key, st["path"], a, b)
+
+    def tick(self, now, pre_dbfs, sdi):
         if CFG["SOURCE_DEAD_SECONDS"] <= 0 or pre_dbfs is None:
             self.reset()
             return "hold", 0, {}
-        if pre_dbfs > CFG["SOURCE_DEAD_DBFS"] or sdi_alive:
+        if pre_dbfs > CFG["SOURCE_DEAD_DBFS"]:
             self.reset()
-            return ("alive" if pre_dbfs > CFG["SOURCE_DEAD_DBFS"] else "hold"), 0, {}
+            return "alive", 0, {}
+        if sdi == "alive":
+            self.reset()  # SDI has audio: the multicast consumer, not this
+            return "hold", 0, {}
         if self.since is None:
             self.since = now
         if now - self.last_poll >= CFG["SOURCE_DEAD_POLL_SECONDS"]:
             self._poll(now)
         held = int(now - self.since) + 1
-        if held < CFG["SOURCE_DEAD_SECONDS"]:
-            return "hold", held, {}
-        found = self.advancing()
-        if found is None:
-            return "hold", held, {}
-        layer, path, start = found
-        if self.checked is None:
-            full = path if os.path.isabs(path) else os.path.join(CFG["SOURCE_DEAD_MEDIA_DIR"], path)
-            seconds = min(max(self.playing[layer][2] - start, 1.0), 10.0)
-            self.checked = self.audio_fn(full, start, seconds)
-            self.info = dict(layer=layer, path=path, start=f"{start:.1f}",
-                             max_db=self.checked if self.checked is not None else "unreadable")
-            log("INFO", "source dead? checked the file's own audio", **self.info)
-        if isinstance(self.checked, float) and self.checked > CFG["SOURCE_DEAD_FILE_MIN_DB"]:
-            return "dead", held, self.info
-        return "hold", held, self.info  # silent there, no audio, or unreadable: not ours to fix
+        if sdi != "silent":
+            return "hold", held, {}  # no evidence SDI is silent too
+        for layer, st in sorted(self.playing.items()):
+            # This layer must itself have played on through enough silence.
+            if (now - max(st["seen"], self.since) < CFG["SOURCE_DEAD_SECONDS"]
+                    or st["last"] - st["start"] < CFG["SOURCE_DEAD_SECONDS"] / 2):
+                continue
+            self._maybe_check(now, layer, st)
+            with self.lock:
+                c = dict(self.checks.get((layer, st["path"])) or {})
+            r = c.get("result")
+            if isinstance(r, float) and r > CFG["SOURCE_DEAD_FILE_MIN_DB"]:
+                a, b = c["window"]
+                self.info = dict(layer=layer, path=st["path"], window=f"{a:.1f}-{b:.1f}", max_db=r)
+                return "dead", held, self.info
+        return "hold", held, {}  # silent there, no audio, unreadable or not checked yet
+
 
 
 def run_remedy(kind, why, detail, signal_, pre_dbfs, sdi_desc, policy, extra=None):
@@ -1227,9 +1288,19 @@ def main():
                     failures=lpolicy.state["failures"])
             save_state(state)
 
-        sdi_alive = ((levels is not None and max(levels) > CFG["ATEM_ALIVE_DBFS"])
-                     or (levels is None and post_dbfs is not None and post_dbfs >= CFG["POST_MAX_DBFS"]))
-        sverdict, sheld, sinfo = sdead.tick(now, pre_dbfs, sdi_alive)
+        if levels is not None:
+            sdi = ("alive" if max(levels) > CFG["ATEM_ALIVE_DBFS"]
+                   else "silent" if max(levels) <= CFG["ATEM_FLOOR_DBFS"] else "unknown")
+        elif post_dbfs is not None:
+            # The return only shows CasparCG while it's on program.
+            # Without a readable ATEM, ON_UNKNOWN_PROGRAM decides, as for jams.
+            prog = watch.decide("return", now)[0]
+            on_prog = prog == "on_air" or (prog == "unknown" and CFG["ON_UNKNOWN_PROGRAM"] == "restart")
+            sdi = ("alive" if post_dbfs >= CFG["POST_MAX_DBFS"]
+                   else "silent" if on_prog else "unknown")
+        else:
+            sdi = "unknown"
+        sverdict, sheld, sinfo = sdead.tick(now, pre_dbfs, sdi)
         spolicy.saw("jam" if sverdict == "dead" else sverdict, now)
         if sverdict == "dead" and sdead_was != "dead":
             log("WARN", "source audio dead: a file plays on, its audio is gone everywhere",
