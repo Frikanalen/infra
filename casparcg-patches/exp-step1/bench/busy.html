@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>bench busy page</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #102030; font-family: sans-serif; }
+  canvas { position: absolute; left: 0; top: 0; }
+  .tick { position: absolute; color: #fff; font-size: 28px; white-space: nowrap; animation: scroll 6s linear infinite; text-shadow: 0 0 8px #0ff; }
+  .blob { position: absolute; width: 140px; height: 140px; border-radius: 50%; filter: blur(18px); opacity: .7; animation: spin 3s ease-in-out infinite alternate; }
+  @keyframes scroll { from { transform: translateX(1300px); } to { transform: translateX(-2600px); } }
+  @keyframes spin { from { transform: rotate(0) scale(1); } to { transform: rotate(360deg) scale(1.8); } }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Deliberately expensive: thousands of particles, gradients, blurred CSS layers,
+// scrolling text with shadows. Meant to keep the HTML producer and GPU busy, like a
+// heavy live graphics template.
+const N = 4000, c = document.getElementById('c'), g = c.getContext('2d');
+const p = Array.from({length: N}, () => ({x: Math.random()*1280, y: Math.random()*720,
+  vx: (Math.random()-.5)*6, vy: (Math.random()-.5)*6, h: Math.random()*360}));
+for (let i = 0; i < 12; i++) {
+  const t = document.createElement('div'); t.className = 'tick';
+  t.style.top = (i*60) + 'px'; t.style.animationDelay = (-i*0.5) + 's';
+  t.textContent = 'BENCH LOAD ' + 'LOREM IPSUM DOLOR SIT AMET '.repeat(6);
+  document.body.appendChild(t);
+  const b = document.createElement('div'); b.className = 'blob';
+  b.style.left = (i*105) + 'px'; b.style.top = ((i*137)%600) + 'px';
+  b.style.background = `hsl(${i*30},90%,60%)`; b.style.animationDelay = (-i*0.25) + 's';
+  document.body.appendChild(b);
+}
+function frame(ts) {
+  const grd = g.createLinearGradient(0, 0, 1280, 720);
+  grd.addColorStop(0, `hsl(${(ts/20)%360},60%,20%)`); grd.addColorStop(1, `hsl(${(ts/13)%360},60%,10%)`);
+  g.fillStyle = grd; g.fillRect(0, 0, 1280, 720);
+  for (const q of p) {
+    q.x += q.vx; q.y += q.vy;
+    if (q.x < 0 || q.x > 1280) q.vx = -q.vx;
+    if (q.y < 0 || q.y > 720) q.vy = -q.vy;
+    g.fillStyle = `hsla(${(q.h + ts/10)%360},90%,60%,.6)`;
+    g.beginPath(); g.arc(q.x, q.y, 3, 0, 6.283); g.fill();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

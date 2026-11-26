@@ -108,7 +108,7 @@ metrics go stale rather than wrong, and `ZfsMetricsStale` is what tells you.
 ## NVIDIA GPU metrics
 
 On a host with `/usr/bin/nvidia-smi` (caspar1), a systemd timer runs
-`files/nvidia-textfile-collector.sh` every 15 s and writes `nvidia.prom`:
+`files/nvidia-textfile-collector.sh` every 60 s and writes `nvidia.prom`:
 temperature, GPU/memory/encoder/decoder utilization, memory used/total, fan,
 power and clocks as `nvidia_gpu_*`, plus `nvidia_smi_up`. Fields the card or
 driver does not report are left out rather than written as zero. DCGM is not

@@ -1,0 +1,171 @@
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-26 11:27:53.179376607 +0000
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-26 12:51:28.104714515 +0000
+@@ -1705,6 +1705,19 @@
+  * Every change, or failure, is logged as an "RT ..." diag line. TBB worker threads (v210 chunks,
+  * secondary ports) stay SCHED_OTHER.
+  *
++ * EXPERIMENT 0007, fault injection for testing the audio lead keeper (bench only):
++ *   inject=drop:S       every S seconds, skip ScheduleAudioSamples for one block but advance the audio
++ *                       timeline as if it had been scheduled: the card ends up exactly one frame short of
++ *                       audio against video, which is the slip the keeper must repair.
++ *   inject=shift:S      every S seconds, stamp one block a frame early (audio_scheduled_ moved back by that
++ *                       block's samples first), so it overlaps audio the card already holds and CasparCG's
++ *                       timeline stays a frame behind afterwards. Models caspar1's slip, where the card kept
++ *                       one frame less audio for good (the drop injection leaves a hole the driver fills).
++ *   inject=stall:MS:S   every S seconds, sleep MS milliseconds at the start of one completion callback:
++ *                       the real-world trigger (a late callback), leaving it to the driver whether lead is lost.
++ * The first injection happens S seconds after the consumer starts (after the keeper's baseline). Each one
++ * writes an "INJECT kind=.. n=.." diag line. S is 1..3600, MS is 1..500.
++ *
+  * The first line of the file CASPAR_DECKLINK_EXP_FILE (default /run/casparcg/decklink-exp), when the file
+  * exists, overrides CASPAR_DECKLINK_EXP; an empty first line means all experiments off. The file is read
+  * when the consumer is created (ADD), so a bench can switch modes with REMOVE/ADD without a restart.
+@@ -1741,6 +1754,9 @@
+     bool        rt_cb    = false; // EXPERIMENT 0005: SCHED_FIFO for the completion callback thread
+     bool        rt_conv  = false; // EXPERIMENT 0005: SCHED_FIFO for the send()/conversion thread
+     int         rt_prio  = 10;    // EXPERIMENT 0005: SCHED_FIFO priority (1..49)
++    int         inject_kind  = 0; // EXPERIMENT 0007: 0 none, 1 drop, 2 stall, 3 shift
++    int         inject_ms    = 0; // EXPERIMENT 0007: stall length
++    int         inject_every = 0; // EXPERIMENT 0007: seconds between injections
+     std::string raw;          // flag string as given (file line or CASPAR_DECKLINK_EXP)
+     std::string source;       // "env" or "file:<path>"
+     std::string unknown;      // tokens that were not understood (ignored)
+@@ -1767,6 +1783,50 @@
+     return true;
+ }
+ 
++// EXPERIMENT 0007: "drop:S" or "stall:MS:S".
++inline bool parse_inject(const std::string& text, flags& f)
++{
++    auto number = [](const std::string& t, int lo, int hi, int& out) {
++        if (t.empty())
++            return false;
++        char* tail  = nullptr;
++        auto  value = std::strtol(t.c_str(), &tail, 10);
++        if (tail == nullptr || *tail != '\0' || value < lo || value > hi)
++            return false;
++        out = static_cast<int>(value);
++        return true;
++    };
++    if (text.rfind("drop:", 0) == 0) {
++        int every = 0;
++        if (!number(text.substr(5), 1, 3600, every))
++            return false;
++        f.inject_kind  = 1;
++        f.inject_every = every;
++        return true;
++    }
++    if (text.rfind("shift:", 0) == 0) {
++        int every = 0;
++        if (!number(text.substr(6), 1, 3600, every))
++            return false;
++        f.inject_kind  = 3;
++        f.inject_every = every;
++        return true;
++    }
++    if (text.rfind("stall:", 0) == 0) {
++        const auto rest  = text.substr(6);
++        const auto colon = rest.find(':');
++        int        ms = 0, every = 0;
++        if (colon == std::string::npos || !number(rest.substr(0, colon), 1, 500, ms) ||
++            !number(rest.substr(colon + 1), 1, 3600, every))
++            return false;
++        f.inject_kind  = 2;
++        f.inject_ms    = ms;
++        f.inject_every = every;
++        return true;
++    }
++    return false;
++}
++
+ // EXPERIMENT 0005 "rt": SCHED_FIFO for one thread, with the outcome reported instead of ignored (the
+ // common set_thread_realtime_priority() drops the return code, so on a box without RLIMIT_RTPRIO it silently
+ // does nothing).
+@@ -1907,6 +1967,8 @@
+             result.pool = pool_mode::sdk;
+         } else if (token == "nokeeper") {
+             result.nokeeper = true;
++        } else if (token.rfind("inject=", 0) == 0 && parse_inject(token.substr(7), result)) {
++            // fault injection, bench only
+         } else if (token == "rt" || token == "rt=cb") {
+             result.rt_cb = true;
+         } else if (token == "rt=conv") {
+@@ -2249,6 +2311,8 @@
+     std::unique_ptr<xp::sdk_pool>    sdk_pool_;
+     std::atomic<std::uint64_t>       exp_pool_hits_{0};
+     std::atomic<std::uint64_t>       exp_pool_misses_{0};
++    std::chrono::steady_clock::time_point exp_inject_next_{};  // EXPERIMENT 0007, callback thread only
++    std::uint64_t                    exp_inject_count_         = 0; // EXPERIMENT 0007
+     std::int32_t                     exp_rt_cb_tid_            = 0; // EXPERIMENT 0005, callback thread only
+     std::int32_t                     exp_rt_conv_tid_          = 0; // EXPERIMENT 0005, send() thread only
+     std::uint32_t                    exp_rt_cb_thread_changes_ = 0; // EXPERIMENT 0005, callback thread only
+@@ -2575,6 +2639,12 @@
+                 ++exp_rt_cb_thread_changes_;
+             apply_rt("cb", exp_.rt_cb, first);
+         }
++        if (exp_.inject_kind == 2 && inject_due()) {
++            if (diag_)
++                diag_->post_text("INJECT kind=stall ms=" + std::to_string(exp_.inject_ms) +
++                                 " n=" + std::to_string(exp_inject_count_));
++            std::this_thread::sleep_for(std::chrono::milliseconds(exp_.inject_ms));
++        }
+         const auto         diag_start = diag::steady_clock::now();
+         diag::frame_sample ds;
+         ds.frame_no = ++diag_frame_no_;
+@@ -2880,6 +2950,11 @@
+                            " ring=" + (exp_.pool != xp::pool_mode::off ? std::to_string(ring) : std::string("-")) +
+                            " frame_bytes=" + std::to_string(format_strategy_->get_frame_bytes(decklink_format_desc_)) +
+                            " secondaries=" + std::to_string(secondary_port_contexts_.size()) +
++                           " inject=" + (exp_.inject_kind == 3   ? "shift:" + std::to_string(exp_.inject_every)
++                                         : exp_.inject_kind == 1 ? "drop:" + std::to_string(exp_.inject_every)
++                                         : exp_.inject_kind == 2 ? "stall:" + std::to_string(exp_.inject_ms) + ":" +
++                                                                       std::to_string(exp_.inject_every)
++                                                                 : std::string("off")) +
+                            " rt=" + (exp_.rt_cb && exp_.rt_conv ? "all" : exp_.rt_cb ? "cb" : exp_.rt_conv ? "conv" : "off") +
+                            " rtprio=" + std::to_string(exp_.rt_prio) + " rtlimit=" + xp::rtprio_limit() +
+                            " chan_policy=" + xp::thread_policy_by_name("channel-" + std::to_string(channel_index_));
+@@ -2892,6 +2967,21 @@
+             diag_->post_text(line);
+     }
+ 
++    // EXPERIMENT 0007: true once every inject_every seconds, the first time inject_every seconds after start.
++    bool inject_due()
++    {
++        const auto now = std::chrono::steady_clock::now();
++        if (exp_inject_next_ == std::chrono::steady_clock::time_point{}) {
++            exp_inject_next_ = now + std::chrono::seconds(exp_.inject_every);
++            return false;
++        }
++        if (now < exp_inject_next_)
++            return false;
++        exp_inject_next_ = now + std::chrono::seconds(exp_.inject_every);
++        ++exp_inject_count_;
++        return true;
++    }
++
+     // EXPERIMENT 0005: applies the wanted policy on the calling thread and writes one "RT thread=<cb|conv> tid=..
+     // want=<FIFO:n|OTHER> before=.. result=<ok|unchanged|failed:..>" line. A first call on a thread that is
+     // already as wanted is still logged (the arm's evidence); later "unchanged" calls are not.
+@@ -3082,6 +3172,22 @@
+ 
+     void schedule_next_audio(std::vector<std::int32_t> audio, int nb_samples)
+     {
++        // EXPERIMENT 0007 "inject=drop": lose this block on purpose, but keep the timeline moving, so the card
++        // is one frame short of audio. Checked before the keeper's correction so a pending correction is kept.
++        if (exp_.inject_kind == 1 && inject_due()) {
++            if (diag_)
++                diag_->post_text("INJECT kind=drop samples=" + std::to_string(nb_samples) +
++                                 " n=" + std::to_string(exp_inject_count_));
++            audio_scheduled_ += nb_samples;
++            return;
++        }
++        // EXPERIMENT 0007 "inject=shift": put the timeline back a block, so this block overlaps queued audio.
++        if (exp_.inject_kind == 3 && inject_due()) {
++            if (diag_)
++                diag_->post_text("INJECT kind=shift samples=" + std::to_string(nb_samples) +
++                                 " n=" + std::to_string(exp_inject_count_));
++            audio_scheduled_ -= nb_samples;
++        }
+         const auto channels   = decklink_format_desc_.audio_channels;
+         const auto correction = take_audio_correction();
+         if (correction > 0) {
