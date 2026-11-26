@@ -31,17 +31,26 @@ caspar_sdi_audio_watchdog_dry_run: false
 caspar_sdi_audio_watchdog_atem_url: "https://atemkontroll.intern.frikanalen.tv"
 caspar_sdi_audio_watchdog_atem_input_name: caspar1
 
-# Diagnostic CasparCG build: 2.5.0 + casparcg-patches/0002-decklink-diag-v250.patch
-# + 0003-decklink-audio-lead-keeper-on-diag.patch (+fk2, 25 Nov; +fk1 = diag only),
-# built with ~/Frikanalen/caspar-build/build.sh on the controller. It logs the
-# DeckLink consumer's audio lead per second and per event, to find out why the
-# card's audio lead drops a frame at a time. Takes effect at the next CasparCG
-# restart. Rollback: clear casparcg_server_deb_src (reinstalls upstream's deb
-# from casparcg_server_url, downgrades allowed), apply, restart nodm.
-casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk2_amd64.deb"
+# Frikanalen CasparCG build +fk3: 2.5.0 + casparcg-patches/0002-decklink-diag-v250.patch
+# + 0003-decklink-audio-lead-keeper-on-diag.patch (the +fk2 build, 25 Nov)
+# + exp-step1/0004-decklink-exp-step1.patch (frame conversion moved off the DeckLink
+# completion callback, "ahead") + exp-step2/0005-decklink-exp-rt.patch (SCHED_FIFO for
+# that callback, "rt"), built with ~/Frikanalen/caspar-build/build.sh on the
+# controller (FK_SUFFIX=fk3 EXTRA_PATCHES="<0004> <0005>"). Benched on tx3 on
+# 26 Nov: late callbacks ~80/h -> 0-3/h, callback p99 13 -> ~1 ms. The modes
+# are chosen by CASPAR_DECKLINK_EXP below; "rt" needs RLIMIT_RTPRIO >= 2 for
+# the casparcg user (limits.d), otherwise it logs "RT ... failed:EPERM" and runs
+# as +fk2 with "ahead". Takes effect at the next CasparCG restart.
+# Rollback: point this at the +fk2 deb (or clear it for upstream's deb from
+# casparcg_server_url; downgrades allowed), drop CASPAR_DECKLINK_EXP, apply,
+# restart nodm.
+casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk3_amd64.deb"
 casparcg_diag_log_dir: /var/log/casparcg
 casparcg_env:
   CASPAR_DECKLINK_DIAG_LOG: /var/log/casparcg/decklink-diag.log
+  # +fk3: convert ahead with a 2-frame queue (+40 ms latency), SCHED_FIFO 2 on
+  # the completion callback (same priority as upstream's channel thread).
+  CASPAR_DECKLINK_EXP: "ahead,queue=2,rt,rtprio=2"
 # The bpftrace probe's offsets are for upstream's binary (BuildID c2fb0fce...);
 # the diagnostic build logs the same and more by itself.
 caspar_sdi_audio_probe_enabled: false

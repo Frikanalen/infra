@@ -147,3 +147,21 @@ way. No new dependencies: it uses boost::filesystem (already linked) and pthread
 on Linux. Verified in a sandbox (Ubuntu 24.04, gcc 13.3, -Werror, HTML module off): `make casparcg` builds
 and links cleanly, and the diag block passes a standalone synthetic harness. Rebuild on caspar1 rather
 than copying the sandbox binary.
+
+## +fk3: 0004 (convert ahead) and 0005 (realtime callback)
+
+`exp-step1/0004-decklink-exp-step1.patch` and `exp-step2/0005-decklink-exp-rt.patch`, applied on top of 0002 and 0003, in that order. Both are inert unless `CASPAR_DECKLINK_EXP` (comma
+separated) or the first line of `/run/casparcg/decklink-exp` (wins when it exists) asks for them;
+the file is read at each consumer ADD.
+
+* `ahead`, `queue=N`: convert the frame in `send()` (consumer executor thread) and hand ready frames
+  to the completion callback through an N-deep queue, so the callback only pops and schedules.
+  Adds N frames of latency.
+* `rt`, `rtprio=N`: SCHED_FIFO N (1..49) for the completion callback thread only. Needs
+  RLIMIT_RTPRIO >= N for the casparcg user; every change or failure is logged as an `RT thread=cb`
+  line (also in the diag log). Without `rt` a leftover FIFO is reset to SCHED_OTHER.
+
+caspar1 runs `ahead,queue=2,rt,rtprio=2` (host_vars/caspar1.yml). Upstream commented out the same
+realtime call in the callback in a July 2022 WIP commit (3ec1aab27, merged with #1433 in Dec 2022),
+with no stated reason or regression; the documented starvation upstream was at SCHED_RR 99/49, not
+FIFO 2. Bench numbers: tx3, 26 Nov 2026, late callbacks ~80/h -> 0-3/h, callback p99 13 -> ~1 ms.
