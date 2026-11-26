@@ -168,6 +168,14 @@
     state: present
   when: time_sync_hwts_guarded | bool
 
+# Debian doesn't ship /usr/local/libexec (file01 lacked it, 2026-11-23).
+- name: Create the directory for the timestamping guard
+  ansible.builtin.file:
+    path: /usr/local/libexec
+    state: directory
+    mode: "0755"
+  when: time_sync_hwts_guarded | bool
+
 - name: Install the timestamping guard
   ansible.builtin.copy:
     src: chrony-hwts-guard
