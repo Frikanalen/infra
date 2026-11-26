@@ -50,6 +50,9 @@ ingest_archive_nfs_mount_options: [ro, nfsvers=4.2, actimeo=0, lookupcache=none]
 # See data/cluster.yml for what this gates and why prod leaves it false.
 k8s_monitoring_enabled: true
 kube_prometheus_stack_environment: development
+# Staging's alerts go to their own Telegram channel ("Prometheus dev/staging").
+# Every staging alert uses the quiet receiver, so this moves all of them.
+kube_prometheus_stack_telegram_quiet_chat_id: "{{ vault_alertmanager_telegram_staging_chat_id }}"
 
 # Which OpenBao prefix this cluster reads (kv/staging/...), and the name of its
 # Kubernetes auth mount there. See roles/openbao_k8s_auth and docs/openbao.md.
@@ -94,3 +97,12 @@ helm_chart_versions:
   # (roles/reloader); see docs/openbao.md.
   external_secrets: "2.13.0"
   reloader: "2.2.18"
+
+# Same as prod (see group_vars/prod.yml): cubemap runs with hostNetwork and
+# joins staging's multicast (239.1.1.50); the default 208 KB UDP receive
+# buffer overflowed (RcvbufErrors, FrikanalenPackagerCorruptInput) on
+# whichever node it landed on. Set on every kubedev node by
+# playbooks/k8s_cluster_dev.yml (--tags cubemap-sysctl).
+argocd_stream_cubemap_node_sysctls:
+  net.core.rmem_max: 33554432
+  net.core.rmem_default: 16777216

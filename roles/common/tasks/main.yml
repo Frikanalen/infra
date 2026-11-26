@@ -89,3 +89,38 @@
     force: true
     follow: false
   when: ansible_os_family == "FreeBSD"
+
+# clamav 1.4.6 (Ubuntu, via unattended-upgrades on 2026-11-23) added a daily
+# clamav-freshclam-once.timer for hosts without the freshclam daemon. Where
+# the daemon runs (file01), the one-shot run collides with it over
+# /var/log/clamav/freshclam.log, fails every night and sits in
+# NodeSystemdServiceFailed. The daemon already keeps the databases current.
+- name: Read the installed services
+  ansible.builtin.service_facts:
+  tags: [clamav]
+
+- name: Mask freshclam's one-shot timer where the freshclam daemon runs
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    masked: true
+    state: stopped
+  loop:
+    - clamav-freshclam-once.timer
+    - clamav-freshclam-once.service
+  become: true
+  when:
+    - ansible_facts.services['clamav-freshclam.service'] is defined
+    - ansible_facts.services['clamav-freshclam.service'].state == 'running'
+    - ansible_facts.services['clamav-freshclam-once.service'] is defined
+  tags: [clamav]
+
+- name: Clear the one-shot updater's old failed state
+  ansible.builtin.command: systemctl reset-failed clamav-freshclam-once.service clamav-freshclam-once.timer
+  become: true
+  changed_when: false
+  failed_when: false
+  when:
+    - ansible_facts.services['clamav-freshclam.service'] is defined
+    - ansible_facts.services['clamav-freshclam-once.service'] is defined
+  tags: [clamav]

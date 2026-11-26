@@ -98,6 +98,22 @@ groups:
       # Severity: "high" for anything prod depends on (backups); jobs whose
       # only purpose is feeding staging (staging-*) are a "warning", even
       # when they run on the prod cluster.
+      - alert: KubeJobFailed
+        # The mixin's rule for Jobs created by hand or by an operator.
+        # CronJob-owned Jobs are left to KubeCronJobLastRunFailed below.
+        expr: >-
+          kube_job_failed{job="kube-state-metrics", condition="true"} > 0
+          unless on(namespace, job_name)
+          kube_job_owner{job="kube-state-metrics", owner_kind="CronJob"}
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: A Job failed to complete.
+          description: >-
+            Job {{ $labels.namespace }}/{{ $labels.job_name }} failed. Read
+            its pod's log; delete the Job once dealt with, or this stays on.
+
       - alert: KubeCronJobLastRunFailed
         expr: >-
           (
