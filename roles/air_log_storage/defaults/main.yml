@@ -1,0 +1,24 @@
+---
+# defaults for air_log_storage role
+#
+# Storage for the air log: a week of what the web stream carried, at low
+# quality (live-stream-packager's airlog recorder writes it; Django's airlog
+# app reads it). One ZFS dataset per environment on file01's archive pool,
+# each with a quota, so a recorder or janitor gone wrong can fill its own
+# dataset but never the media archive beside it. Exported by roles/nfs_server
+# (nfs_exports in group_vars/storage.yml).
+#
+# A week at the default 360p25 400k + 64k mono is about 38 GB; the quota
+# leaves room for a day's slack. Staging's runs the same recorder off the
+# staging stream.
+air_log_datasets:
+  - name: archive/airlog
+    quota: 60G
+  - name: archive/airlog-staging
+    quota: 60G
+
+# Every client is squashed to this id (all_squash, anonuid/anongid), and the
+# recorder pod runs as it: live-stream-packager's airlog.uid. Set in
+# group_vars/storage.yml too, where nfs_exports needs it.
+air_log_uid: 2050
+air_log_gid: 2050

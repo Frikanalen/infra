@@ -1,0 +1,39 @@
+---
+- name: Read the archive pool's free space
+  ansible.builtin.command: zfs get -Hp -o value available archive
+  register: air_log_pool_available
+  changed_when: false
+  check_mode: false
+  become: true
+
+- name: Check the pool can hold every air log quota with room to spare
+  ansible.builtin.assert:
+    that:
+      - >-
+        (air_log_pool_available.stdout | int) >
+        2 * (air_log_datasets | map(attribute='quota') | map('human_to_bytes') | sum)
+    fail_msg: >-
+      The archive pool has {{ air_log_pool_available.stdout | int | human_readable }}
+      free; the air log quotas need twice their total free first.
+
+- name: Create the air log datasets
+  community.general.zfs:
+    name: "{{ item.name }}"
+    state: present
+    extra_zfs_properties:
+      quota: "{{ item.quota }}"
+      # Segments are already compressed video.
+      compression: "off"
+      atime: "off"
+  loop: "{{ air_log_datasets }}"
+  become: true
+
+- name: Hand the air log datasets to the recorder's id
+  ansible.builtin.file:
+    path: "/{{ item.name }}"
+    state: directory
+    owner: "{{ air_log_uid }}"
+    group: "{{ air_log_gid }}"
+    mode: "0755"
+  loop: "{{ air_log_datasets }}"
+  become: true
