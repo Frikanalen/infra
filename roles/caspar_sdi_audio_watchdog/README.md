@@ -94,12 +94,13 @@ consumer is re-created.
     - the multicast is at or below `_source_dead_dbfs` (-100; a dead
       producer reads -120);
     - SDI is shown silent too: the ATEM meter at its floor, or the program
-      return silent while caspar1 is on program. A silent multicast with
-      SDI audio is the multicast consumer, not this, and with no SDI
-      evidence either way nothing counts;
+      return silent while the ATEM shows caspar1 on program (past the cut's
+      grace). A silent multicast with SDI audio is the multicast consumer,
+      not this, and with no SDI evidence either way nothing counts;
     - an `ffmpeg` file layer has itself played on through
-      `_source_dead_seconds` (30) of the silence, so a programme that starts
-      after a silent gap gets its full 30 s;
+      `_source_dead_seconds` (30) of the silence, all of it with SDI shown
+      silent, so a programme that starts after a silent gap, or a cut to
+      caspar1, gets the full 30 s;
     - the file's own audio over the latest stretch the multicast has
       certainly heard (up to 20 s, ending 3 s before the current position)
       peaks above `_source_dead_file_min_db` (-60), by `ffmpeg -af
@@ -113,8 +114,10 @@ consumer is re-created.
     cooldown and backoff, the same ATEM air check, and the 60 s gap to the
     other detectors' remedies. It logs `WARN source audio dead` with the
     layer, file and position, and records a capture.
-  - Known blind spot: a layer muted on purpose with `MIXER VOLUME 0` while
-    nothing else plays would look the same. Playout doesn't do that today.
+  - A layer muted on purpose in CasparCG (`MIXER 1-<layer> VOLUME` or
+    `MIXER 1 MASTERVOLUME` at 0, e.g. B-roll under a studio mic on another
+    ATEM input) never counts. If the volume can't be read, the layer counts
+    as audible.
 - At the start of every jam and every dropout episode, it records 60 s of
   both streams' audio (stream copy) to
   `/var/lib/caspar-sdi-audio-watchdog/captures/<UTC>-<reason>/`. Next to the

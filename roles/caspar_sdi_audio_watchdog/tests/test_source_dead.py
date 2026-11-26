@@ -49,7 +49,7 @@ class Fake:
                 l["t"] += 1.0
 
 
-class Monitor(unittest.TestCase):
+class Base(unittest.TestCase):
     def setUp(self):
         self.saved = dict(w.CFG)
         w.CFG.update(SOURCE_DEAD_SECONDS=30, SOURCE_DEAD_DBFS=-100.0, SOURCE_DEAD_FILE_MIN_DB=-60.0,
@@ -75,6 +75,8 @@ class Monitor(unittest.TestCase):
     def verdicts(self, n, **kw):
         return [v for v, _, _ in self.run_ticks(n, **kw)]
 
+
+class Monitor(Base):
     def test_the_26_nov_case_acts_after_30_s(self):
         v = self.verdicts(40)
         self.assertNotIn("dead", v[:30])
@@ -226,6 +228,40 @@ class Monitor(unittest.TestCase):
             self.t += 1
         else:
             self.fail("never acted once the check finished")
+
+
+class SdiAndMute(Base):
+    def test_seconds_of_sdi_silence_after_unknown_do_not_act(self):
+        # 40 s with no SDI evidence (CasparCG off program, ATEM levels
+        # stale), then a cut: the lagging return shows silence briefly.
+        self.verdicts(40, sdi="unknown")
+        self.assertNotIn("dead", self.verdicts(5))
+        # Held silent for the full time, it acts.
+        self.assertIn("dead", self.verdicts(35))
+
+    def test_muted_layer_never_counts(self):
+        vols = {None: 1.0, 50: 0.0}
+        self.m = w.SourceDeadMonitor(self.f.layers, self.f.audio_fn, run_async=False,
+                                     volume_fn=lambda l: vols.get(l))
+        self.assertNotIn("dead", self.verdicts(60))
+        self.assertEqual(self.f.audio_calls, [])
+        vols[50] = 1.0  # unmuted: counts from then on
+        self.assertIn("dead", self.verdicts(40))
+
+    def test_master_muted_and_unknown_volume(self):
+        vols = {None: 0.0, 50: 1.0}
+        self.m = w.SourceDeadMonitor(self.f.layers, self.f.audio_fn, run_async=False,
+                                     volume_fn=lambda l: vols.get(l))
+        self.assertNotIn("dead", self.verdicts(60))
+        self.m = w.SourceDeadMonitor(self.f.layers, self.f.audio_fn, run_async=False,
+                                     volume_fn=lambda l: None)
+        self.assertIn("dead", self.verdicts(40))
+
+    def test_parse_mixer_reply(self):
+        self.assertEqual(w.parse_mixer_reply("201 MIXER OK\r\n0.5\r\n"), 0.5)
+        self.assertEqual(w.parse_mixer_reply("201 MIXER OK\r\n1 0 linear\r\n"), 1.0)
+        self.assertIsNone(w.parse_mixer_reply("401 MIXER ERROR\r\n"))
+        self.assertIsNone(w.parse_mixer_reply(""))
 
 
 class Volumedetect(unittest.TestCase):

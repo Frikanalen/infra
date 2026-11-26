@@ -62,8 +62,9 @@ Source dead: CasparCG's ffmpeg producer can lose a file's audio mid-play
 digitally silent, the card's lead stays healthy, and the jam check holds
 because the multicast is silent too. A fourth detector catches this: the
 multicast at or below SOURCE_DEAD_DBFS for SOURCE_DEAD_SECONDS, the SDI not
-shown silent too (ATEM floor, or the program return while on program), a
-file layer (ffmpeg producer, local path) that has itself played on through
+shown silent too for that whole time (ATEM floor, or the program return
+while the ATEM shows CasparCG on program), a file layer (ffmpeg producer,
+local path, not muted with MIXER VOLUME) that has itself played on through
 SOURCE_DEAD_SECONDS of the silence, and the file's own audio over the
 latest stretch the multicast has heard not silent (ffmpeg volumedetect in
 a background thread, max above SOURCE_DEAD_FILE_MIN_DB, re-checked each
@@ -356,6 +357,35 @@ def info_channel(host=None, timeout=3):
                 break
             buf += data
     return buf.decode(errors="replace")
+
+
+def mixer_volume(layer=None, host=None, timeout=3):
+    """MIXER 1-<layer> VOLUME (or 1 MASTERVOLUME for None) as a float, or
+    None if CasparCG can't be read or the answer isn't a number."""
+    cmd = f"MIXER 1-{layer} VOLUME" if layer is not None else "MIXER 1 MASTERVOLUME"
+    try:
+        with socket.create_connection((host or CFG["AMCP_HOST"], 5250), timeout) as s:
+            s.settimeout(timeout)
+            s.sendall(cmd.encode() + b"\r\n")
+            buf = b""
+            while buf.count(b"\r\n") < 2:
+                data = s.recv(4096)
+                if not data:
+                    break
+                buf += data
+    except OSError:
+        return None
+    return parse_mixer_reply(buf.decode(errors="replace"))
+
+
+def parse_mixer_reply(text):
+    lines = [l.strip() for l in text.split("\r\n") if l.strip()]
+    if not lines or not lines[0].startswith("201"):
+        return None
+    try:
+        return float(lines[1].split()[0])
+    except (IndexError, ValueError):
+        return None
 
 
 def layers_on_air(host=None, timeout=3):
@@ -893,15 +923,17 @@ class SourceDeadMonitor:
     start, seconds) returns file_audio_max_db().
     """
 
-    def __init__(self, layers_fn, audio_fn, run_async=True):
+    def __init__(self, layers_fn, audio_fn, run_async=True, volume_fn=None):
         self.layers_fn = layers_fn
         self.audio_fn = audio_fn
+        self.volume_fn = volume_fn  # layer or None (master) -> float, or None if unknown
         self.run_async = run_async
         self.lock = threading.Lock()
         self.reset()
 
     def reset(self):
         self.since = None      # first silent second of the episode
+        self.sdi_since = None  # first second of the current run of SDI shown silent
         self.last_poll = 0.0
         # layer -> {"path", "start", "last", "seen": wall time of start}
         self.playing = {}
@@ -928,6 +960,14 @@ class SourceDeadMonitor:
             else:  # new item, or it went back (re-cued, looped): start over
                 seen[l["layer"]] = {"path": l["path"], "start": l["time"], "last": l["time"],
                                     "seen": now}
+        if self.volume_fn is not None and seen:
+            # Muted on purpose (MIXER VOLUME 0, e.g. B-roll under a studio
+            # mic on another ATEM input) is silence by design, not a fault.
+            # An unreadable volume counts as audible.
+            master = self.volume_fn(None)
+            for layer, st in seen.items():
+                vol = master if master is not None and master <= 0.01 else self.volume_fn(layer)
+                st["muted"] = vol is not None and vol <= 0.01
         self.playing = seen
         with self.lock:
             for key in [k for k in self.checks if self.playing.get(k[0], {}).get("path") != k[1]]:
@@ -989,10 +1029,16 @@ class SourceDeadMonitor:
             self._poll(now)
         held = int(now - self.since) + 1
         if sdi != "silent":
+            self.sdi_since = None
             return "hold", held, {}  # no evidence SDI is silent too
+        if self.sdi_since is None:
+            self.sdi_since = now
         for layer, st in sorted(self.playing.items()):
-            # This layer must itself have played on through enough silence.
-            if (now - max(st["seen"], self.since) < CFG["SOURCE_DEAD_SECONDS"]
+            # This layer must itself have played on through enough silence,
+            # all of it with SDI shown silent, at an audible mixer volume.
+            if st.get("muted"):
+                continue
+            if (now - max(st["seen"], self.since, self.sdi_since) < CFG["SOURCE_DEAD_SECONDS"]
                     or st["last"] - st["start"] < CFG["SOURCE_DEAD_SECONDS"] / 2):
                 continue
             self._maybe_check(now, layer, st)
@@ -1162,7 +1208,8 @@ def main():
     lpolicy = RemedyPolicy(state.setdefault("lead", {"restarts": []}))
     lead = LeadMonitor()
     spolicy = RemedyPolicy(state.setdefault("source_dead", {"restarts": []}))
-    sdead = SourceDeadMonitor(lambda: layer_details(info_channel()), file_audio_max_db)
+    sdead = SourceDeadMonitor(lambda: layer_details(info_channel()), file_audio_max_db,
+                              volume_fn=mixer_volume)
     sdead_was = "hold"
     diag = DiagTail(CFG["DIAG_LOG"]) if CFG["DIAG_LOG"] else None
     lead_was = None
@@ -1293,9 +1340,9 @@ def main():
                    else "silent" if max(levels) <= CFG["ATEM_FLOOR_DBFS"] else "unknown")
         elif post_dbfs is not None:
             # The return only shows CasparCG while it's on program.
-            # Without a readable ATEM, ON_UNKNOWN_PROGRAM decides, as for jams.
-            prog = watch.decide("return", now)[0]
-            on_prog = prog == "on_air" or (prog == "unknown" and CFG["ON_UNKNOWN_PROGRAM"] == "restart")
+            # Only with the ATEM showing CasparCG on program, past the cut's
+            # grace (the return lags a cut); otherwise it proves nothing.
+            on_prog = watch.decide("return", now)[0] == "on_air" and not in_grace
             sdi = ("alive" if post_dbfs >= CFG["POST_MAX_DBFS"]
                    else "silent" if on_prog else "unknown")
         else:
