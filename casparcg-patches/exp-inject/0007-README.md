@@ -11,6 +11,7 @@ The keeper (0003) has made 0 corrections on caspar1 and on tx3, because real sli
 | Flag | Effect |
 |---|---|
 | `inject=drop:S` | Every S seconds, one audio block is not scheduled, but the audio timeline advances as if it were. The card ends up exactly one frame short of audio against video. This is the slip the keeper must repair. |
+| `inject=shift:S` | Every S seconds, one block is stamped a frame early, overlapping audio the card already holds, and CasparCG's timeline stays a frame behind afterwards. This models caspar1's slip, where the card kept one frame less audio for good. Added after tx3 showed that the Duo 2 driver fills the hole that `drop` leaves (the next block is accepted as about 1910 of 960 samples), so `drop` never leaves the card short there. |
 | `inject=stall:MS:S` | Every S seconds, one completion callback sleeps MS ms first. This reproduces the real trigger, and leaves it to the driver whether lead is lost. caspar1's slips came with 31–54 ms callback gaps. |
 
 - **Timing:** the first injection comes S seconds after the consumer starts. Use S ≥ 10, so the keeper's 1 s baseline is taken first.
@@ -25,6 +26,8 @@ The keeper (0003) has made 0 corrections on caspar1 and on tx3, because real sli
 | N-drop | `nokeeper,inject=drop:60` | A staircase: about 3820, 2860, 1900, 940, then partial accepts and a mute after about 4 minutes. That's caspar1's failure. |
 | K-stall | `inject=stall:45:60` | Shows whether a 45 ms callback alone costs a frame on this driver. If it does, the keeper corrects it. |
 | N-stall | `nokeeper,inject=stall:45:60` | Control for K-stall. |
+| K-shift | `inject=shift:60` | Lead down by about 960 at each INJECT (possibly with a partial accept), then AUDIO_LEAD_CORRECTED about 0.5 s later, and back to about 3820. |
+| N-shift | `nokeeper,inject=shift:60` | A staircase down to mute: caspar1's failure. |
 | KA-drop | `ahead,inject=drop:60` | The keeper together with ahead. |
 
 20 minutes per arm.
