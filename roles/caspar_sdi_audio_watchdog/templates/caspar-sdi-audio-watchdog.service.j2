@@ -45,6 +45,11 @@ Environment=LEAD_STARVED_SAMPLES={{ caspar_sdi_audio_watchdog_lead_starved_sampl
 Environment=LEAD_HEALTHY_SAMPLES={{ caspar_sdi_audio_watchdog_lead_healthy_samples }}
 Environment=LEAD_WINDOW_SECONDS={{ caspar_sdi_audio_watchdog_lead_window_seconds }}
 Environment=LEAD_STARVED_SECONDS={{ caspar_sdi_audio_watchdog_lead_starved_seconds }}
+Environment=SOURCE_DEAD_SECONDS={{ caspar_sdi_audio_watchdog_source_dead_seconds }}
+Environment=SOURCE_DEAD_DBFS={{ caspar_sdi_audio_watchdog_source_dead_dbfs }}
+Environment=SOURCE_DEAD_FILE_MIN_DB={{ caspar_sdi_audio_watchdog_source_dead_file_min_db }}
+Environment=SOURCE_DEAD_MEDIA_DIR={{ caspar_sdi_audio_watchdog_source_dead_media_dir }}
+Environment=SOURCE_DEAD_LAYERS={{ caspar_sdi_audio_watchdog_source_dead_layers }}
 # ATEM_TOKEN, kept out of the world-readable unit.
 EnvironmentFile=-/etc/caspar-sdi-audio-watchdog.env
 ExecStart=/usr/bin/python3 -u /usr/local/lib/caspar-sdi-audio-watchdog/caspar-sdi-audio-watchdog.py

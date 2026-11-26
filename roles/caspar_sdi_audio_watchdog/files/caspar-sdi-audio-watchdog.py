@@ -57,6 +57,17 @@ LEAD_STARVED_SECONDS starved seconds in the last LEAD_WINDOW_SECONDS it
 takes the same remedies as a jam (re-create the consumer, then restart),
 with its own cooldown and backoff. This catches the gaps without counting
 them in the decoded audio, and works whatever is on program.
+Source dead: CasparCG's ffmpeg producer can lose a file's audio mid-play
+(26 Nov 2026, a VP9/Opus .webm): the mixer, the multicast and SDI all go
+digitally silent, the card's lead stays healthy, and the jam check holds
+because the multicast is silent too. A fourth detector catches this: the
+multicast at or below SOURCE_DEAD_DBFS for SOURCE_DEAD_SECONDS, the SDI not
+alive either, a file layer (ffmpeg producer, local path) playing with its
+time advancing, and the file's own audio over that stretch not silent
+(ffmpeg volumedetect, max above SOURCE_DEAD_FILE_MIN_DB; a file without
+audio or with real silence there never acts). Then it restarts CasparCG
+(playout re-cues the item), with its own cooldown and backoff, and names
+the file in the log. SOURCE_DEAD_SECONDS 0 turns it off.
 
 Rate limits: COOLDOWN_SECONDS between remedies for new jams. A remedy that
 leaves the jam in place counts as failed; each failure in a row doubles the
@@ -133,6 +144,12 @@ CFG = {
     "LEAD_WINDOW_SECONDS": int(os.environ.get("LEAD_WINDOW_SECONDS", "60")),
     "LEAD_STARVED_SECONDS": int(os.environ.get("LEAD_STARVED_SECONDS", "30")),
     "LEAD_STALE_SECONDS": float(os.environ.get("LEAD_STALE_SECONDS", "5")),
+    "SOURCE_DEAD_SECONDS": int(os.environ.get("SOURCE_DEAD_SECONDS", "0")),
+    "SOURCE_DEAD_DBFS": float(os.environ.get("SOURCE_DEAD_DBFS", "-100")),
+    "SOURCE_DEAD_FILE_MIN_DB": float(os.environ.get("SOURCE_DEAD_FILE_MIN_DB", "-60")),
+    "SOURCE_DEAD_MEDIA_DIR": os.environ.get("SOURCE_DEAD_MEDIA_DIR", "/mnt/media"),
+    "SOURCE_DEAD_LAYERS": os.environ.get("SOURCE_DEAD_LAYERS", ""),
+    "SOURCE_DEAD_POLL_SECONDS": float(os.environ.get("SOURCE_DEAD_POLL_SECONDS", "5")),
 }
 
 RATE = 8000  # Hz, mono s16le; plenty for an RMS level
@@ -824,6 +841,111 @@ class LeadMonitor:
         return ("alive" if self.healthy else "hold"), n, self.last
 
 
+def file_audio_max_db(path, start, seconds, timeout=30):
+    """The loudest sample (dB) of path's first audio stream from start for
+    seconds, by ffmpeg volumedetect: a float, "noaudio" if the file has no
+    audio stream, or None if it couldn't be read."""
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-nostats", "-ss", f"{max(start, 0.0):.2f}",
+           "-t", f"{seconds:.2f}", "-i", path, "-map", "0:a:0?", "-af", "volumedetect",
+           "-f", "null", "-"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_volumedetect(r.stderr.decode(errors="replace"), r.returncode)
+
+
+def parse_volumedetect(stderr, returncode=0):
+    m = re.search(r"max_volume:\s*(-?[0-9.]+|-inf) dB", stderr)
+    if m:
+        return -120.0 if m.group(1) == "-inf" else float(m.group(1))
+    if returncode == 0 or "does not contain any stream" in stderr:
+        return "noaudio"  # "0:a:0?" mapped nothing
+    return None
+
+
+class SourceDeadMonitor:
+    """The 26 Nov case: a file plays on, but its audio is gone everywhere.
+
+    tick() once a second returns (verdict, held seconds, info). verdict:
+    "dead" (act), "alive" (the multicast has audio: proves a remedy worked)
+    or "hold". info: {layer, path, start, max_db} for the log.
+    layers_fn() returns layer_details() (or raises OSError); audio_fn(path,
+    start, seconds) returns file_audio_max_db().
+    """
+
+    def __init__(self, layers_fn, audio_fn):
+        self.layers_fn = layers_fn
+        self.audio_fn = audio_fn
+        self.reset()
+
+    def reset(self):
+        self.since = None      # first silent second of the episode
+        self.last_poll = 0.0
+        self.playing = {}      # layer -> (path, time at episode start, last time)
+        self.checked = None    # file-audio result for this episode
+        self.info = {}
+
+    def _poll(self, now):
+        self.last_poll = now
+        try:
+            layers = self.layers_fn()
+        except OSError:
+            return
+        wanted = {int(x) for x in CFG["SOURCE_DEAD_LAYERS"].split(",") if x.strip()}
+        seen = {}
+        for l in layers:
+            if l["producer"] != "ffmpeg" or "://" in l["path"] or l["time"] is None:
+                continue
+            if wanted and l["layer"] not in wanted:
+                continue
+            old = self.playing.get(l["layer"])
+            if old and old[0] == l["path"]:
+                seen[l["layer"]] = (old[0], old[1], l["time"])
+            else:
+                seen[l["layer"]] = (l["path"], l["time"], l["time"])
+        if seen.keys() != self.playing.keys() or any(
+                seen[k][0] != self.playing[k][0] for k in seen):
+            self.checked = None  # a different file: check its audio afresh
+        self.playing = seen
+
+    def advancing(self):
+        """(layer, path, start) of a file layer whose time has moved on."""
+        for layer, (path, start, last) in sorted(self.playing.items()):
+            if last > start:
+                return layer, path, start
+        return None
+
+    def tick(self, now, pre_dbfs, sdi_alive):
+        if CFG["SOURCE_DEAD_SECONDS"] <= 0 or pre_dbfs is None:
+            self.reset()
+            return "hold", 0, {}
+        if pre_dbfs > CFG["SOURCE_DEAD_DBFS"] or sdi_alive:
+            self.reset()
+            return ("alive" if pre_dbfs > CFG["SOURCE_DEAD_DBFS"] else "hold"), 0, {}
+        if self.since is None:
+            self.since = now
+        if now - self.last_poll >= CFG["SOURCE_DEAD_POLL_SECONDS"]:
+            self._poll(now)
+        held = int(now - self.since) + 1
+        if held < CFG["SOURCE_DEAD_SECONDS"]:
+            return "hold", held, {}
+        found = self.advancing()
+        if found is None:
+            return "hold", held, {}
+        layer, path, start = found
+        if self.checked is None:
+            full = path if os.path.isabs(path) else os.path.join(CFG["SOURCE_DEAD_MEDIA_DIR"], path)
+            seconds = min(max(self.playing[layer][2] - start, 1.0), 10.0)
+            self.checked = self.audio_fn(full, start, seconds)
+            self.info = dict(layer=layer, path=path, start=f"{start:.1f}",
+                             max_db=self.checked if self.checked is not None else "unreadable")
+            log("INFO", "source dead? checked the file's own audio", **self.info)
+        if isinstance(self.checked, float) and self.checked > CFG["SOURCE_DEAD_FILE_MIN_DB"]:
+            return "dead", held, self.info
+        return "hold", held, self.info  # silent there, no audio, or unreadable: not ours to fix
+
+
 def run_remedy(kind, why, detail, signal_, pre_dbfs, sdi_desc, policy, extra=None):
     """Run a remedy (soft, falling back to restart) and record it on policy."""
     now = time.time()
@@ -978,6 +1100,9 @@ def main():
     drops = DropoutMonitor()
     lpolicy = RemedyPolicy(state.setdefault("lead", {"restarts": []}))
     lead = LeadMonitor()
+    spolicy = RemedyPolicy(state.setdefault("source_dead", {"restarts": []}))
+    sdead = SourceDeadMonitor(lambda: layer_details(info_channel()), file_audio_max_db)
+    sdead_was = "hold"
     diag = DiagTail(CFG["DIAG_LOG"]) if CFG["DIAG_LOG"] else None
     lead_was = None
     capturer = Capturer({"multicast": CFG["PRE_URL"], "return": CFG["POST_URL"]})
@@ -1051,7 +1176,8 @@ def main():
                         hint=repr("ffmpeg consumer" if dkind == "multicast"
                                   else "upstream of both consumers, or the source"))
             elif (now - policy.state["last_remedy"] >= CFG["COOLDOWN_SECONDS"]
-                  and now - lpolicy.state["last_remedy"] >= CFG["VERIFY_SECONDS"]):
+                  and now - max(lpolicy.state["last_remedy"],
+                                spolicy.state["last_remedy"]) >= CFG["VERIFY_SECONDS"]):
                 kind, why = dpolicy.decide(now)
                 if kind is not None:
                     if dkind == "shared":
@@ -1077,7 +1203,8 @@ def main():
             capturer.capture("lead-starved", now, ba_min=lead_last[0], ba_max=lead_last[1],
                              sched_acc=lead_last[2], starved_s=starved)
         lead_was = lverdict
-        others = max(policy.state["last_remedy"], dpolicy.state["last_remedy"])
+        others = max(policy.state["last_remedy"], dpolicy.state["last_remedy"],
+                     spolicy.state["last_remedy"])
         if lverdict == "jam" and jammed_for < CFG["JAM_SECONDS"] and now - others >= CFG["VERIFY_SECONDS"]:
             kind, why = lpolicy.decide(now)
             if kind is not None:
@@ -1100,13 +1227,44 @@ def main():
                     failures=lpolicy.state["failures"])
             save_state(state)
 
+        sdi_alive = ((levels is not None and max(levels) > CFG["ATEM_ALIVE_DBFS"])
+                     or (levels is None and post_dbfs is not None and post_dbfs >= CFG["POST_MAX_DBFS"]))
+        sverdict, sheld, sinfo = sdead.tick(now, pre_dbfs, sdi_alive)
+        spolicy.saw("jam" if sverdict == "dead" else sverdict, now)
+        if sverdict == "dead" and sdead_was != "dead":
+            log("WARN", "source audio dead: a file plays on, its audio is gone everywhere",
+                held_s=sheld, layers=repr(layers_on_air()), **sinfo)
+            capturer.capture("source-dead", now, held_s=sheld, **sinfo)
+        sdead_was = sverdict
+        others = max(policy.state["last_remedy"], dpolicy.state["last_remedy"],
+                     lpolicy.state["last_remedy"])
+        if sverdict == "dead" and now - others >= CFG["VERIFY_SECONDS"]:
+            kind, why = spolicy.decide(now)
+            if kind is not None:
+                air_verdict, detail = watch.decide("atem", now)
+                if air_verdict == "inhibit":
+                    if now - last_inhibit_log >= 300:
+                        last_inhibit_log = now
+                        log("WARN", "source audio dead; remedy inhibited", reason=repr(detail), **sinfo)
+                else:
+                    # Re-creating the DeckLink consumer can't help here: the
+                    # audio is gone before the mixer. Restart; playout re-cues.
+                    run_remedy("restart", f"source audio dead ({why})", detail, "source", pre_dbfs,
+                               sdi_desc, spolicy, extra=dict(held_s=sheld, **sinfo))
+                    sdead.reset()
+            elif why in ("backoff", "limit") and now - last_hold_log >= 300:
+                last_hold_log = now
+                log("CRIT", "source audio dead; not acting", why=why,
+                    failures=spolicy.state["failures"], **sinfo)
+            save_state(state)
+
         if jammed_for < CFG["JAM_SECONDS"]:
             continue
 
         kind, why = policy.decide(now)
-        if kind is not None and now - max(dpolicy.state["last_remedy"],
-                                          lpolicy.state["last_remedy"]) < CFG["VERIFY_SECONDS"]:
-            kind, why = None, "settling"  # a dropout or lead remedy just ran
+        if kind is not None and now - max(dpolicy.state["last_remedy"], lpolicy.state["last_remedy"],
+                                          spolicy.state["last_remedy"]) < CFG["VERIFY_SECONDS"]:
+            kind, why = None, "settling"  # a dropout, lead or source remedy just ran
         save_state(state)
         if kind is None:
             if why == "limit" and now - last_hold_log >= 300:

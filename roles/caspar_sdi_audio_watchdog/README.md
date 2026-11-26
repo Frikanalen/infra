@@ -84,6 +84,27 @@ consumer is re-created.
     the textfile gauges add `caspar_decklink_buffered_audio_samples`,
     `caspar_decklink_sched_accept_events` and
     `caspar_decklink_lead_starved_seconds`.
+- Source dead: it also catches a file whose audio is lost inside CasparCG.
+  - Why: on 26 Nov 2026 the ffmpeg producer lost the audio of a VP9/Opus
+    `.webm` about 18 min in, after logging `Latency: 7`. The multicast, SDI
+    and the ATEM all went to digital zero for 10 minutes while the card's
+    lead stayed healthy. The jam check holds when the multicast is silent,
+    so nothing acted until a manual restart. The file itself decodes fine.
+  - It acts when, for `_source_dead_seconds` (30): the multicast is at or
+    below `_source_dead_dbfs` (-100; a dead producer reads -120), the SDI
+    isn't alive either (a silent multicast with SDI audio is the multicast
+    consumer, not this), an `ffmpeg` file layer is playing with its time
+    advancing, and the file's own audio over that stretch peaks above
+    `_source_dead_file_min_db` (-60, by `ffmpeg -af volumedetect` on the
+    file under `_source_dead_media_dir`). Real silence in the file, a file
+    without audio, or an unreadable file never acts.
+  - Remedy: restart CasparCG (re-creating the DeckLink consumer can't help,
+    the audio is gone before the mixer); playout re-cues the item. Own
+    cooldown and backoff, the same ATEM air check, and the 60 s gap to the
+    other detectors' remedies. It logs `WARN source audio dead` with the
+    layer, file and position, and records a capture.
+  - Known blind spot: a layer muted on purpose with `MIXER VOLUME 0` while
+    nothing else plays would look the same. Playout doesn't do that today.
 - At the start of every jam and every dropout episode, it records 60 s of
   both streams' audio (stream copy) to
   `/var/lib/caspar-sdi-audio-watchdog/captures/<UTC>-<reason>/`. Next to the
