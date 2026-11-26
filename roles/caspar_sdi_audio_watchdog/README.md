@@ -90,21 +90,34 @@ consumer is re-created.
     and the ATEM all went to digital zero for 10 minutes while the card's
     lead stayed healthy. The jam check holds when the multicast is silent,
     so nothing acted until a manual restart. The file itself decodes fine.
-  - It acts when, for `_source_dead_seconds` (30): the multicast is at or
-    below `_source_dead_dbfs` (-100; a dead producer reads -120), the SDI
-    isn't alive either (a silent multicast with SDI audio is the multicast
-    consumer, not this), an `ffmpeg` file layer is playing with its time
-    advancing, and the file's own audio over that stretch peaks above
-    `_source_dead_file_min_db` (-60, by `ffmpeg -af volumedetect` on the
-    file under `_source_dead_media_dir`). Real silence in the file, a file
-    without audio, or an unreadable file never acts.
+  - It acts when all of these hold:
+    - the multicast is at or below `_source_dead_dbfs` (-100; a dead
+      producer reads -120);
+    - SDI is shown silent too: the ATEM meter at its floor, or the program
+      return silent while the ATEM shows caspar1 on program (past the cut's
+      grace). A silent multicast with SDI audio is the multicast consumer,
+      not this, and with no SDI evidence either way nothing counts;
+    - an `ffmpeg` file layer has itself played on through
+      `_source_dead_seconds` (30) of the silence, all of it with SDI shown
+      silent, so a programme that starts after a silent gap, or a cut to
+      caspar1, gets the full 30 s;
+    - the file's own audio over the latest stretch the multicast has
+      certainly heard (up to 20 s, ending 3 s before the current position)
+      peaks above `_source_dead_file_min_db` (-60), by `ffmpeg -af
+      volumedetect` on the file under `_source_dead_media_dir`. Every file
+      layer is checked on its own, in a background thread (15 s timeout),
+      and a silent or unreadable result is checked again each minute over
+      the newer stretch. Real silence, a file without audio, or an
+      unreadable file never acts.
   - Remedy: restart CasparCG (re-creating the DeckLink consumer can't help,
     the audio is gone before the mixer); playout re-cues the item. Own
     cooldown and backoff, the same ATEM air check, and the 60 s gap to the
     other detectors' remedies. It logs `WARN source audio dead` with the
     layer, file and position, and records a capture.
-  - Known blind spot: a layer muted on purpose with `MIXER VOLUME 0` while
-    nothing else plays would look the same. Playout doesn't do that today.
+  - A layer muted on purpose in CasparCG (`MIXER 1-<layer> VOLUME` or
+    `MIXER 1 MASTERVOLUME` at 0, e.g. B-roll under a studio mic on another
+    ATEM input) never counts. If the volume can't be read, the layer counts
+    as audible.
 - At the start of every jam and every dropout episode, it records 60 s of
   both streams' audio (stream copy) to
   `/var/lib/caspar-sdi-audio-watchdog/captures/<UTC>-<reason>/`. Next to the
