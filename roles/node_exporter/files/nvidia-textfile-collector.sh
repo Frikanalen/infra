@@ -40,8 +40,21 @@ FIELDS=(
 )
 
 up=0
-help="$(timeout 20 nvidia-smi --help-query-gpu 2>/dev/null)"
+# The supported field list only changes with the driver, so it is cached in
+# /run (cleared at boot) and rebuilt when the driver version changes. That
+# halves the nvidia-smi runs: each one re-initialises NVML, which briefly
+# delays CasparCG's GPU work on caspar1.
+CACHE="/run/nvidia-textfile-collector.fields"
+driver_id="$(sed -n 1p /proc/driver/nvidia/version 2>/dev/null)"
 names=() ; specs=()
+if [ -n "${driver_id}" ] && [ -r "${CACHE}" ] && [ "$(sed -n 1p "${CACHE}")" = "${driver_id}" ]; then
+  help="$(sed 1d "${CACHE}")"
+else
+  help="$(timeout 20 nvidia-smi --help-query-gpu 2>/dev/null)"
+  if [ -n "${help}" ] && [ -n "${driver_id}" ]; then
+    printf '%s\n%s\n' "${driver_id}" "${help}" > "${CACHE}.tmp" && mv "${CACHE}.tmp" "${CACHE}"
+  fi
+fi
 for spec in "${FIELDS[@]}"; do
   f="${spec%%|*}"
   if grep -qF "\"${f}\"" <<<"${help}"; then names+=("${f}"); specs+=("${spec}"); fi

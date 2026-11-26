@@ -64,9 +64,11 @@ node_exporter_zfs_timer_name: zfs-textfile-collector
 node_exporter_zfs_interval: 60s
 
 # NVIDIA GPU metrics from nvidia-smi, on hosts that have it (caspar1). See
-# files/nvidia-textfile-collector.sh. Every 15 s: a GPU fault on the air
-# machine is worth seeing at the resolution of the other node metrics.
+# files/nvidia-textfile-collector.sh. Every 60 s, matched to the scrape
+# interval: each nvidia-smi run re-initialises NVML and briefly delays
+# CasparCG's GPU path on caspar1 (stalls measured 1-2 s after each run,
+# 2026-11-26), so faster sampling costs air quality for samples nothing reads.
 node_exporter_nvidia_collector: true
 node_exporter_nvidia_script_path: /usr/local/bin/nvidia-textfile-collector
 node_exporter_nvidia_timer_name: nvidia-textfile-collector
-node_exporter_nvidia_interval: 15s
+node_exporter_nvidia_interval: 60s
