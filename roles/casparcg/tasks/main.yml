@@ -151,6 +151,30 @@
   changed_when: false
   when: casparcg_coredump
 
+# nodm's PAM session (/etc/pam.d/nodm) runs pam_limits, so this reaches the
+# server at its next start. CasparCG ignores a refused realtime call, so
+# check with `chrt -p` on its threads after a restart.
+- name: Allow the casparcg user realtime priority
+  ansible.builtin.copy:
+    dest: /etc/security/limits.d/casparcg.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by Ansible (roles/casparcg, casparcg_rtprio).
+      {{ casparcg_user }} - rtprio {{ casparcg_rtprio }}
+  become: true
+  when: casparcg_rtprio | int > 0
+  tags: [casparcg_rtprio]
+
+- name: Remove the casparcg realtime priority entry
+  ansible.builtin.file:
+    path: /etc/security/limits.d/casparcg.conf
+    state: absent
+  become: true
+  when: casparcg_rtprio | int == 0
+  tags: [casparcg_rtprio]
+
 - name: Configure nodm
   ansible.builtin.template:
     src: nodm.conf.j2
