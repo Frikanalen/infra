@@ -1,0 +1,152 @@
+--- a/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-26 10:31:16.916359048 +0000
++++ b/src/modules/decklink/consumer/decklink_consumer.cpp	2026-11-26 10:35:42.541220331 +0000
+@@ -1705,6 +1705,15 @@
+  * Every change, or failure, is logged as an "RT ..." diag line. TBB worker threads (v210 chunks,
+  * secondary ports) stay SCHED_OTHER.
+  *
++ * EXPERIMENT 0006 (step 3), zero-copy:
++ *   zerocopy | zc  hand the driver the mixer's read-back buffer itself instead of copying it into a new
++ *                 buffer. The decklink_frame keeps the const_frame alive until the driver releases it, and
++ *                 the buffer then goes back to the mixer's pool. Only when the copy would be a plain copy:
++ *                 BGRA strategy, progressive, same format as the channel, no region/offset, not key-only,
++ *                 a full-size and 16-byte aligned image. Any other frame takes the normal copy (counted as
++ *                 a miss). Overrides "pool": pool_hit/pool_miss in the diag then count zero-copy frames
++ *                 and fallbacks.
++ *
+  * The first line of the file CASPAR_DECKLINK_EXP_FILE (default /run/casparcg/decklink-exp), when the file
+  * exists, overrides CASPAR_DECKLINK_EXP; an empty first line means all experiments off. The file is read
+  * when the consumer is created (ADD), so a bench can switch modes with REMOVE/ADD without a restart.
+@@ -1741,6 +1750,7 @@
+     bool        rt_cb    = false; // EXPERIMENT 0005: SCHED_FIFO for the completion callback thread
+     bool        rt_conv  = false; // EXPERIMENT 0005: SCHED_FIFO for the send()/conversion thread
+     int         rt_prio  = 10;    // EXPERIMENT 0005: SCHED_FIFO priority (1..49)
++    bool        zerocopy = false; // EXPERIMENT 0006: schedule the mixer's read-back buffer itself
+     std::string raw;          // flag string as given (file line or CASPAR_DECKLINK_EXP)
+     std::string source;       // "env" or "file:<path>"
+     std::string unknown;      // tokens that were not understood (ignored)
+@@ -1907,6 +1917,8 @@
+             result.pool = pool_mode::sdk;
+         } else if (token == "nokeeper") {
+             result.nokeeper = true;
++        } else if (token == "zerocopy" || token == "zc") {
++            result.zerocopy = true;
+         } else if (token == "rt" || token == "rt=cb") {
+             result.rt_cb = true;
+         } else if (token == "rt=conv") {
+@@ -2249,6 +2261,9 @@
+     std::unique_ptr<xp::sdk_pool>    sdk_pool_;
+     std::atomic<std::uint64_t>       exp_pool_hits_{0};
+     std::atomic<std::uint64_t>       exp_pool_misses_{0};
++    std::atomic<bool>                exp_zc_refusal_logged_{false}; // EXPERIMENT 0006
++    const std::uint8_t*              exp_zc_last_ptr_ = nullptr;    // EXPERIMENT 0006, convert thread only
++    std::atomic<std::uint64_t>       exp_zc_distinct_{0};           // EXPERIMENT 0006: pointer changes
+     std::int32_t                     exp_rt_cb_tid_            = 0; // EXPERIMENT 0005, callback thread only
+     std::int32_t                     exp_rt_conv_tid_          = 0; // EXPERIMENT 0005, send() thread only
+     std::uint32_t                    exp_rt_cb_thread_changes_ = 0; // EXPERIMENT 0005, callback thread only
+@@ -2453,7 +2468,7 @@
+             diag_->post_text("STOP frames=" + std::to_string(diag_frame_no_.load()) + " video_scheduled=" +
+                              std::to_string(video_scheduled_) + " audio_scheduled=" + std::to_string(audio_scheduled_) +
+                              " pool_hits=" + std::to_string(exp_pool_hits_.load()) +
+-                             " pool_misses=" + std::to_string(exp_pool_misses_.load()) +
++                             " pool_misses=" + std::to_string(exp_pool_misses_.load()) + " zc_ptr_changes=" + std::to_string(exp_zc_distinct_.load()) +
+                              " sdk_ref_busy=" + std::to_string(sdk_pool_ ? sdk_pool_->ref_busy() : 0));
+         }
+     }
+@@ -2837,6 +2852,10 @@
+         const auto ring =
+             static_cast<std::size_t>(buffer_size_) + static_cast<std::size_t>(exp_.ahead ? exp_.queue : 1) + 4;
+ 
++        if (exp_.zerocopy && exp_.pool != xp::pool_mode::off) {
++            note     = "pool ignored with zerocopy";
++            exp_.pool = xp::pool_mode::off;
++        }
+         if (exp_.pool == xp::pool_mode::sdk) {
+             if (config_.hdr) {
+                 note = "pool=sdk is not supported with HDR output";
+@@ -2880,6 +2899,7 @@
+                            " ring=" + (exp_.pool != xp::pool_mode::off ? std::to_string(ring) : std::string("-")) +
+                            " frame_bytes=" + std::to_string(format_strategy_->get_frame_bytes(decklink_format_desc_)) +
+                            " secondaries=" + std::to_string(secondary_port_contexts_.size()) +
++                           " zerocopy=" + (exp_.zerocopy ? "1" : "0") + zerocopy_eligibility() +
+                            " rt=" + (exp_.rt_cb && exp_.rt_conv ? "all" : exp_.rt_cb ? "cb" : exp_.rt_conv ? "conv" : "off") +
+                            " rtprio=" + std::to_string(exp_.rt_prio) + " rtlimit=" + xp::rtprio_limit() +
+                            " chan_policy=" + xp::thread_policy_by_name("channel-" + std::to_string(channel_index_));
+@@ -2914,6 +2934,48 @@
+             diag_->post_text(line);
+     }
+ 
++    // EXPERIMENT 0006: why this frame can't be scheduled zero-copy, or nullptr if it can.
++    const char* zerocopy_refusal(const core::const_frame& frame, BMDFieldDominance dominance) const
++    {
++        if (!frame)
++            return "empty-frame";
++        if (format_strategy_->get_pixel_format() != bmdFormat8BitBGRA)
++            return "not-bgra";
++        if (dominance != bmdProgressiveFrame)
++            return "interlaced";
++        const auto& c = config_.primary;
++        if (c.key_only)
++            return "key-only";
++        if (channel_format_desc_.format != decklink_format_desc_.format || c.src_x != 0 || c.src_y != 0 ||
++            c.region_w != 0 || c.region_h != 0 || c.dest_x != 0 || c.dest_y != 0)
++            return "region-or-format";
++        const auto& image = frame.image_data(0);
++        if (image.data() == nullptr ||
++            image.size() < static_cast<std::size_t>(decklink_format_desc_.width) * decklink_format_desc_.height * 4)
++            return "short-image";
++        if ((reinterpret_cast<std::uintptr_t>(image.data()) & 15) != 0)
++            return "unaligned";
++        return nullptr;
++    }
++
++    // EXPERIMENT 0006: static part of the eligibility, for the EXP line.
++    std::string zerocopy_eligibility() const
++    {
++        if (!exp_.zerocopy)
++            return "";
++        const auto& c = config_.primary;
++        if (format_strategy_->get_pixel_format() != bmdFormat8BitBGRA)
++            return " zc_static=not-bgra";
++        if (mode_->GetFieldDominance() != bmdProgressiveFrame)
++            return " zc_static=interlaced";
++        if (c.key_only)
++            return " zc_static=key-only";
++        if (channel_format_desc_.format != decklink_format_desc_.format || c.src_x != 0 || c.src_y != 0 ||
++            c.region_w != 0 || c.region_h != 0 || c.dest_x != 0 || c.dest_y != 0)
++            return " zc_static=region-or-format";
++        return " zc_static=ok";
++    }
++
+     // EXPERIMENT 0004: converts one primary port frame (both fields when interlaced), timed. Without "pool" this
+     // is exactly the original convert_frame_for_port call.
+     xp::converted convert_primary(const core::const_frame& frame1, const core::const_frame& frame2)
+@@ -2922,6 +2984,29 @@
+         const auto    start     = diag::steady_clock::now();
+         const auto    dominance = mode_->GetFieldDominance();
+ 
++        // EXPERIMENT 0006 "zerocopy": the read-back buffer itself. The deleter keeps only the image array (which
++        // holds the pooled GL buffer), not the whole frame, so the mixer's target texture is freed as usual.
++        if (exp_.zerocopy) {
++            if (const char* why = zerocopy_refusal(frame1, dominance); why == nullptr) {
++                array<const std::uint8_t> image = frame1.image_data(0);
++                auto* bytes                     = const_cast<std::uint8_t*>(image.data());
++                if (bytes != exp_zc_last_ptr_) {
++                    exp_zc_last_ptr_ = bytes;
++                    exp_zc_distinct_.fetch_add(1, std::memory_order_relaxed);
++                }
++                out.image_data = std::shared_ptr<void>(bytes, [keep = std::move(image)](void*) {});
++                out.alloc_us      = 0;
++                out.convert_us    = diag::us_between(start, diag::steady_clock::now());
++                out.pool_hit      = 1;
++                exp_pool_hits_.fetch_add(1, std::memory_order_relaxed);
++                return out;
++            } else {
++                out.pool_miss = 1; // counted in the common tail below
++                if (!exp_zc_refusal_logged_.exchange(true) && diag_)
++                    diag_->post_text(std::string("ZEROCOPY_FALLBACK reason=") + why);
++            }
++        }
++
+         if (sdk_pool_) {
+             const int slot = sdk_pool_->acquire();
+             out.alloc_us   = diag::us_between(start, diag::steady_clock::now());
