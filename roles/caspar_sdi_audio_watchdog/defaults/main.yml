@@ -123,6 +123,26 @@ caspar_sdi_audio_watchdog_lead_healthy_samples: 1920
 caspar_sdi_audio_watchdog_lead_window_seconds: 60
 caspar_sdi_audio_watchdog_lead_starved_seconds: 30
 
+# Source-dead detector (26 Nov 2026: CasparCG's ffmpeg producer lost the
+# audio of a VP9/Opus .webm mid-play; multicast, SDI and the ATEM all went
+# silent for 10 minutes while the card's lead stayed healthy, so neither the
+# jam nor the lead detector could see it). Acts when, for
+# source_dead_seconds: the multicast is at or below source_dead_dbfs (a dead
+# producer gives exact digital zero, -120 here; the quietest programme is far
+# above -100), the SDI isn't alive either, an ffmpeg file layer is playing
+# with its time advancing, and the file's own audio over that stretch peaks
+# above source_dead_file_min_db (ffmpeg volumedetect on the file under
+# source_dead_media_dir; a file without audio, real silence or an unreadable
+# file never acts). Remedy: restart CasparCG (re-creating the DeckLink
+# consumer can't help), playout re-cues the item. Own cooldown/backoff; the
+# file is named in the log. source_dead_layers: comma-separated layers to
+# watch (empty: any). 0 seconds: off.
+caspar_sdi_audio_watchdog_source_dead_seconds: 30
+caspar_sdi_audio_watchdog_source_dead_dbfs: -100
+caspar_sdi_audio_watchdog_source_dead_file_min_db: -60
+caspar_sdi_audio_watchdog_source_dead_media_dir: "{{ casparcg_media_path | default('/mnt/media/') }}"
+caspar_sdi_audio_watchdog_source_dead_layers: ""
+
 # true: only log what it would do. host_vars set false where it should act.
 caspar_sdi_audio_watchdog_dry_run: true
 
