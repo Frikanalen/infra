@@ -10,8 +10,25 @@
     update_cache: true
     cache_valid_time: 3600
 
-- name: Build the DeckLink profile helper
+# The SDK zip is large: copy and unpack it only when the helper needs (re)building.
+- name: Install the profile helper source
+  ansible.builtin.copy:
+    src: decklink-set-profile.cpp
+    dest: /usr/local/src/decklink-set-profile.cpp
+    mode: "0644"
+  register: decklink_test_pattern_helper_src
   when: decklink_test_pattern_profile | length > 0
+
+- name: Check for a built profile helper
+  ansible.builtin.stat:
+    path: /usr/local/bin/decklink-set-profile
+  register: decklink_test_pattern_helper_bin
+  when: decklink_test_pattern_profile | length > 0
+
+- name: Build the DeckLink profile helper
+  when:
+    - decklink_test_pattern_profile | length > 0
+    - decklink_test_pattern_helper_src is changed or not decklink_test_pattern_helper_bin.stat.exists
   block:
     - name: Install the compiler and unzip
       ansible.builtin.apt:
@@ -37,18 +54,6 @@
         include: ["Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include/*"]
         creates: "{{ decklink_test_pattern_sdk_dir }}/Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include/DeckLinkAPI.h"
 
-    - name: Install the profile helper source
-      ansible.builtin.copy:
-        src: decklink-set-profile.cpp
-        dest: /usr/local/src/decklink-set-profile.cpp
-        mode: "0644"
-      register: decklink_test_pattern_helper_src
-
-    - name: Check for a built profile helper
-      ansible.builtin.stat:
-        path: /usr/local/bin/decklink-set-profile
-      register: decklink_test_pattern_helper_bin
-
     - name: Compile the profile helper
       ansible.builtin.command:
         argv:
@@ -64,7 +69,6 @@
           - -lpthread
       vars:
         sdk_include: "{{ decklink_test_pattern_sdk_dir }}/Blackmagic DeckLink SDK {{ decklink_test_pattern_sdk_version }}/Linux/include"
-      when: decklink_test_pattern_helper_src is changed or not decklink_test_pattern_helper_bin.stat.exists
       changed_when: true
       notify: Restart decklink-test-pattern
 
