@@ -15,6 +15,7 @@ This role installs CasparCG Server with its CEF dependencies, sets up a dedicate
 | `casparcg_config_src`    | `casparcg.config`                      | Role-file name of config                                                      |
 | `casparcg_config_dest`   | `{{ casparcg_home }}/casparcg.config`  | Destination path in user home                                                 |
 | `casparcg_mallinfo_clamp` | `false` | Preload `files/mallinfo_clamp.c` so CEF can't crash CasparCG once its heap passes 2 GiB |
+| `casparcg_rtprio` | `20` | RLIMIT_RTPRIO for the casparcg user (`/etc/security/limits.d/casparcg.conf`, applied by nodm's pam_limits at the next start); `0` removes it |
 | `casparcg_coredump` | `true` | Keep every CasparCG crash dump with systemd-coredump (`coredumpctl`) instead of apport |
 | `nodm_xsession`          | `/usr/local/bin/casparcg_xsession.sh`  | nodm XSession script                                                          |
 | `nodm_enabled`           | `true`                                 | Enable nodm                                                                   |

@@ -35,3 +35,6 @@
     - name: Install CasparCG
       ansible.builtin.include_role:
         name: casparcg
+      # Tags on a dynamic include only pick the include itself; the role's
+      # tagged tasks are still filtered by --tags.
+      tags: [casparcg_rtprio]

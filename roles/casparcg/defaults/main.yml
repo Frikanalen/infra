@@ -31,6 +31,12 @@ nodm_enabled: true
 # can't crash the server once the heap passes 2 GiB. Takes effect the next
 # time CasparCG starts (nodm doesn't restart it on a config change).
 casparcg_mallinfo_clamp: false
+# Highest realtime (SCHED_FIFO/RR) priority the casparcg user may take, as
+# RLIMIT_RTPRIO via /etc/security/limits.d (nodm's PAM session runs
+# pam_limits). Without it the server's realtime calls (mixer thread, and the
+# DeckLink completion callback in our patched builds) fail silently and stay
+# SCHED_OTHER. 0 removes the entry. Takes effect at the next CasparCG start.
+casparcg_rtprio: 20
 # Keep CasparCG crash dumps with systemd-coredump (coredumpctl) instead of apport.
 casparcg_coredump: true
 # Let CEF (HTML producer) render on the GPU (<html><enable-gpu>). caspar1 has
