@@ -1,0 +1,107 @@
+From be8a4f80b97222d99b4262c9230ca8a1db28973a Mon Sep 17 00:00:00 2001
+From: Gyan Doshi <ffmpeg@gyani.pro>
+Date: Fri, 15 Dec 2023 12:16:39 +0530
+Subject: [PATCH] swr/swresample: avoid reapplication of firstpts
+
+During a resampling operation where
+
+1) user has specified first_pts
+2) SWR_FLAG_RESAMPLE is not set initially (directly or otherwise)
+3) first_pts has been fulfilled (always using hard compensation)
+
+then upon first encountering a delay where a soft compensation is
+required, swr_set_compensation will lead to another init of swr which
+will reset outpts to the specified firstpts thus leading to an output
+frame having its pts = firstpts. When the next input frame is received,
+swr will see a large delay and inject silence from firstpts to the
+current frame's pts. This can lead to severe desync and in worst case,
+loss of audio playback.
+
+Parameter firstpts initialized to AV_NOPTS_VALUE in swr_alloc and then
+checked in swr_init to avoid resetting outpts, thus avoiding reapplication
+of firstpts.
+
+Fixes #4131.
+---
+ libswresample/options.c           |  1 +
+ libswresample/swresample.c        |  5 +++--
+ tests/fate/libswresample.mak      |  3 +++
+ tests/ref/fate/swr-async-firstpts | 24 ++++++++++++++++++++++++
+ 4 files changed, 31 insertions(+), 2 deletions(-)
+ create mode 100644 tests/ref/fate/swr-async-firstpts
+
+diff --git a/libswresample/options.c b/libswresample/options.c
+index fb109fdbab..d8cf85c053 100644
+--- a/libswresample/options.c
++++ b/libswresample/options.c
+@@ -171,6 +171,7 @@ av_cold struct SwrContext *swr_alloc(void){
+     if(s){
+         s->av_class= &av_class;
+         av_opt_set_defaults(s);
++        s->firstpts = AV_NOPTS_VALUE;
+     }
+     return s;
+ }
+diff --git a/libswresample/swresample.c b/libswresample/swresample.c
+index f2a9b40474..1cf83a803f 100644
+--- a/libswresample/swresample.c
++++ b/libswresample/swresample.c
+@@ -375,8 +375,9 @@ av_cold int swr_init(struct SwrContext *s){
+     if (s->firstpts_in_samples != AV_NOPTS_VALUE) {
+         if (!s->async && s->min_compensation >= FLT_MAX/2)
+             s->async = 1;
+-        s->firstpts =
+-        s->outpts   = s->firstpts_in_samples * s->out_sample_rate;
++        if (s->firstpts == AV_NOPTS_VALUE)
++            s->firstpts =
++            s->outpts   = s->firstpts_in_samples * s->out_sample_rate;
+     } else
+         s->firstpts = AV_NOPTS_VALUE;
+ 
+diff --git a/tests/fate/libswresample.mak b/tests/fate/libswresample.mak
+index f2108016af..0d29f76024 100644
+--- a/tests/fate/libswresample.mak
++++ b/tests/fate/libswresample.mak
+@@ -1082,6 +1082,9 @@ $(call CROSS_TEST,$(SAMPLERATES_LITE),ARESAMPLE_EXACT_LIN_ASYNC,s32p,s32le,s16)
+ $(call CROSS_TEST,$(SAMPLERATES_LITE),ARESAMPLE_EXACT_LIN_ASYNC,fltp,f32le,s16)
+ $(call CROSS_TEST,$(SAMPLERATES_LITE),ARESAMPLE_EXACT_LIN_ASYNC,dblp,f64le,s16)
+ 
++FATE_SWR_RESAMPLE-$(call FILTERDEMDEC, ARESAMPLE ASETPTS ATRIM SINE, , PCM_S16LE, LAVFI_INDEV) += fate-swr-async-firstpts
++fate-swr-async-firstpts: CMD = framecrc -auto_conversion_filters -copyts -f lavfi -i "sine=r=1000:samples_per_frame=100,asetpts=PTS+S+S*floor(ld(1)/4)+st(1\,ld(1)+1)*0,atrim=end=2" -filter:a aresample=async=300:first_pts=0
++
+ FATE_SWR_RESAMPLE-$(call FILTERDEMDECENCMUX, ARESAMPLE, WAV, PCM_S16LE, PCM_S16LE, WAV) += $(FATE_SWR_RESAMPLE)
+ fate-swr-resample: $(FATE_SWR_RESAMPLE-yes)
+ FATE_SWR += $(FATE_SWR_RESAMPLE-yes)
+diff --git a/tests/ref/fate/swr-async-firstpts b/tests/ref/fate/swr-async-firstpts
+new file mode 100644
+index 0000000000..3f6b290bab
+--- /dev/null
++++ b/tests/ref/fate/swr-async-firstpts
+@@ -0,0 +1,24 @@
++#tb 0: 1/1000
++#media_type 0: audio
++#codec_id 0: pcm_s16le
++#sample_rate 0: 1000
++#channel_layout_name 0: mono
++0,          0,          0,      132,      264, 0xc2981f45
++0,        132,        132,       68,      136, 0xe78e468d
++0,        200,        200,      100,      200, 0xd55c67d0
++0,        300,        300,      100,      200, 0xd55c67d0
++0,        400,        400,      100,      200, 0xd55c67d0
++0,        500,        500,       93,      186, 0x85ca5db4
++0,        593,        593,      110,      220, 0xa2655d0b
++0,        703,        703,      108,      216, 0x95cb6f01
++0,        811,        811,      108,      216, 0xf35668b8
++0,        919,        919,      149,      298, 0xc273245f
++0,       1068,       1068,      136,      272, 0xedeb6e0a
++0,       1204,       1204,       98,      196, 0xea18668e
++0,       1302,       1302,       98,      196, 0x412861e7
++0,       1400,       1400,       98,      196, 0x7ec361b2
++0,       1498,       1498,      110,      220, 0xf3ae6a6a
++0,       1608,       1608,      108,      216, 0xab2f6c93
++0,       1716,       1716,      107,      214, 0x50de6eb9
++0,       1823,       1823,      106,      212, 0x67b8656d
++0,       1929,       1929,       18,       36, 0x2b7911c6
+-- 
+2.53.0
+

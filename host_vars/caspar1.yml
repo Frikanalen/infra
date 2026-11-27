@@ -45,6 +45,18 @@ caspar_sdi_audio_watchdog_atem_input_name: caspar1
 # casparcg_server_url; downgrades allowed), drop CASPAR_DECKLINK_EXP, apply,
 # restart nodm.
 casparcg_server_deb_src: "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/dist/casparcg-server-2.5_2.5.0~stable-noble1+fk3_amd64.deb"
+# libswresample4 with FFmpeg be8a4f80b9 ("swr/swresample: avoid reapplication
+# of firstpts", trac #4131, fixed in FFmpeg 7.0; noble's 6.1.1 lacks it).
+# Without it, CasparCG's audio chain (aresample async=1000 + first_pts) resets
+# its clock at the first soft compensation and airs about as long again of
+# silence: video 628845 lost audio at 1060.7 s every time (26 Nov 2026).
+# Benched on tx3 27 Nov: 628845 from 0 and from SEEK 950 clean; AAC, PCM and
+# MP2 files normal. Built from Ubuntu's source package with
+# casparcg-patches/libswresample (build-swr.sh). Takes effect at the next
+# CasparCG restart. Rollback: empty the list, `apt-mark unhold libswresample4`,
+# `apt install --allow-downgrades libswresample4=7:6.1.1-3ubuntu5`, restart nodm.
+casparcg_patched_debs:
+  - "{{ lookup('env', 'HOME') }}/Frikanalen/caspar-build/swr/out/libswresample4_6.1.1-3ubuntu5+fk1_amd64.deb"
 casparcg_diag_log_dir: /var/log/casparcg
 casparcg_env:
   CASPAR_DECKLINK_DIAG_LOG: /var/log/casparcg/decklink-diag.log

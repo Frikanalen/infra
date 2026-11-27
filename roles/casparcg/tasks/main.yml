@@ -19,7 +19,7 @@
     state: directory
     mode: "0755"
   become: true
-  when: casparcg_server_deb_src | length > 0
+  when: casparcg_server_deb_src | length > 0 or casparcg_patched_debs | length > 0
 
 - name: Install CasparCG CEF package from URL
   ansible.builtin.apt:
@@ -58,6 +58,34 @@
   when: casparcg_server_deb_src | length > 0
   # In --check the copy above didn't happen, so there is nothing to install.
   ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Copy locally patched library packages
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/var/local/casparcg-debs/{{ item | basename }}"
+    mode: "0644"
+  loop: "{{ casparcg_patched_debs }}"
+  become: true
+
+- name: Install locally patched library packages
+  ansible.builtin.apt:
+    deb: "/var/local/casparcg-debs/{{ item | basename }}"
+    state: present
+    update_cache: false
+    install_recommends: false
+    allow_downgrade: true
+  loop: "{{ casparcg_patched_debs }}"
+  become: true
+  # In --check the copy above didn't happen, so there is nothing to install.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Hold patched library packages so apt upgrades don't replace them
+  ansible.builtin.dpkg_selections:
+    name: "{{ (item | basename).split('_')[0] }}"
+    selection: hold
+  loop: "{{ casparcg_patched_debs }}"
+  become: true
+  when: not ansible_check_mode
 
 - name: Create the diagnostic log directory
   ansible.builtin.file:

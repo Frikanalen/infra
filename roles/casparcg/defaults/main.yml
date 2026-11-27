@@ -12,6 +12,15 @@ casparcg_exec: "/usr/bin/casparcg-server-2.5"
 # pointing it at upstream's deb) rolls back. The running CasparCG keeps the
 # old binary until nodm is restarted.
 casparcg_server_deb_src: ""
+# Locally patched library .debs on the Ansible controller, installed and
+# held (apt-mark hold) so Ubuntu updates don't replace them. Used for
+# libswresample4 with FFmpeg be8a4f80b9 ("avoid reapplication of firstpts",
+# fixed in FFmpeg 7.0, missing from noble's 6.1.1): without it, CasparCG's
+# audio chain (aresample async + first_pts) can reset its clock mid-file and
+# air ~as long again of silence (video 628845, 26 Nov 2026). To roll back,
+# empty the list, `apt-mark unhold <pkg>` and reinstall Ubuntu's version.
+# A running CasparCG keeps the old library until nodm is restarted.
+casparcg_patched_debs: []
 # Extra environment for the server process, set in the nodm session, e.g.
 # CASPAR_DECKLINK_DIAG_LOG for the diagnostic build. Takes effect at the
 # next CasparCG start.
