@@ -52,11 +52,11 @@ does not need a rebuild.
 
 ## Rollback
 
-Reinstall the stock library, then restart CasparCG so it reloads the library:
+Unhold and reinstall the stock library (and empty `casparcg_patched_debs` in host_vars/caspar1.yml), then restart CasparCG so it reloads the library:
 
 ```sh
-apt-get install --allow-downgrades libswresample4=7:6.1.1-3ubuntu5
 apt-mark unhold libswresample4
+apt-get install --allow-downgrades libswresample4=7:6.1.1-3ubuntu5
 ```
 
 Do the restart (`systemctl restart nodm`) in a cue window.
